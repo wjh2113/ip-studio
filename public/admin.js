@@ -67,10 +67,13 @@ function toast(msg) {
 /* ---------------- 入口判定 ---------------- */
 (async function boot() {
   try {
-    const { admin, needsSetup } = await api('/admin/session');
+    const { admin, needsSetup, setupLocked } = await api('/admin/session');
     if (admin) return enter(admin);
     setupMode = needsSetup;
-    if (needsSetup) {
+    if (setupLocked) {
+      el.gateSub.textContent = '管理员尚未初始化。公网入口已关闭，请在服务器用环境变量创建。';
+      el.gateSubmit.disabled = true;
+    } else if (needsSetup) {
       el.gateSub.textContent = '还没有管理员。第一次进来请设置一个——设置完这个入口就关闭了。';
       el.gateSubmit.textContent = '创建管理员';
       el.gateForm.password.autocomplete = 'new-password';

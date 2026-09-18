@@ -127,16 +127,31 @@ async function api(path, options = {}) {
 
 /* ---------------- 启动 ---------------- */
 (async function boot() {
+  const [{ user }, meta] = await Promise.all([api('/me'), api('/meta')]);
+  state.meta = meta;
+  applyAuthMeta(meta.auth);
   // 从落地页带 ?signup=1 过来的，直接停在注册页
   if (new URLSearchParams(location.search).get('signup')) {
     document.querySelector('#authTabs [data-mode="register"]')?.click();
   }
-  const [{ user }, meta] = await Promise.all([api('/me'), api('/meta')]);
-  state.meta = meta;
   fillSelects(meta);
   showLlm(meta.llm);
   user ? enterApp(user) : el.auth.classList.remove('hidden');
 })().catch((e) => toast(e.message));
+
+function applyAuthMeta(auth = {}) {
+  const tab = document.getElementById('registerTab');
+  const invite = document.getElementById('inviteRow');
+  if (auth.register === false) {
+    tab?.remove();
+    if (new URLSearchParams(location.search).get('signup')) {
+      history.replaceState(null, '', '/app');
+    }
+  }
+  if (auth.invite && invite) {
+    invite.dataset.needed = '1';
+  }
+}
 
 function fillSelects({ platforms, tones }) {
   const platformOpts = platforms
@@ -175,6 +190,8 @@ el.authTabs.addEventListener('click', (e) => {
   el.authSubmit.textContent = authMode === 'login' ? '登录' : '注册并进入';
   el.authForm.password.autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
   el.authError.textContent = '';
+  const invite = document.getElementById('inviteRow');
+  invite?.classList.toggle('hidden', authMode !== 'register' || invite?.dataset.needed !== '1');
 });
 
 el.authForm.addEventListener('submit', async (e) => {
@@ -185,7 +202,11 @@ el.authForm.addEventListener('submit', async (e) => {
     try {
       const { user } = await api(`/auth/${authMode}`, {
         method: 'POST',
-        body: { username: fd.get('username'), password: fd.get('password') },
+        body: {
+          username: fd.get('username'),
+          password: fd.get('password'),
+          ...(authMode === 'register' ? { invite: fd.get('invite') } : {}),
+        },
       });
       el.auth.classList.add('hidden');
       el.authForm.reset();

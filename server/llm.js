@@ -2,6 +2,7 @@ import { assertQuota, consume } from './quota.js';
 /* 大模型接入层
  *   anthropic —— 官方 SDK（默认 claude-opus-5），结构化输出 + 流式正文
  *   openai    —— 任意 OpenAI 兼容接口（DeepSeek / Kimi / 通义 / vLLM / Ollama）
+ *   gateway   —— 站内 AIapiMgr（/api/ai/chat），生产默认走这条，不直连上游密钥
  *   mock      —— 无密钥时的本地模板，保证系统开箱可跑通全流程
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -10,6 +11,11 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'deepseek-chat';
 const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
+const GATEWAY_URL = (process.env.LLM_GATEWAY_URL || 'https://aiapimgrapi.aidigitcloud.cn').replace(/\/$/, '');
+const GATEWAY_KEY = process.env.LLM_GATEWAY_API_KEY || '';
+const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP_Studio';
+const GATEWAY_CAPABILITY = process.env.LLM_CAPABILITY || 'quality-chat';
+const GATEWAY_CAPABILITY_JSON = process.env.LLM_CAPABILITY_JSON || 'fast-chat';
 
 /* 采样参数：1.3 实测在中文长文里会跑出语无伦次的句子，降到 1.0（DeepSeek 的默认值）稳很多。
  * 语气由账号设定和语气档案负责，不靠高温度堆"创意"。可用环境变量微调。 */
@@ -21,6 +27,7 @@ function detectProvider() {
   const forced = (process.env.LLM_PROVIDER || '').toLowerCase();
   if (forced) return forced;
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return 'anthropic';
+  if (GATEWAY_KEY) return 'gateway';
   if (OPENAI_KEY) return 'openai';
   return 'mock';
 }
@@ -28,8 +35,16 @@ function detectProvider() {
 export const PROVIDER = detectProvider();
 
 export function providerInfo() {
-  const model = PROVIDER === 'anthropic' ? ANTHROPIC_MODEL : PROVIDER === 'openai' ? OPENAI_MODEL : '本地模板';
-  const label = { anthropic: 'Claude', openai: 'OpenAI 兼容接口', mock: '演示模式（未配置密钥）' }[PROVIDER] || PROVIDER;
+  const model = PROVIDER === 'anthropic' ? ANTHROPIC_MODEL
+    : PROVIDER === 'openai' ? OPENAI_MODEL
+    : PROVIDER === 'gateway' ? GATEWAY_CAPABILITY
+    : '本地模板';
+  const label = {
+    anthropic: 'Claude',
+    openai: 'OpenAI 兼容接口',
+    gateway: 'AIapiMgr 网关',
+    mock: '演示模式（未配置密钥）',
+  }[PROVIDER] || PROVIDER;
   return { provider: PROVIDER, model, label, live: PROVIDER !== 'mock' };
 }
 
@@ -46,7 +61,10 @@ export const setUsageSink = (fn) => { usageSink = fn; };
    eval 跑批不占用户额度（它是后台行为，成本记在管理员头上）。 */
 async function tracked(meta, run) {
   const started = Date.now();
-  const model = PROVIDER === 'anthropic' ? ANTHROPIC_MODEL : PROVIDER === 'openai' ? OPENAI_MODEL : 'mock';
+  const model = PROVIDER === 'anthropic' ? ANTHROPIC_MODEL
+    : PROVIDER === 'openai' ? OPENAI_MODEL
+    : PROVIDER === 'gateway' ? GATEWAY_CAPABILITY
+    : 'mock';
   const metered = meta.userId && !String(meta.feature || '').startsWith('eval');
   if (metered) assertQuota(meta.userId, '文案');
   try {
@@ -90,12 +108,14 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
       };
     }
 
-    const res = await openaiChat({
+    const res = await chat({
       system,
       user: `${user}\n\n只输出一个 JSON 对象，不要任何解释或代码块标记。JSON Schema：\n${JSON.stringify(schema)}`,
       stream: false,
       temperature: TEMP_JSON,    // 结构化输出用低温度，减少格式跑偏
       responseFormat: { type: 'json_object' },
+      json: true,
+      userId: meta.userId,
     });
     return { value: parseJSON(res.text), usage: res.usage };
   });
@@ -122,7 +142,7 @@ export async function generateText({ system, user, mock, meta = {} }) {
       };
     }
 
-    const res = await openaiChat({ system, user, stream: false });
+    const res = await chat({ system, user, stream: false, userId: meta.userId });
     return { value: res.text, usage: res.usage };
   });
 }
@@ -131,10 +151,12 @@ export async function generateText({ system, user, mock, meta = {} }) {
  * 流式正文：逐段回调 onDelta，返回完整文本
  * ------------------------------------------------------------------ */
 export async function streamText({ system, user, onDelta, mock, signal, meta = {} }) {
-  return tracked({ feature: 'unknown', ...meta }, () => streamOnce({ system, user, onDelta, mock, signal }));
+  return tracked({ feature: 'unknown', ...meta }, () => streamOnce({
+    system, user, onDelta, mock, signal, userId: meta.userId,
+  }));
 }
 
-async function streamOnce({ system, user, onDelta, mock, signal }) {
+async function streamOnce({ system, user, onDelta, mock, signal, userId }) {
   if (PROVIDER === 'mock') return { value: await streamMock(mock(), onDelta, signal), usage: null };
 
   if (PROVIDER === 'anthropic') {
@@ -165,13 +187,42 @@ async function streamOnce({ system, user, onDelta, mock, signal }) {
     };
   }
 
-  const res = await openaiChat({ system, user, stream: true, onDelta, signal });
+  const res = await chat({ system, user, stream: true, onDelta, signal, userId });
   return { value: res.text, usage: res.usage };
 }
 
 /* ------------------------------------------------------------------ *
- * OpenAI 兼容协议
+ * OpenAI 兼容协议 + 站内网关
  * ------------------------------------------------------------------ */
+async function chat(opts) {
+  if (PROVIDER === 'gateway') return gatewayChat(opts);
+  return openaiChat(opts);
+}
+
+async function gatewayChat({
+  system, user, stream, onDelta, signal, temperature = TEMP_PROSE, json = false, userId,
+}) {
+  const res = await fetch(`${GATEWAY_URL}/api/ai/chat`, {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(GATEWAY_KEY ? { Authorization: `Bearer ${GATEWAY_KEY}` } : {}),
+    },
+    body: JSON.stringify({
+      tenantId: GATEWAY_TENANT,
+      capability: json ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      dataClass: 'internal',
+      fallback: true,
+      stream: Boolean(stream),
+      temperature,
+      ...(userId ? { userId: String(userId) } : {}),
+    }),
+  });
+  return readChatResponse(res, stream, onDelta);
+}
+
 async function openaiChat({ system, user, stream, onDelta, responseFormat, signal, temperature = TEMP_PROSE }) {
   const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
     method: 'POST',
@@ -190,7 +241,10 @@ async function openaiChat({ system, user, stream, onDelta, responseFormat, signa
       ...(responseFormat ? { response_format: responseFormat } : {}),
     }),
   });
+  return readChatResponse(res, stream, onDelta);
+}
 
+async function readChatResponse(res, stream, onDelta) {
   if (!res.ok) {
     throw new Error(`上游接口返回 ${res.status}：${(await res.text()).slice(0, 300)}`);
   }

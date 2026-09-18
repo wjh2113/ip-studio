@@ -852,7 +852,7 @@ public/       前台单页（index.html + app.js）与后台（admin.html + admi
 
 ## 第一版的边界
 
-- 会话存在 SQLite，密码用 scrypt；生产部署需再加 HTTPS、限流与注册准入。
+- 会话存在 SQLite，密码用 scrypt。生产已加 HTTPS Cookie、IP 限流、后台环境变量初始化；注册仍开放但有频控，可用 `REGISTER_CODE` 加邀请码。
 - 管理后台只读，没有改密码、封号、调额度这类操作；也没有在后台里增删管理员（第一个之后要加人得直接写库）。
 - 用量按调用计数和 token 记，没有换算成金额（各家单价不同，也会变）。
 - 未做协作、团队空间、定时发布与平台直发。
@@ -868,3 +868,16 @@ public/       前台单页（index.html + app.js）与后台（admin.html + admi
 - 每次出稿会多一次检查调用（输入是全文、输出是短 JSON，开销不大，但确实是一次额外请求）。
 - 热点比对时模型只看得到标题（概要是命中之后才补的），所以「蹭点」是基于标题的推断，动笔前必须点开原文核实。
 - 原文概要覆盖率有限（主流平台反爬），多数条目只有标题；这时成稿只会把热点用作一句由头。
+
+## 生产部署
+
+京东云：`ubuntu@111.228.6.222`，目录 `/opt/ip-studio`，域名 `https://ip.aidigitcloud.cn`。
+
+```bash
+bash scripts/deploy-jdcloud.sh
+```
+
+会 rsync 代码、`npm install`、写 nginx、pm2 拉起。不覆盖线上 `.env` 和 `data/`。第一次部署会生成 `SECRET_KEY`、管理员密码，并从现有业务复制 LLM 网关 Key。
+
+DNS：在阿里云给 `ip.aidigitcloud.cn` 加一条 **A** 记录指向 `111.228.6.222`（证书已是 `*.aidigitcloud.cn`）。
+

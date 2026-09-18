@@ -8,7 +8,8 @@ import {
 import {
   HttpError, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, clearCookie,
   createAdmin, currentAdmin, currentUser, login, publicAdmin, publicUser,
-  register, sessionCookie, startAdminSession, startSession, validateCredentials,
+  register, sessionCookie, startAdminSession, startSession, setupHttpEnabled,
+  validateCredentials,
 } from './auth.js';
 import { PROVIDER, generateJSON, generateText, providerInfo, streamText } from './llm.js';
 import { ASSEMBLY, PRINCIPLE, PROMPT_DOCS, STAGES } from './promptdocs.js';
@@ -141,6 +142,11 @@ function resolvePersona(userId, personaId) {
 /* ---------------- 账号 ---------------- */
 
 export async function handleRegister(req, res, body) {
+  if (process.env.REGISTER_OPEN === '0') throw new HttpError(403, '目前不开放注册');
+  const code = String(process.env.REGISTER_CODE || '').trim();
+  if (code && String(body?.invite || '').trim() !== code) {
+    throw new HttpError(403, '邀请码不正确');
+  }
   const { username, password } = body || {};
   const bad = validateCredentials(username, password);
   if (bad) throw new HttpError(400, bad);
@@ -169,6 +175,10 @@ export async function handleMeta(req, res) {
     platforms: Object.entries(PLATFORMS).map(([key, v]) => ({ key, label: v.label, length: v.length })),
     tones: Object.entries(TONES).map(([key, hint]) => ({ key, hint })),
     llm: providerInfo(),
+    auth: {
+      register: process.env.REGISTER_OPEN !== '0',
+      invite: Boolean(String(process.env.REGISTER_CODE || '').trim()),
+    },
   });
 }
 
@@ -184,15 +194,24 @@ function requireAdmin(req) {
 
 export async function handleAdminSession(req, res) {
   const admin = currentAdmin(req);
+  const needs = adminSetupNeeded();
   json(res, 200, {
     admin: admin ? publicAdmin(admin) : null,
-    needsSetup: adminSetupNeeded(),
+    needsSetup: needs && setupHttpEnabled(),
+    setupLocked: needs && !setupHttpEnabled(),
   });
 }
 
 /* 首次设置：只在一个管理员都没有的时候开放 */
 export async function handleAdminSetup(req, res, body) {
   if (!adminSetupNeeded()) throw new HttpError(403, '管理员已存在，无法再次初始化');
+  if (!setupHttpEnabled()) {
+    throw new HttpError(403, '公网已关闭首次设置，请用服务器环境变量初始化管理员');
+  }
+  const expected = String(process.env.ADMIN_SETUP_TOKEN || '');
+  if (expected && String(body?.setup_token || '') !== expected) {
+    throw new HttpError(403, '初始化口令不正确');
+  }
   const { username, password } = body || {};
   // 先查长度，免得报出前台那套「至少 6 位」和后台表单写的 8 位对不上
   if (String(password || '').length < 8) throw new HttpError(400, '管理员密码至少 8 位');

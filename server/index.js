@@ -7,10 +7,14 @@ import { fromRoot } from './paths.js';
 
 loadEnv();
 
-const { HttpError } = await import('./auth.js');
+const { HttpError, ensureBootstrapAdmin } = await import('./auth.js');
 const R = await import('./routes.js');
 const { providerInfo, setUsageSink } = await import('./llm.js');
 const { DATA_DIR, Usage } = await import('./db.js');
+const { attachSecurity } = await import('./security.js');
+const { rateLimit } = await import('./limit.js');
+
+ensureBootstrapAdmin();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
@@ -19,6 +23,7 @@ setUsageSink((e) => {
 
 const PUBLIC_DIR = fromRoot('public');
 const PORT = Number(process.env.PORT) || 5177;
+const HOST = process.env.HOST || '0.0.0.0';
 const MAX_BODY = 256 * 1024;
 
 const ROUTES = [
@@ -112,8 +117,15 @@ const MIME = {
 };
 
 const server = createServer(async (req, res) => {
+  attachSecurity(res);
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const path = url.pathname;
+
+  if (path === '/health' || path === '/api/health') {
+    const info = providerInfo();
+    R.json(res, 200, { ok: true, app: 'copywriter-studio', llm: info.label, live: info.live });
+    return;
+  }
 
   if (path.startsWith('/image/')) {
     await serveOwned(path, '/image/', 'images', req, res);
@@ -121,6 +133,11 @@ const server = createServer(async (req, res) => {
   }
 
   if (path.startsWith('/api/')) {
+    try { rateLimit(req, path); }
+    catch (err) {
+      const status = err instanceof HttpError ? err.status : 429;
+      return R.json(res, status, { error: err.message || '请求过于频繁' });
+    }
     const match = ROUTES.find(([method, re]) => method === req.method && re.test(path));
     if (!match) return R.json(res, 404, { error: '接口不存在' });
 
@@ -228,8 +245,9 @@ async function serveStatic(path, res) {
   }
 }
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   const info = providerInfo();
-  console.log(`\n  文案工坊 已启动  →  http://localhost:${PORT}`);
+  const where = HOST === '0.0.0.0' ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
+  console.log(`\n  文案工坊 已启动  →  ${where}`);
   console.log(`  模型通道：${info.label}${info.live ? `（${info.model}）` : ' —— 复制 .env.example 为 .env 并填入密钥即可接入真实模型'}\n`);
 });

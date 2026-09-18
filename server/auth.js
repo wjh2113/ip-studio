@@ -1,6 +1,7 @@
 /* 账号与会话：scrypt 存密码，随机 token 存 httpOnly cookie */
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Users, Sessions, Admins, AdminSessions } from './db.js';
+import { cookieAttrs } from './security.js';
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 14; // 14 天
 export const COOKIE_NAME = 'cw_session';
@@ -46,10 +47,10 @@ export function startSession(user) {
 
 export function sessionCookie(token) {
   const maxAge = Math.floor(SESSION_TTL / 1000);
-  return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+  return `${COOKIE_NAME}=${token}; ${cookieAttrs()}; Max-Age=${maxAge}`;
 }
 
-export const clearCookie = () => `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+export const clearCookie = () => `${COOKIE_NAME}=; ${cookieAttrs()}; Max-Age=0`;
 
 function readCookie(req, name) {
   const raw = req.headers.cookie || '';
@@ -97,9 +98,36 @@ export function startAdminSession(admin) {
 }
 
 export const adminCookie = (token) =>
-  `${ADMIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(ADMIN_TTL / 1000)}`;
+  `${ADMIN_COOKIE}=${token}; ${cookieAttrs()}; Max-Age=${Math.floor(ADMIN_TTL / 1000)}`;
 
-export const clearAdminCookie = () => `${ADMIN_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+export const clearAdminCookie = () => `${ADMIN_COOKIE}=; ${cookieAttrs()}; Max-Age=0`;
+
+/* 公网不要把「第一个访问 /admin 的人」变成超管。
+   生产默认关掉 HTTP 初始化；用 ADMIN_USERNAME + ADMIN_PASSWORD 在启动时写入。
+   若必须走页面，再配 ADMIN_SETUP_TOKEN，请求里带上才放行。 */
+export function setupHttpEnabled() {
+  if (process.env.ADMIN_SETUP_TOKEN) return true;
+  return process.env.NODE_ENV !== 'production';
+}
+
+export function ensureBootstrapAdmin() {
+  if (!adminSetupNeeded()) return false;
+  const username = String(process.env.ADMIN_USERNAME || '').trim();
+  const password = String(process.env.ADMIN_PASSWORD || '');
+  if (!username || !password) return false;
+  if (password.length < 8) {
+    console.warn('[admin] ADMIN_PASSWORD 少于 8 位，跳过自动初始化');
+    return false;
+  }
+  const bad = validateCredentials(username, password);
+  if (bad) {
+    console.warn('[admin] 环境变量里的管理员账号不合规：', bad);
+    return false;
+  }
+  createAdmin(username, password);
+  console.log(`[admin] 已从环境变量创建管理员「${username}」`);
+  return true;
+}
 
 export function currentAdmin(req) {
   return AdminSessions.admin(readCookie(req, ADMIN_COOKIE));
