@@ -13,7 +13,7 @@ const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || 'https://api.deepseek.co
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
 const GATEWAY_URL = (process.env.LLM_GATEWAY_URL || 'https://aiapimgrapi.aidigitcloud.cn').replace(/\/$/, '');
 const GATEWAY_KEY = process.env.LLM_GATEWAY_API_KEY || '';
-const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP_Studio';
+const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP';
 const GATEWAY_CAPABILITY = process.env.LLM_CAPABILITY || 'quality-chat';
 const GATEWAY_CAPABILITY_JSON = process.env.LLM_CAPABILITY_JSON || 'fast-chat';
 

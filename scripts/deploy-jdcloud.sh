@@ -68,7 +68,7 @@ set_kv COOKIE_SECURE 1
 set_kv REGISTER_OPEN 1
 set_kv LLM_PROVIDER gateway
 set_kv LLM_GATEWAY_URL https://aiapimgrapi.aidigitcloud.cn
-set_kv LLM_TENANT_ID IP_Studio
+set_kv LLM_TENANT_ID IP
 set_kv LLM_CAPABILITY quality-chat
 set_kv LLM_CAPABILITY_JSON fast-chat
 set_kv PAY_NOTIFY_BASE "https://\${DOMAIN}"
@@ -82,14 +82,10 @@ if ! grep -qE '^ADMIN_PASSWORD=.+' "\${ENV_FILE}"; then
   sed -i '/^ADMIN_PASSWORD=/d' "\${ENV_FILE}"
   echo "ADMIN_PASSWORD=\$(openssl rand -base64 18 | tr -d '/+=' | head -c 16)Aa1" >> "\${ENV_FILE}"
 fi
+# 网关 Key 只在空时占位，已配置的不要被别的项目 Key 覆盖
 if ! grep -qE '^LLM_GATEWAY_API_KEY=.+' "\${ENV_FILE}"; then
-  GW=\$(grep '^LLM_GATEWAY_API_KEY=' /opt/industry-analyzer/.env 2>/dev/null | head -1 | cut -d= -f2- || true)
-  if [[ -z "\${GW}" ]]; then
-    GW=\$(grep '^LLM_GATEWAY_API_KEY=' /opt/zhifan-feynman-study/.env 2>/dev/null | head -1 | cut -d= -f2- || true)
-  fi
-  if [[ -n "\${GW}" ]]; then
-    echo "LLM_GATEWAY_API_KEY=\${GW}" >> "\${ENV_FILE}"
-  fi
+  echo 'LLM_GATEWAY_API_KEY=' >> "\${ENV_FILE}"
+  echo 'WARN: LLM_GATEWAY_API_KEY 为空，上线后请写入租户 IP 的 Key' >&2
 fi
 
 npm install --omit=dev
