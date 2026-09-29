@@ -142,7 +142,24 @@ async function api(path, options = {}) {
 function applyAuthMeta(auth = {}) {
   const tab = document.getElementById('registerTab');
   const invite = document.getElementById('inviteRow');
-  if (auth.register === false) {
+  const userRow = document.getElementById('userRow');
+  const userInput = el.authForm?.username;
+  if (auth.gate) {
+    tab?.remove();
+    el.authTabs?.classList.add('hidden');
+    userRow?.classList.add('hidden');
+    if (userInput) {
+      userInput.removeAttribute('required');
+      userInput.value = '';
+    }
+    const sub = document.getElementById('authSub');
+    const tip = document.getElementById('authTip');
+    if (sub) sub.textContent = '输入访问密码进入。与 API 网关管理台同一组密码。';
+    if (tip) tip.textContent = '不开放公开注册。';
+    const pw = el.authForm?.password;
+    if (pw) pw.placeholder = '访问密码';
+    el.authSubmit.textContent = '进入';
+  } else if (auth.register === false) {
     tab?.remove();
     if (new URLSearchParams(location.search).get('signup')) {
       history.replaceState(null, '', '/app');

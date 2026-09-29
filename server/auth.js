@@ -1,5 +1,5 @@
 /* 账号与会话：scrypt 存密码，随机 token 存 httpOnly cookie */
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Users, Sessions, Admins, AdminSessions } from './db.js';
 import { cookieAttrs } from './security.js';
 
@@ -37,6 +37,52 @@ export function login(username, password) {
     throw new HttpError(401, '用户名或密码错误');
   }
   return user;
+}
+
+/* 与 API 网关一样：一个访问密码。配了 ACCESS_PASSWORD 就关注册，只认这道门。 */
+export const accessPassword = () => String(process.env.ACCESS_PASSWORD || '').trim();
+export const accessGateOn = () => Boolean(accessPassword());
+export const accessUsername = () => String(process.env.ACCESS_USER || 'ip').trim() || 'ip';
+
+function sameSecret(a, b) {
+  const ha = createHash('sha256').update(String(a)).digest();
+  const hb = createHash('sha256').update(String(b)).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+export function checkAccessPassword(password) {
+  const expected = accessPassword();
+  if (!expected) return false;
+  return sameSecret(String(password || ''), expected);
+}
+
+export function ensureAccessUser() {
+  const pw = accessPassword();
+  if (!pw) return false;
+  const name = accessUsername();
+  const hash = hashPassword(pw);
+  const existing = Users.byName(name);
+  if (!existing) Users.create(name, hash);
+  else Users.setPassword(existing.id, hash);
+  return true;
+}
+
+export function syncAdminPassword() {
+  const pw = String(process.env.ADMIN_PASSWORD || accessPassword() || '');
+  if (!pw) return false;
+  const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
+  const hash = hashPassword(pw);
+  const existing = Admins.byName(name);
+  if (!existing) {
+    if (pw.length < 8) {
+      console.warn('[admin] 访问密码少于 8 位，后台账号未同步');
+      return false;
+    }
+    createAdmin(name, pw);
+    return true;
+  }
+  Admins.setPassword(existing.id, hash);
+  return true;
 }
 
 export function startSession(user) {

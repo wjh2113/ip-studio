@@ -7,7 +7,7 @@ import { fromRoot } from './paths.js';
 
 loadEnv();
 
-const { HttpError, ensureBootstrapAdmin } = await import('./auth.js');
+const { HttpError, ensureBootstrapAdmin, ensureAccessUser, syncAdminPassword } = await import('./auth.js');
 const R = await import('./routes.js');
 const { providerInfo, setUsageSink } = await import('./llm.js');
 const { DATA_DIR, Usage } = await import('./db.js');
@@ -15,6 +15,8 @@ const { attachSecurity } = await import('./security.js');
 const { rateLimit } = await import('./limit.js');
 
 ensureBootstrapAdmin();
+ensureAccessUser();
+syncAdminPassword();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {

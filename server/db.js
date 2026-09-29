@@ -347,6 +347,10 @@ export const Admins = {
   byId(id) {
     return db.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null;
   },
+  setPassword(id, passHash) {
+    db.prepare('UPDATE admins SET pass_hash = ? WHERE id = ?').run(passHash, id);
+    return this.byId(id);
+  },
   touch(id) {
     db.prepare('UPDATE admins SET last_login = ? WHERE id = ?').run(now(), id);
   },
@@ -508,6 +512,10 @@ export const Users = {
   },
   byId(id) {
     return db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
+  },
+  setPassword(id, passHash) {
+    db.prepare('UPDATE users SET pass_hash = ? WHERE id = ?').run(passHash, id);
+    return this.byId(id);
   },
   /* 管理后台用：每个用户的资产盘点 */
   overview() {

@@ -65,7 +65,7 @@ set_kv HOST 127.0.0.1
 set_kv PORT "\${PORT}"
 set_kv TRUST_PROXY 1
 set_kv COOKIE_SECURE 1
-set_kv REGISTER_OPEN 1
+set_kv REGISTER_OPEN 0
 set_kv LLM_PROVIDER gateway
 set_kv LLM_GATEWAY_URL https://aiapimgrapi.aidigitcloud.cn
 set_kv LLM_TENANT_ID IP
@@ -86,6 +86,14 @@ fi
 if ! grep -qE '^LLM_GATEWAY_API_KEY=.+' "\${ENV_FILE}"; then
   echo 'LLM_GATEWAY_API_KEY=' >> "\${ENV_FILE}"
   echo 'WARN: LLM_GATEWAY_API_KEY 为空，上线后请写入租户 IP 的 Key' >&2
+fi
+# 访问密码与 API 网关管理台同一份；已有值不覆盖
+if ! grep -qE '^ACCESS_PASSWORD=.+' "\${ENV_FILE}"; then
+  GW_PW=\$(grep '^ADMIN_PASSWORD=' /opt/AIapiMgr/backend/.env 2>/dev/null | head -1 | cut -d= -f2- || true)
+  if [[ -n "\${GW_PW}" ]]; then
+    set_kv ACCESS_PASSWORD "\${GW_PW}"
+    set_kv ADMIN_PASSWORD "\${GW_PW}"
+  fi
 fi
 
 npm install --omit=dev

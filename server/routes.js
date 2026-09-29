@@ -9,7 +9,7 @@ import {
   HttpError, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, clearCookie,
   createAdmin, currentAdmin, currentUser, login, publicAdmin, publicUser,
   register, sessionCookie, startAdminSession, startSession, setupHttpEnabled,
-  validateCredentials,
+  validateCredentials, accessGateOn, accessUsername, checkAccessPassword,
 } from './auth.js';
 import { PROVIDER, generateJSON, generateText, providerInfo, streamText } from './llm.js';
 import { ASSEMBLY, PRINCIPLE, PROMPT_DOCS, STAGES } from './promptdocs.js';
@@ -142,7 +142,9 @@ function resolvePersona(userId, personaId) {
 /* ---------------- 账号 ---------------- */
 
 export async function handleRegister(req, res, body) {
-  if (process.env.REGISTER_OPEN === '0') throw new HttpError(403, '目前不开放注册');
+  if (accessGateOn() || process.env.REGISTER_OPEN === '0') {
+    throw new HttpError(403, '目前不开放注册');
+  }
   const code = String(process.env.REGISTER_CODE || '').trim();
   if (code && String(body?.invite || '').trim() !== code) {
     throw new HttpError(403, '邀请码不正确');
@@ -155,9 +157,18 @@ export async function handleRegister(req, res, body) {
 }
 
 export async function handleLogin(req, res, body) {
-  const { username, password } = body || {};
+  const password = String(body?.password || '');
+  if (accessGateOn()) {
+    if (!password) throw new HttpError(400, '请输入访问密码');
+    if (!checkAccessPassword(password)) throw new HttpError(401, '密码错误');
+    const user = Users.byName(accessUsername());
+    if (!user) throw new HttpError(500, '访问账号未初始化');
+    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(startSession(user)) });
+    return;
+  }
+  const { username } = body || {};
   if (!username || !password) throw new HttpError(400, '请输入用户名和密码');
-  const user = login(String(username).trim(), String(password));
+  const user = login(String(username).trim(), password);
   json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(startSession(user)) });
 }
 
@@ -176,8 +187,9 @@ export async function handleMeta(req, res) {
     tones: Object.entries(TONES).map(([key, hint]) => ({ key, hint })),
     llm: providerInfo(),
     auth: {
-      register: process.env.REGISTER_OPEN !== '0',
+      register: !accessGateOn() && process.env.REGISTER_OPEN !== '0',
       invite: Boolean(String(process.env.REGISTER_CODE || '').trim()),
+      gate: accessGateOn(),
     },
   });
 }
@@ -199,6 +211,7 @@ export async function handleAdminSession(req, res) {
     admin: admin ? publicAdmin(admin) : null,
     needsSetup: needs && setupHttpEnabled(),
     setupLocked: needs && !setupHttpEnabled(),
+    gate: accessGateOn(),
   });
 }
 
@@ -224,9 +237,19 @@ export async function handleAdminSetup(req, res, body) {
 }
 
 export async function handleAdminLogin(req, res, body) {
-  const { username, password } = body || {};
+  const password = String(body?.password || '');
+  if (accessGateOn() && checkAccessPassword(password)) {
+    const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
+    const admin = Admins.byName(name);
+    if (!admin) throw new HttpError(401, '管理员账号未初始化');
+    Admins.touch(admin.id);
+    json(res, 200, { admin: publicAdmin(admin) },
+      { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
+    return;
+  }
+  const { username } = body || {};
   if (!username || !password) throw new HttpError(400, '请输入用户名和密码');
-  const admin = adminLogin(String(username).trim(), String(password));
+  const admin = adminLogin(String(username).trim(), password);
   json(res, 200, { admin: publicAdmin(admin) },
     { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
 }

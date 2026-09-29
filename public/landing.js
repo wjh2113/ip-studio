@@ -13,8 +13,8 @@
         <div class="p">${p.price ? `${p.price}<em> 元${p.pack ? '' : '/月'}</em>` : `0<em> 元/月</em>`}</div>
         <div class="c">${p.credits.toLocaleString()} 点</div>
         <p class="n">${esc(p.note || '')}</p>
-        <a class="btn ${p.key === 'pro' ? 'primary' : 'ghost'} small" href="/app?signup=1">${
-  p.price ? '开始使用' : '免费开始'}</a>
+        <a class="btn ${p.key === 'pro' ? 'primary' : 'ghost'} small" href="/app">${
+  p.price ? '登录使用' : '登录进入'}</a>
       </div>`).join('');
   } catch {
     box.innerHTML = '<p class="lp-note">价格暂时取不到，稍后再看。</p>';
