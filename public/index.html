@@ -289,7 +289,9 @@
         <div class="mark-dock hidden" id="markDock">
           <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0"
                 title="拖进正文，或点一下插到光标处">此处放图片</span>
-          <span class="hint" id="markHint">先把光标点在要插图的地方，再把这个标签拖进去。点一下也会插到光标处。</span>
+          <button type="button" class="btn ghost small" id="voiceBtn">语音改稿</button>
+          <span class="hint" id="markHint">先把光标点在要插图的地方，再把这个标签拖进去。语音改稿是说改哪里、怎么改。</span>
+          <p class="voice-note hidden" id="voiceNote"></p>
         </div>
         <textarea class="editor hidden" id="editor" spellcheck="false"></textarea>
 

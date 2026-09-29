@@ -28,7 +28,7 @@ loadPricing();
 import { mockContent, mockTopics } from './mock.js';
 import { enrichSummaries, fetchBoards, parseManual, riskOf, screenItems } from './hotspots.js';
 import { generate, imageInfo } from './images.js';
-import { removeTakeFile, runSpeakPipeline, saveTakeFile } from './speak.js';
+import { removeTakeFile, runSpeakPipeline, saveTakeFile, transcribeAudio } from './speak.js';
 import {
   CONTENT_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, TONES,
   ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, DIGEST_SYSTEM, GENDERS,
@@ -37,6 +37,7 @@ import {
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   ADAPT_SYSTEM, adaptUser,
   ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser,
+  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser, applyVoiceEdits,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM,
   articleSummaryUser, assistUser, composeUser, contentUser, cuesUser, digestUser,
   hotspotUser, platformSpec, reviewUser, subjectsUser, topicsUser,
@@ -335,6 +336,8 @@ const PROMPT_CATALOG = () => [
       改写动作: Object.fromEntries(Object.entries(ASSIST_ACTIONS).map(([k, v]) => [v.label, v.instruction])),
       续写动作: Object.fromEntries(Object.entries(COMPOSE_ACTIONS).map(([k, v]) => [v.label, v.instruction])),
     } },
+  { key: 'voice-edit', label: '语音改稿', where: '修改模式里按住话筒说改哪里、怎么改。转写走 speech，理解走 quality-chat',
+    system: sys('voice-edit', VOICE_EDIT_SYSTEM), schema: VOICE_EDIT_SCHEMA },
   { key: 'review', label: '成稿检查', where: '出稿后自动跑 + 工具栏「检查」',
     system: sys('review', REVIEW_SYSTEM), schema: REVIEW_SCHEMA },
   { key: 'subjects', label: '题材推荐', where: '创作简报里的三条推荐题材',
@@ -1197,6 +1200,54 @@ const mockAssist = (body, selection) => {
     ? `（演示模式 · ${label}）这里会由大模型按账号语气就地续写一段。配置模型密钥后生效。`
     : `（演示模式 · ${label}）${selection}`;
 };
+
+/* 语音改稿：转写是修改要求。只套用能在正文里对上的 find，对不上的丢掉。 */
+export async function handleVoiceEdit(req, res, file, params) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const content = String(draft.content || '');
+  if (!content.trim()) throw new HttpError(400, '还没有正文');
+  if (content.length > 20000) throw new HttpError(400, '正文太长，语音改稿先控制在 2 万字以内');
+
+  let transcript = '';
+  try {
+    const tr = await transcribeAudio(file.buffer, {
+      filename: `voice.${file.ext}`,
+      mime: file.mime,
+      userId: user.id,
+    });
+    transcript = String(tr.text || '').trim();
+  } catch (err) {
+    throw new HttpError(502, String(err?.message || err));
+  }
+  if (transcript.length < 2) throw new HttpError(400, '没有听清，请再说一次');
+
+  const data = await withRetry(async () => {
+    const out = await generateJSON({
+      meta: { feature: '语音改稿', userId: user.id, channel: 'quality' },
+      system: sys('voice-edit', VOICE_EDIT_SYSTEM),
+      user: voiceEditUser(draft, transcript),
+      schema: VOICE_EDIT_SCHEMA,
+      mock: () => ({
+        note: '演示模式：这里会复述听懂的修改要求',
+        edits: [{ find: content.slice(0, Math.min(12, content.length)), replace: content.slice(0, Math.min(12, content.length)), all: false }],
+      }),
+    });
+    if (!out || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到修改方案');
+    return out;
+  }, '语音改稿失败，请再试一次');
+
+  const result = applyVoiceEdits(content, data.edits);
+  json(res, 200, {
+    transcript,
+    note: String(data.note || '').trim(),
+    applied: result.applied,
+    skipped: result.skipped,
+    content: result.content,
+    changed: result.content !== content,
+  });
+}
 
 /* ---------------- 语气学习 ---------------- */
 

@@ -34,6 +34,7 @@ const el = {
   illusHint: $('illusHint'), illusList: $('illusList'),
   illusPlanBtn: $('illusPlanBtn'), illusRunBtn: $('illusRunBtn'),
   markBtn: $('markBtn'), markHint: $('markHint'), markDock: $('markDock'),
+  voiceBtn: $('voiceBtn'), voiceNote: $('voiceNote'),
   briefCard: $('briefCard'), main: $('main'),
   creditChip: $('creditChip'), planModal: $('planModal'), planClose: $('planClose'),
   planPeriod: $('planPeriod'), planNow: $('planNow'), planBreakdown: $('planBreakdown'),
@@ -89,7 +90,7 @@ const el = {
 const state = {
   user: null, meta: null, draft: null, streaming: false, busy: false,
   personas: [], personaId: null, editingId: null, skipOnboard: false,
-  mode: 'read', dirty: false, assist: null, ideaFailed: new Set(),
+  mode: 'read', dirty: false, assist: null, ideaFailed: new Set(), voiceApplying: false,
   view: 'write', boards: null, paramsUnlocked: false,
   sections: [], sectionId: null, editingSection: null, presets: [], sectionPersonaId: null,
   showArchived: false, historyMode: 'drafts', counts: { active: 0, archived: 0, activeDone: 0 },
@@ -1259,7 +1260,10 @@ function renderContent() {
 
 function setMode(mode) {
   if (state.streaming) return;
-  if (state.mode === 'edit' && mode !== 'edit') flushSave();   // 离开编辑就落盘
+  if (state.mode === 'edit' && mode !== 'edit') {
+    stopVoiceEdit();
+    flushSave();   // 离开编辑就落盘
+  }
   state.mode = mode;
   const editing = mode === 'edit';
   const cueing = mode === 'cue';
@@ -1322,6 +1326,7 @@ el.editor.addEventListener('compositionend', () => setTimeout(detectSlash, 0));
 
 el.editor.addEventListener('input', () => {
   if (!state.draft) return;
+  if (!state.voiceApplying) clearVoiceUndo();
   state.draft.content = el.editor.value;
   el.counter.textContent = `${countChars(el.editor.value)} 字`;
   el.editor.style.height = 'auto';
@@ -3263,6 +3268,115 @@ el.editor.addEventListener('drop', (e) => {
   const at = caretFromPoint(el.editor, e.clientX, e.clientY);
   insertImageMark(at ?? markCaret ?? el.editor.selectionStart);
 });
+
+/* ---------------- 语音改稿 ---------------- */
+
+let voiceRec = null;
+let voiceChunks = [];
+let voiceUndo = null;
+let voiceTimer = null;
+
+function clearVoiceUndo() {
+  voiceUndo = null;
+  el.voiceNote?.classList.add('hidden');
+}
+
+function stopVoiceEdit() {
+  if (voiceTimer) { clearTimeout(voiceTimer); voiceTimer = null; }
+  if (voiceRec && voiceRec.state !== 'inactive') voiceRec.stop();
+}
+
+function setVoiceBtn(recording) {
+  if (!el.voiceBtn) return;
+  el.voiceBtn.classList.toggle('recording', recording);
+  el.voiceBtn.textContent = recording ? '说完了' : '语音改稿';
+  el.voiceBtn.disabled = false;
+}
+
+el.voiceBtn?.addEventListener('click', async () => {
+  if (!state.draft?.content?.trim()) { toast('还没有正文'); return; }
+  if (voiceRec && voiceRec.state === 'recording') { voiceRec.stop(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    toast('没有拿到麦克风');
+    return;
+  }
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  voiceChunks = [];
+  rec.ondataavailable = (ev) => { if (ev.data?.size) voiceChunks.push(ev.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    voiceRec = null;
+    if (voiceTimer) { clearTimeout(voiceTimer); voiceTimer = null; }
+    const blob = new Blob(voiceChunks, { type: rec.mimeType || 'audio/webm' });
+    voiceChunks = [];
+    if (state.mode === 'edit' && blob.size > 0) submitVoiceEdit(blob);
+    else setVoiceBtn(false);
+  };
+  voiceRec = rec;
+  rec.start();
+  setVoiceBtn(true);
+  voiceTimer = setTimeout(() => { if (voiceRec) voiceRec.stop(); }, 90000);
+});
+
+async function submitVoiceEdit(blob) {
+  if (!el.voiceBtn || !state.draft) return;
+  el.voiceBtn.disabled = true;
+  el.voiceBtn.textContent = '识别中…';
+  try {
+    const res = await fetch(`/api/drafts/${state.draft.id}/voice-edit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': blob.type || 'audio/webm',
+        'X-Filename': 'voice.webm',
+      },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `语音改稿失败（${res.status}）`);
+    showVoiceResult(data);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    setVoiceBtn(false);
+  }
+}
+
+function showVoiceResult(data) {
+  const heard = data.transcript ? `听到：${data.transcript}` : '';
+  const understood = data.note ? `理解成：${data.note}` : '';
+  if (data.changed && data.content && data.content !== el.editor.value) {
+    voiceUndo = el.editor.value;
+    state.voiceApplying = true;
+    el.editor.value = data.content;
+    el.editor.dispatchEvent(new Event('input'));
+    state.voiceApplying = false;
+    const n = (data.applied || []).reduce((s, x) => s + (x.count || 1), 0);
+    el.voiceNote.innerHTML = `${esc(heard)}<br>${esc(understood)}<br>改了 ${n} 处。`
+      + `<button type="button" class="mini" id="voiceUndoBtn">撤销</button>`;
+    el.voiceNote.classList.remove('hidden');
+    document.getElementById('voiceUndoBtn')?.addEventListener('click', () => {
+      if (voiceUndo == null) return;
+      state.voiceApplying = true;
+      el.editor.value = voiceUndo;
+      el.editor.dispatchEvent(new Event('input'));
+      state.voiceApplying = false;
+      clearVoiceUndo();
+      toast('已撤销这次语音改稿');
+    });
+    return;
+  }
+  const why = (data.skipped || []).filter(Boolean).join('；');
+  el.voiceNote.innerHTML = `${esc(heard)}${understood ? `<br>${esc(understood)}` : ''}`
+    + `<br>正文没有改。${why ? esc(why) : ''}`;
+  el.voiceNote.classList.remove('hidden');
+  voiceUndo = null;
+}
 
 /* 模式变了就更新工具条的样子——哪个按钮该出现、指示器写什么 */
 function syncModeUi(mode) {

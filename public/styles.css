@@ -576,6 +576,9 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 .mark-chip:active { cursor: grabbing; }
 .mark-dock .hint { margin: 0; }
+.voice-note { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.voice-note button { margin-left: 8px; }
+#voiceBtn.recording { color: var(--signal); border-color: var(--signal); }
 
 .editor-bar {
   display: flex; align-items: center; gap: 10px;

@@ -15,6 +15,7 @@ import {
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
+  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM,
 } from './prompts.js';
 
 export const STAGES = [
@@ -126,6 +127,27 @@ export const PROMPT_DOCS = () => [
     guards: ['用户确认采纳后才把内容喂进语气学习，未采纳的不计入'],
     system: ASSIST_SYSTEM,
     extra: { 划词改写: A(ASSIST_ACTIONS), 编辑器续写: A(COMPOSE_ACTIONS) },
+  },
+  {
+    key: 'voice-edit', name: '语音改稿', stage: 'write', mode: '结构化输出',
+    where: '修改模式里的「语音改稿」。按一下说话，再说一次结束',
+    positioning: '用嘴说改哪里、怎么改。话筒进来的是修改要求，不是一段要贴进去的新稿。',
+    value: [
+      '用户：改稿时手里往往不在键盘上，说一句比选中再点菜单快。',
+      '产品：只动说中的那几句，避免「重说一遍等于重写整篇」。',
+    ],
+    logic: [
+      '先用 speech 把话筒转成文字。这段转写是修改要求。',
+      '理解走 **quality-chat**。模型返回若干 find / replace，find 必须从当前正文逐字照抄。',
+      '用户说「所有」「每一处」时 all 为 true，否则只改唯一能对上的那一处。',
+      '改完写回编辑器，并留下这一次之前的正文，可以撤销。',
+    ],
+    guards: [
+      '**find 在正文里对不上就丢掉这一处**，不采用模型重写的整篇',
+      '同一句出现多次、又没说全改，这一处不改，避免改错地方',
+      '听不清或说不清改哪句时，edits 为空，正文不动',
+    ],
+    system: VOICE_EDIT_SYSTEM, schema: VOICE_EDIT_SCHEMA,
   },
   {
     key: 'review', name: '成稿检查', stage: 'polish', mode: '结构化输出',

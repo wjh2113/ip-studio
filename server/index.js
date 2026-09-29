@@ -78,6 +78,7 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/content$/, R.handleContent],
   ['PUT', /^\/api\/drafts\/(?<id>\d+)\/content$/, R.handleSaveContent],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/assist$/, R.handleAssist],
+  ['POST', /^\/api\/drafts\/(?<id>\d+)\/voice-edit$/, R.handleVoiceEdit],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/review$/, R.handleReview],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/cues$/, R.handleCues],
   ['GET', /^\/api\/drafts\/(?<id>\d+)\/speaks$/, R.handleSpeakList],
@@ -162,9 +163,10 @@ const server = createServer(async (req, res) => {
     const params = path.match(match[1]).groups || {};
     try {
       // 口播录音是原始字节，不走 JSON
-      if (req.method === 'POST' && /^\/api\/drafts\/\d+\/speaks$/.test(path)) {
+      if (req.method === 'POST' && /^\/api\/drafts\/\d+\/(speaks|voice-edit)$/.test(path)) {
         const file = await readUpload(req);
-        await R.handleSpeakCreate(req, res, file, params);
+        if (path.endsWith('/voice-edit')) await R.handleVoiceEdit(req, res, file, params);
+        else await R.handleSpeakCreate(req, res, file, params);
         return;
       }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉

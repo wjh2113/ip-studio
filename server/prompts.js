@@ -303,6 +303,86 @@ ${after || '（光标在文章最末尾）'}
 ${instruction}`;
 
 /* ==================================================================
+ * 语音改稿：话筒里说的是修改要求，不是要贴进正文的新稿
+ * ================================================================== */
+
+export const VOICE_EDIT_SCHEMA = {
+  type: 'object',
+  properties: {
+    note: { type: 'string', description: '用一句话复述听懂的修改要求，不要复述整篇' },
+    edits: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          find: { type: 'string', description: '从正文逐字照抄要改的那一句或那一段，必须能原样找到' },
+          replace: { type: 'string', description: '换成的文字。用户要删掉时给空字符串' },
+          all: { type: 'boolean', description: '用户明确说每一处都改时为 true，否则 false' },
+        },
+        required: ['find', 'replace', 'all'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['note', 'edits'],
+  additionalProperties: false,
+};
+
+export const VOICE_EDIT_SYSTEM =
+`你在改一篇已经写好的稿子。用户用嘴说了想改哪里、怎么改。你会拿到转写和全文。
+
+转写是**修改要求**，不是要贴进正文的新段落。听懂要求，只改他说到的地方。
+
+**怎么改**：
+- 每一处改动用 find / replace。find 必须从正文**逐字照抄**，包括标点，让程序能原样找到。
+- replace 只放这一处换成的文字。删掉就给空字符串。
+- 没说要改的句子一个字都不要动，也不要借机润色。
+- 他说「所有」「每一处」时，all 为 true；否则 all 为 false，只改他点到的那一处。
+- 他说不清改哪一句、或转写听不清时，edits 给空数组，note 里说明听不懂哪一点。
+- 不要编造具体数据、机构名、他人引语。语气跟这篇原文一致。
+- 全文使用简体中文。note 一句话。`;
+
+export const voiceEditUser = (draft, transcript) =>
+`—— 修改要求（语音转写） ——
+${transcript}
+
+—— 当前正文 ——
+===== 正文开始 =====
+${draft.content || ''}
+===== 正文结束 =====
+
+只改转写里要求的地方。find 必须从上面的正文逐字照抄。`;
+
+/* find 对不上正文的改动丢掉，避免整篇被换掉。all 为真才替换每一处。 */
+export function applyVoiceEdits(content, edits) {
+  let text = String(content || '');
+  const applied = [];
+  const skipped = [];
+  for (const raw of (Array.isArray(edits) ? edits : []).slice(0, 8)) {
+    const find = String(raw?.find || '');
+    const replace = String(raw?.replace ?? '');
+    const all = Boolean(raw?.all);
+    if (!find.trim()) {
+      skipped.push('没有给出要改的原文');
+      continue;
+    }
+    const count = text.split(find).length - 1;
+    if (!count) {
+      skipped.push(`找不到「${find.slice(0, 24)}」`);
+      continue;
+    }
+    if (!all && count !== 1) {
+      skipped.push(`「${find.slice(0, 24)}」有 ${count} 处，没有说明要全改`);
+      continue;
+    }
+    text = all ? text.replaceAll(find, replace) : text.replace(find, replace);
+    applied.push({ find: find.slice(0, 80), replace: replace.slice(0, 80), count: all ? count : 1 });
+  }
+  return { content: text, applied, skipped };
+}
+
+/* ==================================================================
  * 题材推荐：进入创作简报时默认给三条这个号还没写过的题材
  * ================================================================== */
 
