@@ -235,7 +235,6 @@
           <!-- 保存跟着编辑模式出现在这一行。原来在编辑区底部，
                离正文远、也和「确认/导出」这组动作脱节 -->
           <span class="save-state hidden" id="saveState"></span>
-          <button class="btn ghost small hidden" id="markBtn" type="button">插入图片位</button>
           <button class="btn ghost small hidden" id="saveBtn">保存</button>
 
           <!-- 这几个是原来的按钮，逻辑都还在用，只是不再直接露出来——
@@ -287,7 +286,11 @@
         </div>
 
         <article class="content" id="content"></article>
-        <p class="hint hidden" id="markHint">在要插图的地方点「插入图片位」，或自己输入 &lt;此处放图片&gt;。保存后去「确认 → 配图」，图会落在这些位置。</p>
+        <div class="mark-dock hidden" id="markDock">
+          <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0"
+                title="拖进正文，或点一下插到光标处">此处放图片</span>
+          <span class="hint" id="markHint">先把光标点在要插图的地方，再把这个标签拖进去。点一下也会插到光标处。</span>
+        </div>
         <textarea class="editor hidden" id="editor" spellcheck="false"></textarea>
 
         <div class="cues hidden" id="cuesPane">

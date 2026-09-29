@@ -556,6 +556,26 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   padding: 14px 16px; border-radius: 10px; background: var(--panel-2);
   resize: vertical; tab-size: 2;
 }
+.editor.mark-over { outline: 2px dashed var(--accent); outline-offset: 2px; }
+
+.mark-dock {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 8px;
+}
+.mark-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px 5px 8px; border-radius: 8px;
+  border: 1px dashed var(--accent); background: var(--accent-soft); color: var(--accent-ink);
+  font-size: 13px; font-weight: 600; cursor: grab; user-select: none;
+}
+.mark-chip::before {
+  content: ""; width: 14px; height: 12px; border-radius: 2px;
+  border: 1.5px solid currentColor; background:
+    linear-gradient(currentColor, currentColor) 2px 7px / 4px 1.5px no-repeat,
+    linear-gradient(currentColor, currentColor) 7px 4px / 5px 1.5px no-repeat;
+}
+.mark-chip:active { cursor: grabbing; }
+.mark-dock .hint { margin: 0; }
 
 .editor-bar {
   display: flex; align-items: center; gap: 10px;

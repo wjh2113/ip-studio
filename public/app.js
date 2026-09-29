@@ -33,7 +33,7 @@ const el = {
   illusBtn: $('illusBtn'), illusBar: $('illusBar'), illusChip: $('illusChip'),
   illusHint: $('illusHint'), illusList: $('illusList'),
   illusPlanBtn: $('illusPlanBtn'), illusRunBtn: $('illusRunBtn'),
-  markBtn: $('markBtn'), markHint: $('markHint'),
+  markBtn: $('markBtn'), markHint: $('markHint'), markDock: $('markDock'),
   briefCard: $('briefCard'), main: $('main'),
   creditChip: $('creditChip'), planModal: $('planModal'), planClose: $('planClose'),
   planPeriod: $('planPeriod'), planNow: $('planNow'), planBreakdown: $('planBreakdown'),
@@ -3165,20 +3165,103 @@ async function downloadDocx() {
 
 el.editBtn.addEventListener('click', () => setMode('edit'));
 el.backReadBtn.addEventListener('click', () => setMode('read'));
-el.markBtn?.addEventListener('click', () => {
+
+const MARK_MIME = 'application/x-image-mark';
+let markDragged = false;
+let markCaret = null;
+
+function insertImageMark(at) {
   const ta = el.editor;
-  if (!ta) return;
-  const ins = IMAGE_MARK;
-  const start = ta.selectionStart ?? ta.value.length;
-  const end = ta.selectionEnd ?? start;
-  const pad = start > 0 && ta.value[start - 1] !== '\n' ? '\n' : '';
-  const tail = end < ta.value.length && ta.value[end] !== '\n' ? '\n' : '';
-  const chunk = `${pad}${ins}${tail}`;
-  ta.value = ta.value.slice(0, start) + chunk + ta.value.slice(end);
-  const caret = start + chunk.length;
-  ta.selectionStart = ta.selectionEnd = caret;
+  if (!ta || !state.draft) return;
+  const index = Math.max(0, Math.min(at ?? ta.selectionStart ?? ta.value.length, ta.value.length));
+  const pad = index > 0 && ta.value[index - 1] !== '\n' ? '\n' : '';
+  const tail = index < ta.value.length && ta.value[index] !== '\n' ? '\n' : '';
+  const chunk = `${pad}${IMAGE_MARK}${tail}`;
+  ta.value = ta.value.slice(0, index) + chunk + ta.value.slice(index);
+  const caret = index + chunk.length;
   ta.focus();
+  ta.selectionStart = ta.selectionEnd = caret;
   ta.dispatchEvent(new Event('input'));
+}
+
+/* 拖进正文时，尽量落在鼠标下的那个字。textarea 没有可靠的光标坐标时，用拖之前记下的光标。 */
+function caretFromPoint(textarea, x, y) {
+  const direct = document.caretPositionFromPoint?.(x, y);
+  if (direct && direct.offsetNode === textarea) return direct.offset;
+  const range = document.caretRangeFromPoint?.(x, y);
+  if (range && range.startContainer === textarea) return range.startOffset;
+
+  const rect = textarea.getBoundingClientRect();
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+  const style = getComputedStyle(textarea);
+  const mirror = document.createElement('div');
+  mirror.style.cssText = 'position:absolute;visibility:hidden;white-space:pre-wrap;word-wrap:break-word;overflow:hidden;';
+  for (const p of ['boxSizing', 'width', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'fontStyle', 'fontWeight', 'fontSize', 'fontFamily', 'lineHeight', 'letterSpacing', 'textIndent', 'tabSize']) {
+    mirror.style[p] = style[p];
+  }
+  mirror.style.width = `${textarea.clientWidth}px`;
+  document.body.appendChild(mirror);
+  const localX = x - rect.left - parseFloat(style.borderLeftWidth) + textarea.scrollLeft;
+  const localY = y - rect.top - parseFloat(style.borderTopWidth) + textarea.scrollTop;
+  const text = textarea.value;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    mirror.textContent = text.slice(0, mid);
+    const span = document.createElement('span');
+    span.textContent = text[mid] || ' ';
+    mirror.appendChild(span);
+    const top = span.offsetTop;
+    const left = span.offsetLeft;
+    const w = span.offsetWidth || 8;
+    const h = span.offsetHeight || parseFloat(style.lineHeight) || 20;
+    span.remove();
+    if (top + h < localY || (top <= localY && top + h >= localY && left + w <= localX)) lo = mid + 1;
+    else hi = mid;
+  }
+  mirror.remove();
+  return lo;
+}
+
+el.markBtn?.addEventListener('dragstart', (e) => {
+  markDragged = true;
+  markCaret = el.editor?.selectionStart ?? null;
+  e.dataTransfer.setData(MARK_MIME, IMAGE_MARK);
+  e.dataTransfer.setData('text/plain', IMAGE_MARK);
+  e.dataTransfer.effectAllowed = 'copy';
+});
+el.markBtn?.addEventListener('dragend', () => {
+  el.editor?.classList.remove('mark-over');
+  setTimeout(() => { markDragged = false; }, 0);
+});
+el.markBtn?.addEventListener('click', () => {
+  if (markDragged) { markDragged = false; return; }
+  insertImageMark(el.editor?.selectionStart);
+});
+el.markBtn?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); insertImageMark(el.editor?.selectionStart); }
+});
+
+el.editor.addEventListener('dragover', (e) => {
+  if (!markDragged) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  el.editor.classList.add('mark-over');
+  const at = caretFromPoint(el.editor, e.clientX, e.clientY);
+  if (at != null) {
+    markCaret = at;
+    el.editor.setSelectionRange(at, at);
+  }
+});
+el.editor.addEventListener('dragleave', () => el.editor.classList.remove('mark-over'));
+el.editor.addEventListener('drop', (e) => {
+  const payload = e.dataTransfer?.getData(MARK_MIME) || e.dataTransfer?.getData('text/plain');
+  if (payload !== IMAGE_MARK) return;
+  e.preventDefault();
+  el.editor.classList.remove('mark-over');
+  const at = caretFromPoint(el.editor, e.clientX, e.clientY);
+  insertImageMark(at ?? markCaret ?? el.editor.selectionStart);
 });
 
 /* 模式变了就更新工具条的样子——哪个按钮该出现、指示器写什么 */
@@ -3192,8 +3275,7 @@ function syncModeUi(mode) {
   // 保存只在编辑时有意义，跟着模式露出/收起
   el.saveBtn.classList.toggle('hidden', !editing);
   el.saveState.classList.toggle('hidden', !editing);
-  el.markBtn?.classList.toggle('hidden', !editing);
-  el.markHint?.classList.toggle('hidden', !editing);
+  el.markDock?.classList.toggle('hidden', !editing);
 }
 
 
