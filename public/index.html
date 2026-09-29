@@ -78,6 +78,7 @@
       <div class="history-filter" id="historyFilter">
         <button data-arch="0" class="on">进行中<span class="n" id="cntActive"></span></button>
         <button data-arch="1">已归档<span class="n" id="cntArchived"></span></button>
+        <button data-view="speaks">口播<span class="n" id="cntSpeaks"></span></button>
       </div>
 
       <div class="history" id="history"></div>
@@ -300,6 +301,17 @@
             </div>
           </div>
           <div class="cue-list" id="cueList"></div>
+          <div class="speak-box" id="speakBox">
+            <div class="speak-head">
+              <div>
+                <b>口播记录</b>
+                <span class="hint" id="speakHint">上传这一遍的录音，留下总评。记录会一直留着，只有你删除才会去掉。</span>
+              </div>
+              <button class="btn primary small" id="speakUploadBtn" disabled>上传录音</button>
+              <input type="file" id="speakFile" hidden accept="audio/*,video/mp4,video/webm,.mp3,.wav,.m4a,.webm,.mp4,.ogg" />
+            </div>
+            <div id="speakList"></div>
+          </div>
         </div>
 
         <div class="editor-bar hidden" id="editorBar">

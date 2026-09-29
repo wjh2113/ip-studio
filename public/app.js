@@ -23,6 +23,9 @@ const el = {
   editor: $('editor'), editorBar: $('editorBar'),
   cuesPane: $('cuesPane'), cuesOverall: $('cuesOverall'), cueList: $('cueList'),
   cuesRunBtn: $('cuesRunBtn'), copyCuesBtn: $('copyCuesBtn'), prompterBtn: $('prompterBtn'),
+  speakBox: $('speakBox'), speakHint: $('speakHint'), speakList: $('speakList'),
+  speakUploadBtn: $('speakUploadBtn'), speakFile: $('speakFile'),
+  cntSpeaks: $('cntSpeaks'),
   matKind: $('matKind'), matTitle: $('matTitle'), matBody: $('matBody'), matTags: $('matTags'),
   matSaveBtn: $('matSaveBtn'), matList: $('matList'), matHint: $('matHint'), matError: $('matError'),
   illusBtn: $('illusBtn'), illusBar: $('illusBar'), illusChip: $('illusChip'),
@@ -86,7 +89,8 @@ const state = {
   mode: 'read', dirty: false, assist: null, ideaFailed: new Set(),
   view: 'write', boards: null, paramsUnlocked: false,
   sections: [], sectionId: null, editingSection: null, presets: [], sectionPersonaId: null,
-  showArchived: false, counts: { active: 0, archived: 0, activeDone: 0 },
+  showArchived: false, historyMode: 'drafts', counts: { active: 0, archived: 0, activeDone: 0 },
+  speaks: [], focusSpeakId: null,
 };
 
 const currentPersona = () => state.personas.find((p) => p.id === state.personaId) || null;
@@ -861,6 +865,7 @@ async function readSSE(res, onEvent) {
 
 /* ---------------- 历史 ---------------- */
 async function loadHistory() {
+  if (state.historyMode === 'speaks') return loadSpeakHistory();
   try {
     const q = new URLSearchParams();
     if (state.personaId !== null) q.set('persona_id', state.personaId);
@@ -869,13 +874,17 @@ async function loadHistory() {
     state.list = drafts;
     state.counts = counts;
     renderHistory();
+    api('/speaks').then(({ speaks }) => {
+      if (el.cntSpeaks) el.cntSpeaks.textContent = speaks.length || '';
+    }).catch(() => {});
   } catch { /* 未登录或网络异常时静默 */ }
 }
 
 el.historyFilter.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-arch]');
+  const btn = e.target.closest('button');
   if (!btn || state.streaming) return;
-  state.showArchived = btn.dataset.arch === '1';
+  state.historyMode = btn.dataset.view === 'speaks' ? 'speaks' : 'drafts';
+  if (state.historyMode === 'drafts') state.showArchived = btn.dataset.arch === '1';
   [...el.historyFilter.children].forEach((b) => b.classList.toggle('on', b === btn));
   loadHistory();
 });
@@ -897,6 +906,10 @@ el.archiveDoneBtn.addEventListener('click', async () => {
 });
 
 function renderHistory() {
+  if (state.historyMode === 'speaks') {
+    loadSpeakHistory();
+    return;
+  }
   const list = state.list || [];
   el.cntActive.textContent = state.counts.active || '';
   el.cntArchived.textContent = state.counts.archived || '';
@@ -929,6 +942,28 @@ function renderHistory() {
 }
 
 el.history.addEventListener('click', async (e) => {
+  const speakDel = e.target.closest('button[data-speak-del]');
+  if (speakDel) {
+    e.stopPropagation();
+    const id = Number(speakDel.dataset.speakDel);
+    if (!await ask.confirm({ title: '删除这一遍口播记录？', body: '录音和总评会一起去掉。', ok: '删除', danger: true })) return;
+    try {
+      await api(`/speaks/${id}`, { method: 'DELETE' });
+      if (state.focusSpeakId === id) state.focusSpeakId = null;
+      toast('已删除这遍口播');
+      loadHistory();
+      if (state.mode === 'cue') loadDraftSpeaks();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+
+  const speakItem = e.target.closest('.history-item[data-speak]');
+  if (speakItem) {
+    if (state.streaming) return;
+    await openSpeakRecord(Number(speakItem.dataset.speak));
+    return;
+  }
+
   const arch = e.target.closest('button[data-arch-id]');
   if (arch) {
     e.stopPropagation();
@@ -1248,7 +1283,10 @@ function setMode(mode) {
     el.editor.style.height = `${Math.max(360, el.editor.scrollHeight)}px`;
     el.editor.focus();
   }
-  if (cueing) renderCues(state.draft?.cues);
+  if (cueing) {
+    renderCues(state.draft?.cues);
+    loadDraftSpeaks();
+  }
 }
 
 
@@ -2268,6 +2306,7 @@ function renderCues(cues) {
   el.cuesRunBtn.textContent = cues ? '重新生成' : '生成口播提示';
   el.copyCuesBtn.classList.toggle('hidden', !cues);
   el.prompterBtn.classList.toggle('hidden', !cues);
+  if (el.speakUploadBtn) el.speakUploadBtn.disabled = !cues;
 
   if (!cues) {
     el.cuesOverall.innerHTML = '';
@@ -2300,6 +2339,192 @@ function renderCues(cues) {
     </div>`;
   }).join('');
 }
+
+/* ==================================================================
+ * 口播记录：上传录音 → 总评留档。改稿不会清掉这些记录。
+ * ================================================================== */
+
+function speakStamp(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function speakReviewHtml(s) {
+  if (s.status === 'failed') {
+    return `<div class="speak-fail">${esc(s.error || '评估失败')}</div>
+      <button class="btn ghost small" data-speak-retry="${s.id}">重新评估</button>`;
+  }
+  if (s.status !== 'ready' || !s.review) return '<div class="hint">正在评估…</div>';
+  const dims = (s.review.dims || []).map((d) => `
+    <div class="speak-dim"><b>${esc(d.key)}</b><span>${d.score == null ? '—' : d.score}</span>
+      <em>${esc(d.note || '')}</em></div>`).join('');
+  const lifts = (s.review.lifts || []).map((l) => `
+    <li><b>${esc(l.quote || '整遍')}</b>　${esc(l.do)}${l.lose ? ` <span class="hint">−${l.lose}</span>` : ''}</li>`).join('');
+  return `
+    <div class="speak-score">${s.review.score == null ? '—' : s.review.score}<em>分</em></div>
+    <div class="speak-dims">${dims}</div>
+    ${lifts ? `<ol class="speak-lifts">${lifts}</ol>` : ''}
+    <p class="speak-next">${esc(s.review.next || '')}</p>
+    ${s.audio ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` : ''}`;
+}
+
+function renderDraftSpeaks() {
+  if (!el.speakList) return;
+  const list = state.speaks || [];
+  if (!list.length) {
+    el.speakList.innerHTML = '<p class="hint">还没有口播记录。</p>';
+    return;
+  }
+  el.speakList.innerHTML = list.map((s) => {
+    const mark = s.draftGone ? '稿子已不在' : (s.stale ? '当时的稿子' : '');
+    const open = state.focusSpeakId === s.id;
+    return `
+    <div class="speak-row ${open ? 'open' : ''}" data-speak-row="${s.id}">
+      <button type="button" class="speak-sum" data-speak-open="${s.id}">
+        <b>${s.score == null ? '—' : s.score}</b>
+        <span>${esc(speakStamp(s.createdAt))}</span>
+        <span class="grow">${esc(s.next || s.error || (s.status === 'failed' ? '评估失败' : ''))}</span>
+        ${mark ? `<em>${mark}</em>` : ''}
+      </button>
+      <button type="button" class="mini del" data-speak-del="${s.id}" title="删除这遍">删除</button>
+      ${open ? `<div class="speak-detail">${speakReviewHtml(s)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function loadDraftSpeaks() {
+  if (!state.draft || state.mode !== 'cue') return;
+  try {
+    const { speaks } = await api(`/drafts/${state.draft.id}/speaks`);
+    state.speaks = speaks;
+    if (el.cntSpeaks) el.cntSpeaks.textContent = '';
+    renderDraftSpeaks();
+  } catch (err) { toast(err.message); }
+}
+
+async function loadSpeakHistory() {
+  try {
+    const { speaks } = await api('/speaks');
+    state.speakHistory = speaks;
+    if (el.cntSpeaks) el.cntSpeaks.textContent = speaks.length || '';
+    el.historyFoot.classList.add('hidden');
+    if (!speaks.length) {
+      el.history.innerHTML = '<div class="empty">还没有口播记录<br />生成口播提示后上传录音</div>';
+      return;
+    }
+    el.history.innerHTML = speaks.map((s) => `
+      <div class="history-item ${state.focusSpeakId === s.id ? 'active' : ''}" data-speak="${s.id}">
+        <div class="acts">
+          <button class="del" data-speak-del="${s.id}" title="删除">×</button>
+        </div>
+        <h4>${s.score == null ? '—' : `${s.score} 分`}　${esc(s.title || '未命名')}</h4>
+        <p><span>${esc(speakStamp(s.createdAt))}</span><span>·</span>
+          <span>${esc(s.draftGone ? '稿子已不在' : (s.stale ? '当时的稿子' : (s.next || s.error || '总评')))}</span></p>
+      </div>`).join('');
+  } catch { /* 未登录时静默 */ }
+}
+
+async function openSpeakRecord(id) {
+  let speak = (state.speaks || []).find((s) => s.id === id)
+    || (state.speakHistory || []).find((s) => s.id === id);
+  try {
+    const got = await api(`/speaks/${id}`);
+    speak = got.speak;
+  } catch (err) { toast(err.message); return; }
+  state.focusSpeakId = id;
+  if (!speak.draftId || speak.draftGone) {
+    document.querySelectorAll('.speak-orphan').forEach((n) => n.remove());
+    const item = el.history.querySelector(`[data-speak="${id}"]`);
+    if (item) {
+      const box = document.createElement('div');
+      box.className = 'speak-orphan';
+      box.innerHTML = speakReviewHtml(speak);
+      item.appendChild(box);
+    }
+    toast(speak.draftGone ? '稿子已经不在了，这是当时的总评' : '这遍口播还在');
+    return;
+  }
+  if (state.draft?.id !== speak.draftId) {
+    const { draft } = await api(`/drafts/${speak.draftId}`);
+    setDraft(draft);
+  }
+  if (state.mode !== 'cue') setMode('cue');
+  else loadDraftSpeaks();
+}
+
+el.speakUploadBtn?.addEventListener('click', () => {
+  if (!state.draft?.cues?.cues?.length) { toast('先生成口播提示'); return; }
+  el.speakFile.click();
+});
+
+el.speakFile?.addEventListener('change', async () => {
+  const file = el.speakFile.files?.[0];
+  el.speakFile.value = '';
+  if (!file || !state.draft) return;
+  if (file.size > 24 * 1024 * 1024) { toast('录音请小于 24MB'); return; }
+  el.speakUploadBtn.disabled = true;
+  el.speakUploadBtn.textContent = '评估中…';
+  try {
+    const res = await fetch(`/api/drafts/${state.draft.id}/speaks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(file.name || 'take.webm'),
+      },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `上传失败（${res.status}）`);
+    state.focusSpeakId = data.speak?.id || null;
+    if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
+    else toast('这遍口播已留档');
+    await loadDraftSpeaks();
+    if (state.historyMode === 'speaks') loadSpeakHistory();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    el.speakUploadBtn.disabled = !state.draft?.cues?.cues?.length;
+    el.speakUploadBtn.textContent = '上传录音';
+  }
+});
+
+el.speakList?.addEventListener('click', async (e) => {
+  const retry = e.target.closest('[data-speak-retry]');
+  if (retry) {
+    const id = Number(retry.dataset.speakRetry);
+    retry.disabled = true;
+    retry.textContent = '评估中…';
+    try {
+      const { speak } = await api(`/speaks/${id}/retry`, { method: 'POST', body: {} });
+      state.focusSpeakId = speak.id;
+      if (speak.status === 'failed') toast(speak.error || '评估失败');
+      await loadDraftSpeaks();
+      if (state.historyMode === 'speaks') loadSpeakHistory();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const del = e.target.closest('[data-speak-del]');
+  if (del) {
+    const id = Number(del.dataset.speakDel);
+    if (!await ask.confirm({ title: '删除这一遍口播记录？', body: '录音和总评会一起去掉。', ok: '删除', danger: true })) return;
+    try {
+      await api(`/speaks/${id}`, { method: 'DELETE' });
+      if (state.focusSpeakId === id) state.focusSpeakId = null;
+      toast('已删除这遍口播');
+      await loadDraftSpeaks();
+      if (state.historyMode === 'speaks') loadSpeakHistory();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const open = e.target.closest('[data-speak-open]');
+  if (!open) return;
+  const id = Number(open.dataset.speakOpen);
+  state.focusSpeakId = state.focusSpeakId === id ? null : id;
+  renderDraftSpeaks();
+});
 
 /* 把要重读的词标出来（先转义再替换，避免把标签打散） */
 function highlightStress(quote, stress = []) {

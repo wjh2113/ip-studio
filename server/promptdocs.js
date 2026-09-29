@@ -12,6 +12,7 @@ import {
   ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS,
   CONTENT_SYSTEM, CUES_SCHEMA, CUES_SYSTEM, DIGEST_SYSTEM,
   HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM,
+  SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
 } from './prompts.js';
@@ -217,6 +218,25 @@ export const PROMPT_DOCS = () => [
       '覆盖率低于 60% 时如实提示"只覆盖了正文约 X%"，而不是假装标全了',
     ],
     system: CUES_SYSTEM, schema: CUES_SCHEMA,
+  },
+  {
+    key: 'speak-review', name: '口播总评', stage: 'speak', mode: '结构化输出',
+    where: '口播提示之后：上传录音，出一张总分和待提升',
+    positioning: '录完才有的那一层。口播提示是开录前的指导，总评是这一遍念完之后的分数。',
+    value: [
+      '用户：能回看每一遍的分数和当时的录音，知道下一遍改哪一句。',
+      '产品：记录按遍留档，改稿和重做提示都不清掉。',
+    ],
+    logic: [
+      '总评走 quality-chat，不走 fast-chat。',
+      '发音、出镜没有材料时分数是 null，权重摊到其余项，不当成 0 分。',
+      '录音文件先落盘，转写或总评失败也保留这条记录。',
+    ],
+    guards: [
+      '只有用户点删除才去掉录音和总评',
+      'quote 对不上稿子快照的待提升条目丢掉',
+    ],
+    system: SPEAK_REVIEW_SYSTEM, schema: SPEAK_REVIEW_SCHEMA,
   },
   {
     key: 'adapt', name: '多平台适配', stage: 'publish', mode: '纯文本',

@@ -78,6 +78,12 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/assist$/, R.handleAssist],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/review$/, R.handleReview],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/cues$/, R.handleCues],
+  ['GET', /^\/api\/drafts\/(?<id>\d+)\/speaks$/, R.handleSpeakList],
+  ['POST', /^\/api\/drafts\/(?<id>\d+)\/speaks$/, R.handleSpeakCreate],
+  ['GET', /^\/api\/speaks$/, R.handleSpeakList],
+  ['GET', /^\/api\/speaks\/(?<sid>\d+)$/, R.handleSpeakGet],
+  ['POST', /^\/api\/speaks\/(?<sid>\d+)\/retry$/, R.handleSpeakRetry],
+  ['DELETE', /^\/api\/speaks\/(?<sid>\d+)$/, R.handleSpeakDelete],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/variants$/, R.handleVariant],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus$/, R.handleIllus],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus\/(?<i>\d+)\/image$/, R.handleIllusImage],
@@ -134,6 +140,11 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path.startsWith('/speak/')) {
+    await serveOwned(path, '/speak/', 'speaks', req, res);
+    return;
+  }
+
   if (path.startsWith('/api/')) {
     try { rateLimit(req, path); }
     catch (err) {
@@ -145,6 +156,12 @@ const server = createServer(async (req, res) => {
 
     const params = path.match(match[1]).groups || {};
     try {
+      // 口播录音是原始字节，不走 JSON
+      if (req.method === 'POST' && /^\/api\/drafts\/\d+\/speaks$/.test(path)) {
+        const file = await readUpload(req);
+        await R.handleSpeakCreate(req, res, file, params);
+        return;
+      }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉
       const raw = req.method === 'POST' && /^\/api\/pay\/notify\//.test(path);
       const body = raw || req.method === 'GET' || req.method === 'DELETE' ? {} : await readJSON(req);
@@ -192,9 +209,39 @@ async function readJSON(req) {
   catch { throw new HttpError(400, '请求体不是合法 JSON'); }
 }
 
+const MAX_AUDIO = 24 * 1024 * 1024;
+const AUDIO_EXT = {
+  'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+  'audio/webm': 'webm', 'video/webm': 'webm', 'audio/mp4': 'm4a', 'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a', 'video/mp4': 'mp4', 'audio/ogg': 'ogg', 'video/ogg': 'ogg',
+};
+
+async function readUpload(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_AUDIO) throw new HttpError(413, '录音请小于 24MB');
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  let ext = AUDIO_EXT[mime];
+  if (!ext) {
+    let raw = String(req.headers['x-filename'] || '');
+    try { raw = decodeURIComponent(raw); } catch { /* 文件名不是合法转义就按原样取后缀 */ }
+    const m = raw.toLowerCase().match(/\.([a-z0-9]+)$/);
+    const allow = { mp3: 'mp3', wav: 'wav', webm: 'webm', m4a: 'm4a', mp4: 'mp4', ogg: 'ogg', mpeg: 'mp3' };
+    if (m && allow[m[1]]) ext = allow[m[1]];
+  }
+  if (!ext) throw new HttpError(400, '请上传 mp3、wav、m4a、webm 或 mp4');
+  if (!buffer.length) throw new HttpError(400, '录音是空的');
+  return { buffer, mime: mime || 'application/octet-stream', ext };
+}
+
 /* 用户自己的媒体文件：路径里的 owner 必须就是当前登录用户，别人的文件一律 403 */
 const MEDIA_TYPES = {
-  wav: 'audio/wav', mp3: 'audio/mpeg',
+  wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
   bmp: 'image/bmp', svg: 'image/svg+xml',
   mp4: 'video/mp4', webm: 'video/webm',

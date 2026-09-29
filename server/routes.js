@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import {
   Admins, DATA_DIR, Drafts, MATERIAL_KINDS, Materials, Personas, Pool,
-  Evals, Orders, Quota, Samples, Sections, Usage, Users, Variants,
+  Evals, Orders, Quota, Samples, Sections, Speaks, Usage, Users, Variants,
 } from './db.js';
 import {
   HttpError, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, clearCookie,
@@ -25,6 +25,7 @@ loadPricing();
 import { mockContent, mockTopics } from './mock.js';
 import { enrichSummaries, fetchBoards, parseManual, riskOf, screenItems } from './hotspots.js';
 import { generate, imageInfo } from './images.js';
+import { removeTakeFile, runSpeakPipeline, saveTakeFile } from './speak.js';
 import {
   CONTENT_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, TONES,
   ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, DIGEST_SYSTEM, GENDERS,
@@ -1027,6 +1028,81 @@ export async function handleCues(req, res, body, params) {
   };
   Drafts.setCues(draft.id, user.id, payload);
   json(res, 200, { cues: payload });
+}
+
+function presentSpeak(row, userId, detail = false) {
+  const item = {
+    id: row.id,
+    draftId: row.draftId,
+    title: row.title,
+    status: row.status,
+    error: row.error,
+    createdAt: row.createdAt,
+    stale: row.stale,
+    draftGone: row.draftGone,
+    score: row.score,
+    next: row.next,
+    bytes: row.bytes,
+    audio: row.file ? `/speak/${userId}/${row.file}` : '',
+  };
+  if (!detail) return item;
+  return { ...item, script: row.script, cues: row.cues, transcript: row.transcript, review: row.review };
+}
+
+export async function handleSpeakList(req, res, body, params) {
+  const user = requireUser(req);
+  const draftId = params?.id ? Number(params.id) : 0;
+  const rows = draftId ? Speaks.listByDraft(draftId, user.id) : Speaks.list(user.id);
+  json(res, 200, { speaks: rows.map((r) => presentSpeak(r, user.id, Boolean(draftId))) });
+}
+
+export async function handleSpeakGet(req, res, body, params) {
+  const user = requireUser(req);
+  const row = Speaks.byId(Number(params.sid), user.id);
+  if (!row) throw new HttpError(404, '这条口播记录不存在');
+  json(res, 200, { speak: presentSpeak(row, user.id, true) });
+}
+
+export async function handleSpeakCreate(req, res, file, params) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  if (!draft.cues?.cues?.length) throw new HttpError(400, '先生成口播提示，再上传录音');
+  const text = String(draft.content || '').trim();
+  if (!text) throw new HttpError(400, '还没有正文');
+
+  const row = Speaks.create({
+    userId: user.id,
+    draftId: draft.id,
+    title: draft.title || draft.subject || '未命名',
+    script: text,
+    cues: draft.cues,
+    mime: file.mime,
+    bytes: file.buffer.length,
+  });
+  const filename = await saveTakeFile(user.id, row.id, file.ext, file.buffer);
+  Speaks.setFile(row.id, user.id, filename, file.buffer.length);
+  const saved = Speaks.byId(row.id, user.id);
+  const done = await runSpeakPipeline(saved, user.id, file.buffer);
+  json(res, 200, { speak: presentSpeak(done, user.id, true) });
+}
+
+export async function handleSpeakRetry(req, res, body, params) {
+  const user = requireUser(req);
+  const row = Speaks.byId(Number(params.sid), user.id);
+  if (!row) throw new HttpError(404, '这条口播记录不存在');
+  if (!row.file) throw new HttpError(400, '这条记录没有录音文件');
+  const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
+  const done = await runSpeakPipeline(row, user.id, buf);
+  json(res, 200, { speak: presentSpeak(done, user.id, true) });
+}
+
+export async function handleSpeakDelete(req, res, body, params) {
+  const user = requireUser(req);
+  const row = Speaks.remove(Number(params.sid), user.id);
+  if (!row) throw new HttpError(404, '这条口播记录不存在');
+  await removeTakeFile(user.id, row.file);
+  json(res, 200, { ok: true });
 }
 
 const mockCues = (text) => {

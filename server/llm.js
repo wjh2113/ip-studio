@@ -115,6 +115,8 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
       temperature: TEMP_JSON,    // 结构化输出用低温度，减少格式跑偏
       responseFormat: { type: 'json_object' },
       json: true,
+      // 口播总评要 quality-chat。其余 JSON 仍走 fast-chat。
+      capability: meta.channel === 'quality' ? 'quality' : undefined,
       userId: meta.userId,
     });
     return { value: parseJSON(res.text), usage: res.usage };
@@ -200,7 +202,7 @@ async function chat(opts) {
 }
 
 async function gatewayChat({
-  system, user, stream, onDelta, signal, temperature = TEMP_PROSE, json = false, userId,
+  system, user, stream, onDelta, signal, temperature = TEMP_PROSE, json = false, capability, userId,
 }) {
   const res = await fetch(`${GATEWAY_URL}/api/ai/chat`, {
     method: 'POST',
@@ -211,7 +213,9 @@ async function gatewayChat({
     },
     body: JSON.stringify({
       tenantId: GATEWAY_TENANT,
-      capability: json ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY,
+      capability: capability === 'quality' ? GATEWAY_CAPABILITY
+        : capability === 'fast' ? GATEWAY_CAPABILITY_JSON
+          : (json ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY),
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       dataClass: 'internal',
       fallback: true,

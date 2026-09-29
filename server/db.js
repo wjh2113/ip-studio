@@ -118,6 +118,25 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id, id DESC);
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+  /* 口播记录独立成表：改稿、重做提示、删稿都不级联删。只有用户点删除才去掉。 */
+  CREATE TABLE IF NOT EXISTS speak_takes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    draft_id     INTEGER,
+    title        TEXT    NOT NULL DEFAULT '',
+    script       TEXT    NOT NULL DEFAULT '',
+    cues_json    TEXT    NOT NULL DEFAULT 'null',
+    file         TEXT    NOT NULL DEFAULT '',
+    mime         TEXT    NOT NULL DEFAULT '',
+    bytes        INTEGER NOT NULL DEFAULT 0,
+    transcript   TEXT    NOT NULL DEFAULT '',
+    review_json  TEXT    NOT NULL DEFAULT 'null',
+    status       TEXT    NOT NULL DEFAULT 'running',
+    error        TEXT    NOT NULL DEFAULT '',
+    created_at   TEXT    NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_speaks_user ON speak_takes(user_id, id DESC);
 `);
 
 /* 已有数据库的增量迁移 */
@@ -1040,6 +1059,91 @@ export const Drafts = {
     return db.prepare('DELETE FROM drafts WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
   },
 };
+
+const parseJson = (raw, fallback) => {
+  try { return JSON.parse(raw); } catch { return fallback; }
+};
+
+/* 口播留档。draft_id 只是当时的稿子，不设外键，删稿不会带走录音和总评。 */
+export const Speaks = {
+  create({ userId, draftId, title, script, cues, file, mime, bytes }) {
+    const info = db.prepare(`
+      INSERT INTO speak_takes (user_id, draft_id, title, script, cues_json, file, mime, bytes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, draftId ?? null, title || '', script || '', JSON.stringify(cues ?? null),
+      file || '', mime || '', bytes || 0, now());
+    return this.byId(Number(info.lastInsertRowid), userId);
+  },
+  setFile(id, userId, file, bytes) {
+    db.prepare('UPDATE speak_takes SET file = ?, bytes = ? WHERE id = ? AND user_id = ?')
+      .run(file, bytes, id, userId);
+  },
+  finish(id, userId, { transcript, review, status, error }) {
+    db.prepare(`UPDATE speak_takes SET transcript = ?, review_json = ?, status = ?, error = ?
+                WHERE id = ? AND user_id = ?`)
+      .run(transcript || '', JSON.stringify(review ?? null), status, error || '', id, userId);
+    return this.byId(id, userId);
+  },
+  byId(id, userId) {
+    const row = db.prepare(`
+      SELECT s.*, d.content AS live_content
+      FROM speak_takes s
+      LEFT JOIN drafts d ON d.id = s.draft_id AND d.user_id = s.user_id
+      WHERE s.id = ? AND s.user_id = ?
+    `).get(id, userId);
+    return row ? hydrateSpeak(row) : null;
+  },
+  list(userId) {
+    return db.prepare(`
+      SELECT s.*, d.content AS live_content
+      FROM speak_takes s
+      LEFT JOIN drafts d ON d.id = s.draft_id AND d.user_id = s.user_id
+      WHERE s.user_id = ?
+      ORDER BY s.id DESC
+    `).all(userId).map(hydrateSpeak);
+  },
+  listByDraft(draftId, userId) {
+    return db.prepare(`
+      SELECT s.*, d.content AS live_content
+      FROM speak_takes s
+      LEFT JOIN drafts d ON d.id = s.draft_id AND d.user_id = s.user_id
+      WHERE s.user_id = ? AND s.draft_id = ?
+      ORDER BY s.id DESC
+    `).all(userId, draftId).map(hydrateSpeak);
+  },
+  remove(id, userId) {
+    const row = this.byId(id, userId);
+    if (!row) return null;
+    db.prepare('DELETE FROM speak_takes WHERE id = ? AND user_id = ?').run(id, userId);
+    return row;
+  },
+};
+
+function hydrateSpeak(row) {
+  const review = parseJson(row.review_json, null);
+  const live = row.live_content;
+  const draftGone = row.draft_id != null && live == null;
+  const stale = live != null && live !== row.script;
+  return {
+    id: row.id,
+    draftId: row.draft_id,
+    title: row.title,
+    script: row.script,
+    cues: parseJson(row.cues_json, null),
+    file: row.file,
+    mime: row.mime,
+    bytes: row.bytes,
+    transcript: row.transcript,
+    review,
+    status: row.status,
+    error: row.error,
+    createdAt: row.created_at,
+    draftGone,
+    stale,
+    score: review?.score ?? null,
+    next: review?.next || '',
+  };
+}
 
 function hydrate(row) {
   let topics = [];

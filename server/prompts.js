@@ -787,6 +787,105 @@ quote 必须从正文**逐字照抄**（含标点），按正文顺序排列，�
 3. 只做表演指导，**不要改写、增删正文一个字**。
 4. 全部使用简体中文。`;
 
+/* ==================================================================
+ * 口播总评：录完一遍之后的一张分数卡
+ * 走 quality-chat。发音、出镜没有材料时必须是 null，不许猜。
+ * ================================================================== */
+
+export const SPEAK_REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    score: { type: 'integer', description: '总分 0-100。某一项为 null 时按其余项权重摊开，不要把 null 当 0 分' },
+    dims: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', enum: ['完整', '发音', '节奏', '表达', '出镜'] },
+          score: { description: '0-100 的整数；材料写明没有时必须是 null' },
+          note: { type: 'string', description: '这一项为什么是这个分，一句话；null 分也用一句话说明缺了什么材料' },
+        },
+        required: ['key', 'score', 'note'],
+        additionalProperties: false,
+      },
+    },
+    lifts: {
+      type: 'array', maxItems: 6,
+      items: {
+        type: 'object',
+        properties: {
+          quote: { type: 'string', description: '从稿子逐字照抄的原句。整遍的问题就用最先出错的那一句' },
+          lose: { type: 'integer', description: '这一条大概扣掉几分' },
+          do: { type: 'string', description: '下一次具体怎么做，一句话' },
+        },
+        required: ['quote', 'lose', 'do'],
+        additionalProperties: false,
+      },
+    },
+    next: { type: 'string', description: '下一次重录最该改的一件事。没有待提升就写「这遍可以过」' },
+  },
+  required: ['score', 'dims', 'lifts', 'next'],
+  additionalProperties: false,
+};
+
+export const SPEAK_REVIEW_SYSTEM =
+`你是口播总评。用户对着稿子念完一遍。你会拿到：稿子、口播提示、转写。发音评测和出镜材料如果写的是「无」，对应分数必须是 null。
+
+出一份总评，不要分成多份报告。
+
+分数都是 0–100 的整数。
+- 完整：稿子有没有念全，有没有漏句、多句、说错词。依据是转写和稿子的对照。
+- 发音：只根据发音评测。材料是「无」时，score 必须是 null，不要靠转写猜读音。
+- 节奏：语速是否稳、该停的地方停了没有、有没有嗯啊和卡壳。转写没有时间戳时，只根据嗯、啊、重复和断句判断，不要编造每秒几个字。
+- 表达：重读、情绪是否贴上口播提示。提示里没要求的，不要扣分。
+- 出镜：看镜头、表情和手势是否过满。材料是「无」时，score 必须是 null。
+
+五项都要出现在 dims 里。总分先按权重算：完整 25、发音 25、节奏 20、表达 20、出镜 10。某一项为 null 时，把它的权重按比例摊到其余有分数的项上，不要把 null 当成 0 分。
+
+待提升只列实际扣分的地方，按影响从大到小，最多 6 条。
+每条的 quote 从稿子逐字照抄，lose 是大概扣掉的分数，do 是下一次具体怎么做。
+做到了的不要写。不要改稿，不要评选题和文笔。
+next 只写下一次重录最该改的一件事。没有待提升时，next 写「这遍可以过」。
+全部使用简体中文。`;
+
+export const speakReviewUser = (script, cues, transcript) => {
+  const cueText = !cues?.cues?.length
+    ? '无'
+    : [
+      cues.overall?.tone ? `整体基调：${cues.overall.tone}` : '',
+      cues.overall?.pace ? `语速节奏：${cues.overall.pace}` : '',
+      cues.overall?.note ? `出镜提醒：${cues.overall.note}` : '',
+      ...cues.cues.map((c) => {
+        const bits = [
+          c.emotion ? `语气 ${c.emotion}` : '',
+          c.stress?.length ? `重读 ${c.stress.join('、')}` : '',
+          c.pause ? `停顿 ${c.pause}` : '',
+          c.expression ? `表情 ${c.expression}` : '',
+          c.gesture ? `动作 ${c.gesture}` : '',
+        ].filter(Boolean).join('；');
+        return `${c.quote}${bits ? `（${bits}）` : ''}`;
+      }),
+    ].filter(Boolean).join('\n');
+
+  return `—— 稿子 ——
+===== 正文开始 =====
+${script}
+===== 正文结束 =====
+
+—— 口播提示 ——
+${cueText}
+
+—— 转写 ——
+${transcript || '（空）'}
+转写没有逐句时间戳。节奏不要编造语速秒数。
+
+—— 发音评测 ——
+无
+
+—— 出镜 ——
+无`;
+};
+
 export const cuesUser = (draft, persona, text) => {
   const context = [
     creatorBlock(persona),
