@@ -324,6 +324,15 @@ db.exec(`
     created_at TEXT    NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_prompt_rev ON prompt_revisions(feature, id DESC);
+
+  CREATE TABLE IF NOT EXISTS draft_revisions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id   INTEGER NOT NULL,
+    user_id    INTEGER NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_draft_rev ON draft_revisions(draft_id, user_id, id DESC);
 `);
 
 db.exec('CREATE INDEX IF NOT EXISTS idx_materials_persona ON materials(user_id, persona_id, id DESC)');
@@ -961,22 +970,40 @@ export const Drafts = {
     return this.byId(Number(info.lastInsertRowid), userId);
   },
   setTopics(id, userId, topics, persona) {
-    db.prepare(`UPDATE drafts SET topics_json = ?, chosen = NULL, title = '', content = '',
-                status = 'topics', persona_json = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
-      .run(JSON.stringify(topics), JSON.stringify(persona ?? null), now(), id, userId);
+    withTx(() => {
+      const row = db.prepare('SELECT content FROM drafts WHERE id = ? AND user_id = ?').get(id, userId);
+      if (row?.content) Revisions.keep(id, userId, row.content);
+      db.prepare(`UPDATE drafts SET topics_json = ?, chosen = NULL, title = '', content = '',
+                  status = 'topics', persona_json = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
+        .run(JSON.stringify(topics), JSON.stringify(persona ?? null), now(), id, userId);
+    });
   },
   setContent(id, userId, { chosen, title, content, status }) {
-    db.prepare(`UPDATE drafts SET chosen = ?, title = ?, content = ?, status = ?, updated_at = ?
-                WHERE id = ? AND user_id = ?`)
-      .run(chosen, title, content, status, now(), id, userId);
+    const next = String(content ?? '');
+    withTx(() => {
+      const row = db.prepare('SELECT content FROM drafts WHERE id = ? AND user_id = ?').get(id, userId);
+      if (row?.content && row.content !== next) Revisions.keep(id, userId, row.content);
+      db.prepare(`UPDATE drafts SET chosen = ?, title = ?, content = ?, status = ?, updated_at = ?
+                  WHERE id = ? AND user_id = ?`)
+        .run(chosen, title, next, status, now(), id, userId);
+      if (next) Revisions.keep(id, userId, next);
+    });
   },
-  /* 用户在编辑器里手工改写后的保存 —— 正文变了，口播提示就作废 */
+  /* 用户在编辑器里手工改写后的保存。写入前先把上一版正文留档。 */
   saveContent(id, userId, content) {
-    // 正文变了：口播提示、平台版本、配图都基于旧正文，一起作废
-    return db.prepare(`UPDATE drafts SET content = ?, status = 'done',
-                       cues_json = 'null', variants_json = 'null', illus_json = 'null', updated_at = ?
-                       WHERE id = ? AND user_id = ?`)
-      .run(content, now(), id, userId).changes > 0;
+    const next = String(content ?? '');
+    return withTx(() => {
+      const row = db.prepare('SELECT content FROM drafts WHERE id = ? AND user_id = ?').get(id, userId);
+      if (!row) return false;
+      if (row.content && row.content !== next) Revisions.keep(id, userId, row.content);
+      // 正文变了：口播提示、平台版本、配图都基于旧正文，一起作废
+      const ok = db.prepare(`UPDATE drafts SET content = ?, status = 'done',
+                         cues_json = 'null', variants_json = 'null', illus_json = 'null', updated_at = ?
+                         WHERE id = ? AND user_id = ?`)
+        .run(next, now(), id, userId).changes > 0;
+      if (ok) Revisions.keep(id, userId, next);
+      return ok;
+    });
   },
 
   setCues(id, userId, cues) {
@@ -1070,7 +1097,56 @@ export const Drafts = {
     `).all(userId, personaId, limit).map((r) => ({ ...r }));
   },
   remove(id, userId) {
-    return db.prepare('DELETE FROM drafts WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
+    return withTx(() => {
+      Revisions.removeFor(id, userId);
+      return db.prepare('DELETE FROM drafts WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
+    });
+  },
+};
+
+/* 正文的历史版本。保存或换稿之前先留上一版，正文没变则不重复记。 */
+function withTx(fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch { /* 事务已经结束 */ }
+    throw err;
+  }
+}
+
+export const Revisions = {
+  keep(draftId, userId, content) {
+    const text = String(content ?? '');
+    if (!text) return null;
+    const last = db.prepare(
+      'SELECT content FROM draft_revisions WHERE draft_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1',
+    ).get(draftId, userId);
+    if (last && last.content === text) return null;
+    const info = db.prepare(
+      'INSERT INTO draft_revisions (draft_id, user_id, content, created_at) VALUES (?, ?, ?, ?)',
+    ).run(draftId, userId, text, now());
+    return Number(info.lastInsertRowid);
+  },
+  list(draftId, userId) {
+    return db.prepare(
+      'SELECT id, created_at, content FROM draft_revisions WHERE draft_id = ? AND user_id = ? ORDER BY id DESC',
+    ).all(draftId, userId).map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      chars: r.content.replace(/\s/g, '').length,
+    }));
+  },
+  byId(id, draftId, userId) {
+    const row = db.prepare(
+      'SELECT id, created_at, content FROM draft_revisions WHERE id = ? AND draft_id = ? AND user_id = ?',
+    ).get(id, draftId, userId);
+    return row ? { id: row.id, created_at: row.created_at, content: row.content } : null;
+  },
+  removeFor(draftId, userId) {
+    db.prepare('DELETE FROM draft_revisions WHERE draft_id = ? AND user_id = ?').run(draftId, userId);
   },
 };
 

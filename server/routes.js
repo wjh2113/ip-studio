@@ -2,7 +2,7 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import {
-  Admins, DATA_DIR, Drafts, MATERIAL_KINDS, Materials, Personas, Pool,
+  Admins, DATA_DIR, Drafts, MATERIAL_KINDS, Materials, Personas, Pool, Revisions,
   Evals, Orders, Quota, Samples, Sections, Speaks, Usage, Users, Variants,
 } from './db.js';
 import {
@@ -877,6 +877,22 @@ export async function handleSaveContent(req, res, body, params) {
   if (content.length > 60000) throw new HttpError(400, '正文过长');
   if (!Drafts.saveContent(Number(params.id), user.id, content)) throw new HttpError(404, '记录不存在');
   json(res, 200, { draft: Drafts.byId(Number(params.id), user.id) });
+}
+
+/* 正文历史：打开列表时把当前正文补成第一版（已有则不重复），之后每次保存再追加。 */
+export async function handleRevisionList(req, res, _body, params) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  if (draft.content) Revisions.keep(draft.id, user.id, draft.content);
+  json(res, 200, { revisions: Revisions.list(draft.id, user.id) });
+}
+
+export async function handleRevisionGet(req, res, _body, params) {
+  const user = requireUser(req);
+  const revision = Revisions.byId(Number(params.rid), Number(params.id), user.id);
+  if (!revision) throw new HttpError(404, '这一版不存在');
+  json(res, 200, { revision });
 }
 
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */

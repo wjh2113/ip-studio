@@ -205,6 +205,7 @@
         <div class="toolbar">
           <button class="btn ghost small hidden" id="backReadBtn">← 返回阅读</button>
           <button class="btn ghost small" id="editBtn">修改</button>
+          <button class="btn ghost small" id="revBtn">版本</button>
           <div class="menu-wrap">
             <button class="btn primary small" id="confirmBtn" aria-haspopup="true">确认 ▾</button>
             <div class="menu hidden" id="confirmMenu">
@@ -249,6 +250,27 @@
           </span>
         </div>
         </div><!-- /.head-stick -->
+
+        <div class="rev-pane hidden" id="revPane">
+          <div class="rev-bar">
+            <span>每次保存前都会留下上一版。点一版，和现在这篇对照。正文没改过不会重复记。</span>
+            <span class="grow"></span>
+            <button type="button" class="btn ghost small" id="revClose">收起</button>
+          </div>
+          <div class="rev-body">
+            <div class="rev-list" id="revList"></div>
+            <div class="rev-cols">
+              <div class="rev-col">
+                <div class="rev-col-h" id="revLeftLabel">选一版</div>
+                <div class="rev-text" id="revLeft"></div>
+              </div>
+              <div class="rev-col">
+                <div class="rev-col-h">当前正文</div>
+                <div class="rev-text" id="revRight"></div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div class="review hidden" id="reviewBox">
           <div class="review-head">

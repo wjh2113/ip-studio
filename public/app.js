@@ -47,6 +47,8 @@ const el = {
   insightsModal: $('insightsModal'), insightsClose: $('insightsClose'),
   insightsBody: $('insightsBody'), insightsNote: $('insightsNote'), insightsLink: $('insightsLink'), headStick: document.querySelector('.head-stick'),
   editBtn: $('editBtn'), backReadBtn: $('backReadBtn'), modeNow: $('modeNow'), toolHint: $('toolHint'),
+  revBtn: $('revBtn'), revPane: $('revPane'), revClose: $('revClose'), revList: $('revList'),
+  revLeft: $('revLeft'), revRight: $('revRight'), revLeftLabel: $('revLeftLabel'),
   confirmBtn: $('confirmBtn'), confirmMenu: $('confirmMenu'),
   exportBtn: $('exportBtn'), exportMenu: $('exportMenu'), copyHint: $('copyHint'),
   multiBtn: $('multiBtn'), multiBar: $('multiBar'), multiPick: $('multiPick'),
@@ -91,6 +93,7 @@ const state = {
   user: null, meta: null, draft: null, streaming: false, busy: false,
   personas: [], personaId: null, editingId: null, skipOnboard: false,
   mode: 'read', dirty: false, assist: null, ideaFailed: new Set(), voiceApplying: false,
+  revOpen: false, revId: null, revText: '', revisions: [],
   view: 'write', boards: null, paramsUnlocked: false,
   sections: [], sectionId: null, editingSection: null, presets: [], sectionPersonaId: null,
   showArchived: false, historyMode: 'drafts', counts: { active: 0, archived: 0, activeDone: 0 },
@@ -719,6 +722,12 @@ el.newBtn.addEventListener('click', () => {
 
 /* ---------------- 渲染方向 ---------------- */
 function setDraft(draft) {
+  state.revOpen = false;
+  state.revId = null;
+  state.revText = '';
+  state.revisions = [];
+  el.revPane?.classList.add('hidden');
+  el.revBtn?.classList.remove('on');
   state.draft = draft;
   fillBrief(draft);
   renderTopics(draft);
@@ -1282,6 +1291,7 @@ function setMode(mode) {
     renderCues(state.draft?.cues);
     loadDraftSpeaks();
   }
+  scheduleRevPaint();
 }
 
 
@@ -1310,6 +1320,7 @@ async function flushSave() {
     el.saveState.textContent = '已保存';
     el.saveState.className = 'save-state saved';
     loadHistory();
+    if (state.revOpen) loadRevs().catch(() => {});
   } catch (err) {
     state.dirty = true;
     el.saveState.textContent = `保存失败：${err.message}`;
@@ -1333,6 +1344,7 @@ el.editor.addEventListener('input', () => {
   el.editor.style.height = `${Math.max(360, el.editor.scrollHeight)}px`;
   markDirty();
   detectSlash();
+  scheduleRevPaint();
 });
 
 /* ---------------- 划词菜单 ---------------- */
@@ -3166,9 +3178,156 @@ async function downloadDocx() {
   }
 }
 
+/* ---------------- 正文历史：保存前留下的每一版 ---------------- */
+
+function currentBody() {
+  return state.mode === 'edit' ? (el.editor?.value || '') : (state.draft?.content || '');
+}
+
+function fmtRevTime(s) {
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s || '';
+  return d.toLocaleString('zh-CN', {
+    hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+let revPaintTimer = 0;
+function scheduleRevPaint() {
+  if (!state.revOpen) return;
+  clearTimeout(revPaintTimer);
+  revPaintTimer = setTimeout(paintRev, 200);
+}
+
+async function toggleRevs(force) {
+  const open = typeof force === 'boolean' ? force : !state.revOpen;
+  if (open && !state.draft?.content && !state.revisions?.length) {
+    toast('还没有正文，写完保存后才能对照');
+    return;
+  }
+  state.revOpen = open;
+  el.revPane.classList.toggle('hidden', !open);
+  el.revBtn.classList.toggle('on', open);
+  if (open) await loadRevs();
+}
+
+async function loadRevs() {
+  if (!state.draft?.id) return;
+  const { revisions } = await api(`/drafts/${state.draft.id}/revisions`);
+  state.revisions = revisions;
+  const still = revisions.some((r) => r.id === state.revId);
+  const pick = still ? state.revId : (revisions[1]?.id || revisions[0]?.id || null);
+  if (pick) await openRev(pick);
+  else {
+    state.revText = '';
+    renderRevList();
+    paintRev();
+  }
+}
+
+function renderRevList() {
+  const rows = state.revisions || [];
+  el.revList.innerHTML = rows.length
+    ? rows.map((r, i) => `
+      <button type="button" class="rev-item ${r.id === state.revId ? 'on' : ''}" data-rid="${r.id}">
+        <b>${esc(fmtRevTime(r.created_at))}</b>
+        <span>${r.chars} 字${i === 0 ? ' · 最新存档' : ''}</span>
+      </button>`).join('')
+    : '<p class="rev-empty">还没有存档。写出正文并保存之后，这里会留下每一版。</p>';
+}
+
+async function openRev(id) {
+  if (!state.draft) return;
+  state.revId = id;
+  const { revision } = await api(`/drafts/${state.draft.id}/revisions/${id}`);
+  state.revText = revision.content;
+  renderRevList();
+  paintRev();
+}
+
+function lineDiff(aLines, bLines) {
+  if (aLines.length > 800 || bLines.length > 800) {
+    const n = Math.max(aLines.length, bLines.length);
+    const left = [];
+    const right = [];
+    for (let i = 0; i < n; i++) {
+      const av = aLines[i];
+      const bv = bLines[i];
+      const same = (av ?? '') === (bv ?? '');
+      left.push({ t: av ?? '', k: av === undefined ? 'gap' : (same ? 'same' : 'diff') });
+      right.push({ t: bv ?? '', k: bv === undefined ? 'gap' : (same ? 'same' : 'diff') });
+    }
+    return { left, right };
+  }
+  const n = aLines.length;
+  const m = bLines.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = aLines[i] === bLines[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const left = [];
+  const right = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (aLines[i] === bLines[j]) {
+      left.push({ t: aLines[i], k: 'same' });
+      right.push({ t: bLines[j], k: 'same' });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      left.push({ t: aLines[i], k: 'diff' });
+      right.push({ t: '', k: 'gap' });
+      i += 1;
+    } else {
+      left.push({ t: '', k: 'gap' });
+      right.push({ t: bLines[j], k: 'diff' });
+      j += 1;
+    }
+  }
+  while (i < n) {
+    left.push({ t: aLines[i], k: 'diff' });
+    right.push({ t: '', k: 'gap' });
+    i += 1;
+  }
+  while (j < m) {
+    left.push({ t: '', k: 'gap' });
+    right.push({ t: bLines[j], k: 'diff' });
+    j += 1;
+  }
+  return { left, right };
+}
+
+function paintRev() {
+  const left = state.revText || '';
+  const right = currentBody();
+  const { left: a, right: b } = lineDiff(left.split('\n'), right.split('\n'));
+  const html = (rows) => (rows.length
+    ? rows.map((row) => `<div class="rev-line ${row.k === 'same' ? '' : row.k}">${esc(row.t) || '&nbsp;'}</div>`).join('')
+    : '<div class="rev-line">&nbsp;</div>');
+  el.revLeft.innerHTML = html(a);
+  el.revRight.innerHTML = html(b);
+  const row = (state.revisions || []).find((r) => r.id === state.revId);
+  const same = left === right;
+  el.revLeftLabel.textContent = row
+    ? `${fmtRevTime(row.created_at)}${same ? ' · 和当前一样' : ''}`
+    : '选一版';
+}
+
 /* ---------------- 模式：修改 / 返回阅读 ---------------- */
 
 el.editBtn.addEventListener('click', () => setMode('edit'));
+el.revBtn.addEventListener('click', () => { toggleRevs().catch((err) => toast(err.message)); });
+el.revClose.addEventListener('click', () => { toggleRevs(false).catch((err) => toast(err.message)); });
+el.revList.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-rid]');
+  if (!btn || !state.draft) return;
+  openRev(Number(btn.dataset.rid)).catch((err) => toast(err.message));
+});
 el.backReadBtn.addEventListener('click', () => setMode('read'));
 
 const MARK_MIME = 'application/x-image-mark';
