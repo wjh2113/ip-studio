@@ -13,7 +13,7 @@
         <div class="p">${p.price ? `${p.price}<em> 元${p.pack ? '' : '/月'}</em>` : `0<em> 元/月</em>`}</div>
         <div class="c">${p.credits.toLocaleString()} 点</div>
         <p class="n">${esc(p.note || '')}</p>
-        <a class="btn ${p.key === 'pro' ? 'primary' : 'ghost'} small" href="/app">${
+        <a class="btn ${p.key === 'pro' ? 'primary' : 'ghost'} small" href="/">${
   p.price ? '登录使用' : '登录进入'}</a>
       </div>`).join('');
   } catch {

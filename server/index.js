@@ -159,13 +159,21 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  /* 根路径按登录状态分流：没登录看落地页，登录了直接进应用。
-     用 cookie 在服务端判断而不是前端跳转——前端跳会先闪一下落地页，
-     每天用的人每天看一次那个闪烁。 */
+  /* 根路径：有访问门时直接进应用（登录页），不要再绕 /app。
+     没设门时仍按登录态分流落地页——本地演示还要那页。 */
   if (path === '/') {
-    const { currentUser } = await import('./auth.js');
-    await serveStatic(currentUser(req) ? '/index.html' : '/landing.html', res);
+    const { accessGateOn, currentUser } = await import('./auth.js');
+    await serveStatic((accessGateOn() || currentUser(req)) ? '/index.html' : '/landing.html', res);
     return;
+  }
+
+  if (path === '/app' || path === '/app/') {
+    const { accessGateOn } = await import('./auth.js');
+    if (accessGateOn()) {
+      res.writeHead(302, { Location: `/${url.search}` });
+      res.end();
+      return;
+    }
   }
 
   await serveStatic(path, res);
@@ -222,6 +230,7 @@ async function serveStatic(path, res) {
   if (path === '/admin' || path === '/admin/') path = '/admin.html';
   if (path === '/prompts' || path === '/prompts/') path = '/prompts.html';
   if (path === '/app' || path === '/app/') path = '/index.html';
+  if (path === '/about' || path === '/about/') path = '/landing.html';
   // 营销落地页。走单独入口，投放链接指这里；/ 上那版是产品说明，两套动线互不影响
   if (path === '/start' || path === '/start/') path = '/promo.html';
 

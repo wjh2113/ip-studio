@@ -40,7 +40,7 @@
   const keep = ['utm_source', 'utm_medium', 'utm_campaign', 'from'];
   const carry = keep.filter((k) => q.get(k)).map((k) => `${k}=${encodeURIComponent(q.get(k))}`);
   if (!carry.length) return;
-  document.querySelectorAll('a[href^="/app"]').forEach((a) => {
+  document.querySelectorAll('a[href="/"], a[href^="/?"], a[href^="/app"]').forEach((a) => {
     a.href += (a.href.includes('?') ? '&' : '?') + carry.join('&');
   });
 })();

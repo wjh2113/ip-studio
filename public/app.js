@@ -162,7 +162,7 @@ function applyAuthMeta(auth = {}) {
   } else if (auth.register === false) {
     tab?.remove();
     if (new URLSearchParams(location.search).get('signup')) {
-      history.replaceState(null, '', '/app');
+      history.replaceState(null, '', '/');
     }
   }
   if (auth.invite && invite) {
