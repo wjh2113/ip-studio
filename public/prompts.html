@@ -28,12 +28,13 @@
     <section class="principle assembly" id="assembly"></section>
     <div id="list"></div>
     <footer class="docs-foot">
-      提示词正文和 schema 直接从 <code>server/prompts.js</code> 读取，不是复制过来的副本——
-      改了提示词这里就跟着变，不会出现文档骗人的情况。
+      这里显示的是<strong>当前实际发给模型的那一版</strong>。登录后可以直接改，每次保存都留档；
+      代码里的提示词更新时也会记一版，不会盖掉你改过的内容。结构约束（JSON Schema）仍由代码固定，这里不改。
     </footer>
   </main>
 </div>
 
+<script src="/dialog.js"></script>
 <script src="/prompts.js"></script>
 </body>
 </html>

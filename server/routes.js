@@ -15,6 +15,9 @@ import { PROVIDER, generateJSON, generateText, providerInfo, streamText } from '
 import { ASSEMBLY, PRINCIPLE, PROMPT_DOCS, STAGES } from './promptdocs.js';
 import { costOf, loadPricing, priceOf } from './pricing.js';
 import { pickVariant, scoreText, scoreTopics, summarize } from './abtest.js';
+import { activateRevision, listRevisions, liveSystem, revisionSource, savePromptEdit } from './promptrev.js';
+import { buildDocx } from './docx.js';
+import { IMAGE_MARK, markAts } from '../public/place.js';
 import { QuotaError, assertQuota, consume, snapshot } from './quota.js';
 import { PACKS, PLANS, creditsFor, explain, planOf } from './plans.js';
 import { createPayment, newTradeNo, payInfo, queryOrder, verifyNotify } from './pay.js';
@@ -55,6 +58,8 @@ const requireUser = (req) => {
   if (!user) throw new HttpError(401, '请先登录');
   return user;
 };
+
+const sys = (key, builtin) => liveSystem(key, builtin);
 
 /* 本篇未填的字段，继承所选账号设定 */
 function normalizeForm(body = {}, persona = null) {
@@ -321,29 +326,33 @@ function costReport(since) {
 /* 每个功能实际发给模型的 system 提示词，只读展示 */
 const PROMPT_CATALOG = () => [
   { key: 'topics', label: '选题方向', where: '创作第一步：题材 → 三个方向',
-    system: TOPICS_SYSTEM, schema: TOPICS_SCHEMA },
+    system: sys('topics', TOPICS_SYSTEM), schema: TOPICS_SCHEMA },
   { key: 'content', label: '成稿', where: '创作第二步：选定方向 → 完整文案（流式）',
-    system: CONTENT_SYSTEM },
+    system: sys('content', CONTENT_SYSTEM) },
   { key: 'assist', label: '划词改写 / 续写', where: '编辑器里选中文字或按 /',
-    system: ASSIST_SYSTEM,
+    system: sys('assist', ASSIST_SYSTEM),
     extra: {
       改写动作: Object.fromEntries(Object.entries(ASSIST_ACTIONS).map(([k, v]) => [v.label, v.instruction])),
       续写动作: Object.fromEntries(Object.entries(COMPOSE_ACTIONS).map(([k, v]) => [v.label, v.instruction])),
     } },
   { key: 'review', label: '成稿检查', where: '出稿后自动跑 + 工具栏「检查」',
-    system: REVIEW_SYSTEM, schema: REVIEW_SCHEMA },
+    system: sys('review', REVIEW_SYSTEM), schema: REVIEW_SCHEMA },
   { key: 'subjects', label: '题材推荐', where: '创作简报里的三条推荐题材',
-    system: SUBJECTS_SYSTEM, schema: SUBJECTS_SCHEMA },
+    system: sys('subjects', SUBJECTS_SYSTEM), schema: SUBJECTS_SCHEMA },
   { key: 'hotspot', label: '热点比对', where: '热点板块：榜单 × 账号定位',
-    system: HOTSPOT_SYSTEM, schema: HOTSPOT_SCHEMA },
+    system: sys('hotspot', HOTSPOT_SYSTEM), schema: HOTSPOT_SCHEMA },
   { key: 'summary', label: '原文概要', where: '热点命中后压缩抓到的原文',
-    system: ARTICLE_SUMMARY_SYSTEM },
+    system: sys('summary', ARTICLE_SUMMARY_SYSTEM) },
   { key: 'digest', label: '语气档案', where: '「喂给账号学习」后蒸馏写作习惯',
-    system: DIGEST_SYSTEM },
+    system: sys('digest', DIGEST_SYSTEM) },
   { key: 'cues', label: '口播提示', where: '成稿后切段并标语气/重读/停顿/表情/动作',
-    system: CUES_SYSTEM, schema: CUES_SCHEMA },
+    system: sys('cues', CUES_SYSTEM), schema: CUES_SCHEMA },
   { key: 'speak-review', label: '口播总评', where: '口播页上传录音后。走 quality-chat，不走 fast-chat',
-    system: SPEAK_REVIEW_SYSTEM, schema: SPEAK_REVIEW_SCHEMA },
+    system: sys('speak-review', SPEAK_REVIEW_SYSTEM), schema: SPEAK_REVIEW_SCHEMA },
+  { key: 'adapt', label: '多平台适配', where: '成稿后出其他平台版本',
+    system: sys('adapt', ADAPT_SYSTEM) },
+  { key: 'illus', label: '图文配图', where: '正文里的 <此处放图片>，或自动排插图位',
+    system: sys('illus', ILLUS_SYSTEM), schema: ILLUS_SCHEMA },
 ];
 
 export async function handleAdminPrompts(req, res) {
@@ -502,7 +511,7 @@ async function analyzeHotspots(persona, items, meta = {}) {
   const result = await withRetry(async () => {
     const data = await generateJSON({
       meta,
-      system: HOTSPOT_SYSTEM,
+      system: sys('hotspot', HOTSPOT_SYSTEM),
       user: hotspotUser(persona, items),
       schema: HOTSPOT_SCHEMA,
       mock: () => mockHotspots(persona, items),
@@ -536,7 +545,7 @@ async function attachSummaries(matches, userId) {
     async (title, body) => {
       const out = await generateText({
         meta: { feature: '原文概要', userId },
-        system: ARTICLE_SUMMARY_SYSTEM,
+        system: sys('summary', ARTICLE_SUMMARY_SYSTEM),
         user: articleSummaryUser(title, body),
         mock: () => `演示模式：这里会是《${title.slice(0, 14)}》的原文概要`,
       });
@@ -632,7 +641,7 @@ async function generateIdeas(persona, userId) {
   const ideas = await withRetry(async () => {
     const data = await generateJSON({
       meta: { feature: '题材推荐', userId },
-      system: SUBJECTS_SYSTEM,
+      system: sys('subjects', SUBJECTS_SYSTEM),
       user: subjectsUser(persona, [...used, ...pending]),
       schema: SUBJECTS_SCHEMA,
       mock: () => mockIdeas(persona, used.length),
@@ -741,7 +750,7 @@ async function generateTopics(form, persona = null, avoid = [], samples = [], me
 
   // 偶发的格式跑偏重试一次就能好，不必让用户自己点重来
   const topics = await withRetry(async (attempt) => {
-    const v = pickVariant('topics', TOPICS_SYSTEM);
+    const v = pickVariant('topics', sys('topics', TOPICS_SYSTEM));
     const data = await generateJSON({
       meta: { ...meta, variant: v.name },
       system: v.system,
@@ -819,7 +828,7 @@ export async function handleContent(req, res, body, params) {
   const recalled = recallMaterials(user.id, draft.persona_id,
     `${draft.subject} ${topic.title} ${topic.angle} ${(topic.outline || []).join(' ')}`);
   if (recalled.length) Materials.markUsed(recalled.map((m) => m.id), user.id);
-  const contentVariant = pickVariant('content', CONTENT_SYSTEM);
+  const contentVariant = pickVariant('content', sys('content', CONTENT_SYSTEM));
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -890,7 +899,7 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
   const data = await withRetry(async () => {
     const out = await generateJSON({
       meta,
-      system: REVIEW_SYSTEM,
+      system: sys('review', REVIEW_SYSTEM),
       user: reviewUser(draft, text, persona, samples),
       schema: REVIEW_SCHEMA,
       mock: () => mockReview(text, draft),
@@ -987,7 +996,7 @@ export async function handleCues(req, res, body, params) {
   const data = await withRetry(async () => {
     const out = await generateJSON({
       meta: { feature: '口播提示', userId: user.id },
-      system: CUES_SYSTEM,
+      system: sys('cues', CUES_SYSTEM),
       user: cuesUser(draft, persona, text),
       schema: CUES_SCHEMA,
       mock: () => mockCues(text),
@@ -1168,7 +1177,7 @@ export async function handleAssist(req, res, body, params) {
   try {
     const text = await streamText({
       meta: { feature: body?.kind === 'compose' ? '编辑器续写' : '划词改写', userId: user.id },
-      system: ASSIST_SYSTEM,
+      system: sys('assist', ASSIST_SYSTEM),
       user: user_prompt,
       onDelta: (t) => send('delta', { text: t }),
       mock: () => mockAssist(body, selection),
@@ -1269,7 +1278,7 @@ async function rebuildDigest(persona, userId) {
 
   const digest = await generateText({
     meta: { feature: '语气档案', userId },
-    system: DIGEST_SYSTEM,
+    system: sys('digest', DIGEST_SYSTEM),
     user: digestUser(samples),
     mock: () => mockDigest(samples.length),
   });
@@ -1375,7 +1384,60 @@ export async function handleImageInfo(req, res) {
 }
 
 export async function handlePromptDocs(req, res) {
-  json(res, 200, { stages: STAGES, principle: PRINCIPLE, assembly: ASSEMBLY, prompts: PROMPT_DOCS() });
+  json(res, 200, {
+    stages: STAGES,
+    principle: PRINCIPLE,
+    assembly: ASSEMBLY,
+    canEdit: Boolean(currentUser(req)),
+    prompts: PROMPT_DOCS().map((p) => ({
+      ...p,
+      system: liveSystem(p.key, p.system),
+      customized: revisionSource(p.key) === 'edit',
+      history: listRevisions(p.key),
+    })),
+  });
+}
+
+export async function handlePromptSave(req, res, body, params) {
+  const user = requireUser(req);
+  const history = savePromptEdit(params.key, body?.system, user.id);
+  json(res, 200, { history, system: history.find((h) => h.active)?.system || '' });
+}
+
+export async function handlePromptActivate(req, res, body, params) {
+  requireUser(req);
+  const history = activateRevision(params.key, params.rid);
+  json(res, 200, { history, system: history.find((h) => h.active)?.system || '' });
+}
+
+export async function handleExportDocx(req, res, body, params, url) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const v = String(url?.searchParams.get('version') || '');
+  const { text } = versionText(draft, v);
+  if (!String(text || '').trim()) throw new HttpError(400, '这一版还没有正文');
+  const pack = draft.illus?.[verKey(v)];
+  const title = String(draft.title || draft.subject || '文案').slice(0, 80);
+  const buf = await buildDocx({
+    title,
+    text,
+    items: pack?.items || [],
+    readImage: async (file) => {
+      const rel = String(file || '');
+      if (!rel.startsWith(`${user.id}/`) || rel.includes('..')) return null;
+      try { return await readFile(resolvePath(DATA_DIR, 'images', rel)); }
+      catch { return null; }
+    },
+  });
+  const filename = `${title.replace(/[\\/:*?"<>|]/g, '') || '文案'}.docx`;
+  res.writeHead(200, {
+    'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'Content-Length': buf.length,
+    'Content-Disposition': `attachment; filename="draft.docx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'Cache-Control': 'no-store',
+  });
+  res.end(buf);
 }
 
 /* ==================================================================
@@ -1406,7 +1468,7 @@ export async function handleVariant(req, res, body, params) {
   const out = await withRetry(async () => {
     const t = await generateText({
       meta: { feature: '多平台适配', userId: user.id },
-      system: ADAPT_SYSTEM,
+      system: sys('adapt', ADAPT_SYSTEM),
       user: adaptUser(draft, persona, text, from, to),
       mock: () => `演示模式：这里会是「${PLATFORMS[to].label}」版本的正文。\n\n`
         + '真实模式下，事实层和原文完全一致，只重排结构、调语气、增删详略。',
@@ -1471,54 +1533,82 @@ export async function handleIllus(req, res, body, params) {
 
   const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
 
+  const marks = markAts(text).slice(0, 8);
   const data = await withRetry(async () => {
     const out = await generateJSON({
       meta: { feature: '图文配图', userId: user.id },
-      system: ILLUS_SYSTEM,
-      user: illusUser(draft, persona, text, platform),
+      system: sys('illus', ILLUS_SYSTEM),
+      user: illusUser(draft, persona, text, platform, marks.length),
       schema: ILLUS_SCHEMA,
       mock: () => ({
         look: '演示模式：这里会给整篇统一的视觉风格',
-        items: [{ anchor: text.slice(0, 14), prompt: '演示模式：这里会是画面提示词', alt: '演示配图' }],
+        items: (marks.length ? marks : [0]).map(() => ({
+          anchor: marks.length ? IMAGE_MARK : text.slice(0, 14),
+          prompt: '演示模式：这里会是画面提示词',
+          alt: '演示配图',
+        })),
       }),
     });
     if (!out || !Array.isArray(out.items) || !out.items.length) throw new HttpError(502, '没有拿到配图方案');
     return out;
   }, '生成配图方案失败，请再试一次');
 
-  // anchor 必须能在正文里找到，找不到就插不了——和口播提示的 quote 一个道理
-  const seen = new Set();
-  const items = data.items.map((it) => {
-    const anchor = String(it.anchor || '').trim();
-    const at = anchor ? text.indexOf(anchor) : -1;
-    return { anchor, at, prompt: String(it.prompt || '').trim(), alt: String(it.alt || '').trim().slice(0, 20) };
-  }).filter((it) => {
-    if (it.at < 0 || !it.prompt || seen.has(it.at)) return false;   // 同一个位置只插一张
-    seen.add(it.at);
-    return true;
-  }).sort((a, b) => a.at - b.at)
-    .map((it, i) => ({ ...it, i, image: null }));
-
-  if (!items.length) throw new HttpError(502, '配图位置和正文对不上，请再试一次');
-
-  // 张数按字数硬卡。提示词里写了"宁可少插"，但实测 281 字的微博也给了 3 张——
-  // 插图是给长文换气用的，短文里每隔两段一张只会打断阅读。
-  // 大致每 450 字一张，至少 1 张，最多 5 张；超出的从后面砍（前面的位置更重要）。
-  const cap = Math.max(1, Math.min(5, Math.round(text.length / 450)));
-  const kept = items.slice(0, cap).map((it, i) => ({ ...it, i }));
-
   const store = { ...(draft.illus || {}) };
   const before = store[verKey(v)];
+  const keepImage = (it) => {
+    const old = before?.placed === 'mark'
+      ? before.items?.find((o) => o.i === it.i && o.prompt === it.prompt)
+      : before?.items?.find((o) => o.prompt === it.prompt);
+    return old?.image ? { ...it, image: old.image } : it;
+  };
+
+  let kept;
+  let capped = null;
+  let dropped = 0;
+  let placed = 'auto';
+
+  if (marks.length) {
+    // 位置以标记为准，不信模型自己写的 anchor，也不按字数砍掉作者指定的张
+    placed = 'mark';
+    const all = markAts(text);
+    capped = all.length > marks.length ? { asked: all.length, cap: marks.length } : null;
+    kept = marks.map((at, i) => {
+      const src = data.items[i] || {};
+      const prompt = String(src.prompt || '').trim() || '与前后段落相配的场景，不画具体的人，画面里不要写字';
+      return keepImage({
+        anchor: IMAGE_MARK, at, prompt,
+        alt: String(src.alt || '').trim().slice(0, 20),
+        i, image: null,
+      });
+    });
+  } else {
+    const seen = new Set();
+    const items = data.items.map((it) => {
+      const anchor = String(it.anchor || '').trim();
+      const at = anchor && anchor !== IMAGE_MARK ? text.indexOf(anchor) : -1;
+      return { anchor, at, prompt: String(it.prompt || '').trim(), alt: String(it.alt || '').trim().slice(0, 20) };
+    }).filter((it) => {
+      if (it.at < 0 || !it.prompt || seen.has(it.at)) return false;
+      seen.add(it.at);
+      return true;
+    }).sort((a, b) => a.at - b.at)
+      .map((it, i) => ({ ...it, i, image: null }));
+
+    if (!items.length) throw new HttpError(502, '配图位置和正文对不上，请再试一次');
+
+    const cap = Math.max(1, Math.min(5, Math.round(text.length / 450)));
+    kept = items.slice(0, cap).map((it, i) => keepImage({ ...it, i }));
+    dropped = data.items.length - kept.length;
+    capped = items.length > cap ? { asked: items.length, cap } : null;
+  }
+
   store[verKey(v)] = {
     look: String(data.look || '').trim(),
     version: v,
-    dropped: data.items.length - kept.length,
-    capped: items.length > cap ? { asked: items.length, cap } : null,
-    items: kept.map((it) => {
-      // 提示词没变的位子，已经出过的图留着，别白花钱
-      const old = before?.items?.find((o) => o.prompt === it.prompt);
-      return old?.image ? { ...it, image: old.image } : it;
-    }),
+    placed,
+    dropped,
+    capped,
+    items: kept,
     at: new Date().toISOString(),
   };
   Drafts.setIllus(draft.id, user.id, store);
@@ -1817,8 +1907,8 @@ export async function handleReview2(req, res, body, params, url) {
 /* 能做 A/B 的功能。只列真正值得试的那几个——
    每加一个都要在调用处接上分流，不是所有提示词都值得这个复杂度。 */
 export const AB_FEATURES = [
-  { key: 'topics', label: '选题方向', builtin: () => TOPICS_SYSTEM, kind: 'json' },
-  { key: 'content', label: '成稿', builtin: () => CONTENT_SYSTEM, kind: 'text' },
+  { key: 'topics', label: '选题方向', builtin: () => sys('topics', TOPICS_SYSTEM), kind: 'json' },
+  { key: 'content', label: '成稿', builtin: () => sys('content', CONTENT_SYSTEM), kind: 'text' },
 ];
 
 export async function handlePromptVariantList(req, res, body, params, url) {

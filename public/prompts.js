@@ -14,7 +14,7 @@ const MODE_HINT = {
   纯文本: '返回一段文字，直接用',
 };
 
-(async () => {
+(async function load() {
   let data;
   try {
     const res = await fetch('/api/prompt-docs');
@@ -61,6 +61,7 @@ const MODE_HINT = {
         <span class="tag">${esc(stage?.label || p.stage)}</span>
         <span class="tag" title="${esc(MODE_HINT[p.mode] || '')}">${esc(p.mode)}</span>
         ${p.ab ? '<span class="tag ab" title="管理后台可以挂变体做 A/B">A/B</span>' : ''}
+        ${p.customized ? '<span class="tag ab" title="当前发给模型的是手改过的一版">已手改</span>' : ''}
         ${p.hidden ? '<span class="tag off" title="入口已从界面撤掉，代码还在">已隐藏</span>' : ''}
       </header>
       <p class="where">出现在：${esc(p.where)}</p>
@@ -80,8 +81,20 @@ const MODE_HINT = {
       ${acts}
 
       <details>
-        <summary>实际发给模型的 system 提示词（${p.system.length} 字）</summary>
-        <pre>${esc(p.system)}</pre>
+        <summary>实际发给模型的 system 提示词（<span data-len="${esc(p.key)}">${p.system.length}</span> 字）</summary>
+        ${data.canEdit ? `
+          <textarea class="prompt-edit" data-prompt="${esc(p.key)}">${esc(p.system)}</textarea>
+          <div class="prompt-acts">
+            <button type="button" class="btn primary small" data-save-prompt="${esc(p.key)}">保存为新版本</button>
+            <span class="hint" data-prompt-msg="${esc(p.key)}">保存后，之后的生成用这一版。旧版留在下面。</span>
+          </div>` : `<pre data-prompt-view="${esc(p.key)}">${esc(p.system)}</pre>
+          <p class="hint">登录产品之后，可以在这里改。每次保存都留一版，不会盖掉以前的。</p>`}
+        ${(p.history || []).length ? `<div class="prompt-hist">${p.history.map((h) => `
+          <div class="hist-row ${h.active ? 'on' : ''}">
+            <span>${h.active ? '当前 · ' : ''}${h.source === 'edit' ? '手改' : '代码'} · ${esc(h.created_at.replace('T', ' ').slice(0, 16))} · ${h.chars} 字</span>
+            <button type="button" data-view-rev="${h.id}" data-key="${esc(p.key)}">查看</button>
+            ${data.canEdit && !h.active ? `<button type="button" data-use-rev="${h.id}" data-key="${esc(p.key)}">用这一版</button>` : ''}
+          </div>`).join('')}</div>` : ''}
       </details>
       ${p.schema ? `<details>
         <summary>输出结构约束（JSON Schema）</summary>
@@ -99,4 +112,52 @@ const MODE_HINT = {
     }
   }, { rootMargin: '-90px 0px -70% 0px' });
   document.querySelectorAll('.pd').forEach((n) => spy.observe(n));
+
+  const revOf = (key, id) => (data.prompts.find((p) => p.key === key)?.history || []).find((h) => h.id === Number(id));
+
+  $('list').onclick = async (e) => {
+    const view = e.target.closest('[data-view-rev]');
+    if (view) {
+      const rev = revOf(view.dataset.key, view.dataset.viewRev);
+      if (!rev) return;
+      const box = document.querySelector(`[data-prompt="${view.dataset.key}"]`)
+        || document.querySelector(`[data-prompt-view="${view.dataset.key}"]`);
+      if (box) box.value !== undefined ? (box.value = rev.system) : (box.textContent = rev.system);
+      const len = document.querySelector(`[data-len="${view.dataset.key}"]`);
+      if (len) len.textContent = String(rev.system.length);
+      return;
+    }
+    const use = e.target.closest('[data-use-rev]');
+    if (use) {
+      const rev = revOf(use.dataset.key, use.dataset.useRev);
+      if (!rev) return;
+      if (!await ask.confirm({
+        title: '之后的生成改用这一版？',
+        body: '当前正在用的那一版会留在历史里，可以再切回去。',
+        ok: '使用',
+      })) return;
+      const res = await fetch(`/api/prompt-docs/${use.dataset.key}/revisions/${use.dataset.useRev}/activate`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(body.error || '没有切换成功'); return; }
+      load();
+      return;
+    }
+    const save = e.target.closest('[data-save-prompt]');
+    if (save) {
+      const key = save.dataset.savePrompt;
+      const box = document.querySelector(`[data-prompt="${key}"]`);
+      const msg = document.querySelector(`[data-prompt-msg="${key}"]`);
+      const res = await fetch(`/api/prompt-docs/${key}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: box?.value || '' }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (msg) msg.textContent = body.error || '没有保存成功';
+        return;
+      }
+      load();
+    }
+  };
 })();

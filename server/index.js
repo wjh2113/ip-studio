@@ -17,6 +17,8 @@ const { rateLimit } = await import('./limit.js');
 ensureBootstrapAdmin();
 ensureAccessUser();
 syncAdminPassword();
+const { syncPromptBuiltins } = await import('./promptrev.js');
+syncPromptBuiltins();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
@@ -89,7 +91,10 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus\/(?<i>\d+)\/image$/, R.handleIllusImage],
   ['DELETE', /^\/api\/drafts\/(?<id>\d+)\/variants\/(?<platform>\w+)$/, R.handleVariantDelete],
   ['GET', /^\/api\/images$/, R.handleImageInfo],
+  ['GET', /^\/api\/drafts\/(?<id>\d+)\/export\.docx$/, R.handleExportDocx],
   ['GET', /^\/api\/prompt-docs$/, R.handlePromptDocs],
+  ['PUT', /^\/api\/prompt-docs\/(?<key>[\w-]+)$/, R.handlePromptSave],
+  ['POST', /^\/api\/prompt-docs\/(?<key>[\w-]+)\/revisions\/(?<rid>\d+)\/activate$/, R.handlePromptActivate],
   ['GET', /^\/api\/personas\/(?<id>\d+)\/materials$/, R.handleMaterialList],
   ['POST', /^\/api\/personas\/(?<id>\d+)\/materials$/, R.handleMaterialCreate],
   ['PUT', /^\/api\/materials\/(?<mid>\d+)$/, R.handleMaterialUpdate],

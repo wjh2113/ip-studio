@@ -312,6 +312,20 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_runs_batch ON eval_runs(batch, case_id)'
   if (cols.size && !cols.has('variant')) db.exec("ALTER TABLE usage_events ADD COLUMN variant TEXT NOT NULL DEFAULT ''");
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS prompt_revisions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature    TEXT    NOT NULL,
+    system     TEXT    NOT NULL,
+    source     TEXT    NOT NULL,
+    note       TEXT    NOT NULL DEFAULT '',
+    active     INTEGER NOT NULL DEFAULT 0,
+    user_id    INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT    NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_prompt_rev ON prompt_revisions(feature, id DESC);
+`);
+
 db.exec('CREATE INDEX IF NOT EXISTS idx_materials_persona ON materials(user_id, persona_id, id DESC)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_pool_persona ON topic_pool(user_id, persona_id, id DESC)');
 

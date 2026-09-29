@@ -1,3 +1,5 @@
+import { IMAGE_MARK, markAts, placeCuts } from './place.js';
+
 /* 前端逻辑：登录 → 简报 → 三个方向 → 流式成稿 → 历史 */
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +33,7 @@ const el = {
   illusBtn: $('illusBtn'), illusBar: $('illusBar'), illusChip: $('illusChip'),
   illusHint: $('illusHint'), illusList: $('illusList'),
   illusPlanBtn: $('illusPlanBtn'), illusRunBtn: $('illusRunBtn'),
+  markBtn: $('markBtn'), markHint: $('markHint'),
   briefCard: $('briefCard'), main: $('main'),
   creditChip: $('creditChip'), planModal: $('planModal'), planClose: $('planClose'),
   planPeriod: $('planPeriod'), planNow: $('planNow'), planBreakdown: $('planBreakdown'),
@@ -1048,28 +1051,16 @@ async function inlineImages(items) {
 
 /* 带图的富文本。和阅读区用的是同一套插图逻辑，只是图换成了 data URI */
 async function richHtml(text) {
-  const store = illOf();
-  const items = (store?.items || []).filter((it) => it.at >= 0);
-  if (!items.length) return { html: markdown(text), imgs: 0 };
-
+  const items = illOf()?.items || [];
   const uris = await inlineImages(items);
-  const fig = (it) => {
+  const html = weave(text, items, markdown, (it) => {
     const uri = uris.get(it.i);
     if (!uri) return '';
     return `<figure style="margin:22px 0"><img src="${uri}" alt="${esc(it.alt)}" style="max-width:100%">`
       + (it.alt ? `<figcaption style="font-size:13px;color:#888;text-align:center;margin-top:6px">${esc(it.alt)}</figcaption>` : '')
       + '</figure>';
-  };
-
-  const cuts = items.map((it) => {
-    const end = text.indexOf('\n', it.at + it.anchor.length);
-    return { at: end < 0 ? text.length : end, it };
-  }).sort((a, b) => a.at - b.at);
-
-  let html = '';
-  let from = 0;
-  for (const c of cuts) { html += markdown(text.slice(from, c.at)) + fig(c.it); from = c.at; }
-  return { html: html + markdown(text.slice(from)), imgs: uris.size };
+  });
+  return { html, imgs: uris.size };
 }
 
 el.copyBtn.addEventListener('click', () => busy(el.copyBtn, async () => {
@@ -2947,6 +2938,8 @@ el.illusPlanBtn.addEventListener('click', planIllus);
 function renderIllusBar() {
   const open = Boolean(state.illusOpen);
   el.illusBar.classList.toggle('hidden', !open);
+  const marks = markAts(currentText()).length;
+  el.illusPlanBtn.textContent = marks ? `按 ${Math.min(marks, 8)} 处指定位置排版` : '重新排版位';
   if (!open) return;
   const store = illOf();
   el.illusChip.textContent = ill.info?.label || '';
@@ -3020,32 +3013,28 @@ el.illusRunBtn.addEventListener('click', async () => {
   });
 });
 
-/* 把插图插进正文：按 anchor 在原文里的位置切开，逐段拼。
-   在**渲染后的 HTML** 上找插入点不可靠（markdown 会改结构），
-   所以先在纯文本上切，再分段渲染。 */
-function withIllus(text) {
-  const store = illOf();
-  const items = (store?.items || []).filter((it) => it.at >= 0);
-  if (!items.length) return markdown(text);
-
-  const fig = (it) => (it.image
-    ? `<figure class="illus"><img src="/image/${esc(it.image.file)}?v=${encodeURIComponent(it.image.at)}" alt="${esc(it.alt)}">${
-      it.alt ? `<figcaption>${esc(it.alt)}</figcaption>` : ''}</figure>`
-    : `<figure class="illus empty">第 ${it.i + 1} 张还没出图 · ${esc(it.alt || it.prompt.slice(0, 24))}</figure>`);
-
-  // anchor 是"这一段的开头"，图要插在这一段**之后**——找到该段的段末换行
-  const cuts = items.map((it) => {
-    const end = text.indexOf('\n', it.at + it.anchor.length);
-    return { at: end < 0 ? text.length : end, it };
-  }).sort((a, b) => a.at - b.at);
-
+function weave(text, items, renderText, figFor) {
+  const cuts = placeCuts(text, items);
+  if (!cuts.length) return renderText(text);
   let out = '';
   let from = 0;
   for (const c of cuts) {
-    out += markdown(text.slice(from, c.at)) + fig(c.it);
-    from = c.at;
+    out += renderText(text.slice(from, c.at)) + figFor(c.item);
+    from = c.at + (c.skip || 0);
   }
-  return out + markdown(text.slice(from));
+  return out + renderText(text.slice(from));
+}
+
+/* 把插图插进正文。有 <此处放图片> 就占掉标记；没有标记才按 anchor 插在段末。 */
+function withIllus(text) {
+  const items = illOf()?.items || [];
+  return weave(text, items, markdown, (it) => {
+    const label = it.alt || String(it.prompt || '').slice(0, 24);
+    return it.image
+      ? `<figure class="illus"><img src="/image/${esc(it.image.file)}?v=${encodeURIComponent(it.image.at)}" alt="${esc(it.alt)}">${
+        it.alt ? `<figcaption>${esc(it.alt)}</figcaption>` : ''}</figure>`
+      : `<figure class="illus empty">第 ${(it.i ?? 0) + 1} 张还没出图${label ? ` · ${esc(label)}` : ''}</figure>`;
+  });
 }
 
 
@@ -3133,6 +3122,7 @@ el.exportMenu.addEventListener('click', (e) => {
   const fmt = b.dataset.fmt;
   if (fmt === 'copy') el.copyBtn.click();
   else if (fmt === 'pdf') exportPdf();
+  else if (fmt === 'docx') downloadDocx();
   else downloadAs(fmt);          // md / html
 });
 
@@ -3145,10 +3135,51 @@ function exportPdf() {
   setTimeout(() => { el.toolHint.textContent = ''; }, 6000);
 }
 
+async function downloadDocx() {
+  if (!state.draft?.id) return;
+  const q = ver.current ? `?version=${encodeURIComponent(ver.current)}` : '';
+  try {
+    const res = await fetch(`/api/drafts/${state.draft.id}/export.docx${q}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || '导出 Word 失败');
+      return;
+    }
+    const blob = await res.blob();
+    const base = (state.draft.title || state.draft.subject || '文案').slice(0, 40).replace(/[\\/:*?"<>|]/g, '')
+      + (ver.current ? `-${currentLabel()}` : '');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${base}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    const n = (illOf()?.items || []).filter((it) => it.image).length;
+    toast(n ? `已导出 Word，含 ${n} 张图` : '已导出 Word');
+  } catch (err) {
+    toast(err.message || '导出 Word 失败');
+  }
+}
+
 /* ---------------- 模式：修改 / 返回阅读 ---------------- */
 
 el.editBtn.addEventListener('click', () => setMode('edit'));
 el.backReadBtn.addEventListener('click', () => setMode('read'));
+el.markBtn?.addEventListener('click', () => {
+  const ta = el.editor;
+  if (!ta) return;
+  const ins = IMAGE_MARK;
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? start;
+  const pad = start > 0 && ta.value[start - 1] !== '\n' ? '\n' : '';
+  const tail = end < ta.value.length && ta.value[end] !== '\n' ? '\n' : '';
+  const chunk = `${pad}${ins}${tail}`;
+  ta.value = ta.value.slice(0, start) + chunk + ta.value.slice(end);
+  const caret = start + chunk.length;
+  ta.selectionStart = ta.selectionEnd = caret;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+});
 
 /* 模式变了就更新工具条的样子——哪个按钮该出现、指示器写什么 */
 function syncModeUi(mode) {
@@ -3161,6 +3192,8 @@ function syncModeUi(mode) {
   // 保存只在编辑时有意义，跟着模式露出/收起
   el.saveBtn.classList.toggle('hidden', !editing);
   el.saveState.classList.toggle('hidden', !editing);
+  el.markBtn?.classList.toggle('hidden', !editing);
+  el.markHint?.classList.toggle('hidden', !editing);
 }
 
 

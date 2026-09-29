@@ -962,18 +962,22 @@ ${to.spec}
  * 绕开人物，一致性问题就不存在。
  * ================================================================== */
 
+import { IMAGE_MARK } from '../public/place.js';
+
+export { IMAGE_MARK };
+
 export const ILLUS_SCHEMA = {
   type: 'object',
   properties: {
     look: { type: 'string', description: '整篇统一的视觉风格，一句话，会拼进每张图的提示词' },
     items: {
-      type: 'array', minItems: 1, maxItems: 5,
+      type: 'array', minItems: 1, maxItems: 8,
       items: {
         type: 'object',
         properties: {
           anchor: {
             type: 'string',
-            description: '这张图插在哪一段之后。从正文里**逐字照抄**那一段的开头 10-20 个字，必须能在正文里找到',
+            description: `这张图插在哪。正文里有「${IMAGE_MARK}」时，anchor 必须逐字照抄这个标记。没有标记时，从正文里逐字照抄那一段的开头 10-20 个字`,
           },
           prompt: { type: 'string', description: '画面提示词。只写看得见的东西，不含风格词（风格由 look 统一给）' },
           alt: { type: 'string', description: '图注，12 字以内；不需要图注就给空字符串' },
@@ -990,9 +994,9 @@ export const ILLUS_SCHEMA = {
 export const ILLUS_SYSTEM =
 `你要给一篇文章挑几个插图位，并说清楚每张图画什么。
 
-**插几张**：按文章长度和结构定，2-5 张。**宁可少插**——
-每隔两段就来一张会打断阅读，插图是给长文换气用的，不是填空。
-插图位应该落在**章节之间**或**一个大段落讲完之后**，不要插在一句话中间。
+**插在哪、插几张**：
+- 正文里如果出现「${IMAGE_MARK}」，那就是作者指定的位置。一处一张，按出现顺序，**不要自己另找位置，也不要多给或少给**。anchor 每一条都逐字照抄「${IMAGE_MARK}」。
+- 没有这个标记时，才由你挑位置：按文章长度和结构定，2-5 张。**宁可少插**——每隔两段就来一张会打断阅读。插图位落在**章节之间**或**一个大段落讲完之后**，不要插在一句话中间。
 
 **画面提示词怎么写**：
 - 只写**看得见的东西**：主体、环境、光线、构图、色调。具体到能画出来。
@@ -1011,9 +1015,12 @@ export const ILLUS_SYSTEM =
 3. 涉及真人肖像、品牌标识、他人作品的，绕开。
 4. 全部使用简体中文。`;
 
-export const illusUser = (draft, persona, text, platformKey) => {
+export const illusUser = (draft, persona, text, platformKey, marks = 0) => {
   const p = platformSpec(platformKey);
   const context = [creatorBlock(persona), `—— 发布平台 ——\n${p.label}`].filter(Boolean).join('\n\n');
+  const rule = marks
+    ? `正文里有 ${marks} 处「${IMAGE_MARK}」。请正好给出 ${marks} 张，按出现顺序。anchor 每一条都写「${IMAGE_MARK}」。不要多、不要少、不要换位置。画面贴着标记前后的段落。`
+    : '请给出插图方案。记住：宁可少插，不要画具体的人，anchor 必须逐字照抄正文里的一段开头。';
   return `${context}
 
 —— 文章正文 ——
@@ -1021,7 +1028,7 @@ export const illusUser = (draft, persona, text, platformKey) => {
 ${text}
 ===== 正文结束 =====
 
-请给出插图方案。记住：宁可少插，不要画具体的人，anchor 必须逐字照抄正文里的一段开头。`;
+${rule}`;
 };
 
 /* ==================================================================

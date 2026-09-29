@@ -211,7 +211,7 @@
               <div class="menu-head">这稿定了，接下来</div>
               <button type="button" data-act="cues">生成口播提示<em>切段、标语气，配合提词器照着念</em></button>
               <button type="button" data-act="multi">出多平台版本<em>事实不变，按各平台重排结构和篇幅</em></button>
-              <button type="button" data-act="illus">配图<em>给这一版排插图位并出图</em></button>
+              <button type="button" data-act="illus">配图<em>正文写 &lt;此处放图片&gt; 就插在那里；没写则自动排位。出图要点「全部出图」</em></button>
               <button type="button" data-act="learn">喂给账号学习<em>作为语气样本，影响以后的成稿</em></button>
               <hr>
               <button type="button" data-act="review">再检查一遍<em>错字、通顺性、调性与风险</em></button>
@@ -226,6 +226,7 @@
               <button type="button" data-fmt="copy">复制<em id="copyHint">正文；有配图时连图一起（富文本）</em></button>
               <button type="button" data-fmt="md">下载 Markdown<em>纯文本，.md</em></button>
               <button type="button" data-fmt="html">下载图文<em>单个 .html，图嵌在里面</em></button>
+              <button type="button" data-fmt="docx">导出 Word<em>.docx，有配图就嵌进文档</em></button>
               <button type="button" data-fmt="pdf">导出 PDF<em>走浏览器打印，在弹窗里选「另存为 PDF」</em></button>
             </div>
           </div>
@@ -234,6 +235,7 @@
           <!-- 保存跟着编辑模式出现在这一行。原来在编辑区底部，
                离正文远、也和「确认/导出」这组动作脱节 -->
           <span class="save-state hidden" id="saveState"></span>
+          <button class="btn ghost small hidden" id="markBtn" type="button">插入图片位</button>
           <button class="btn ghost small hidden" id="saveBtn">保存</button>
 
           <!-- 这几个是原来的按钮，逻辑都还在用，只是不再直接露出来——
@@ -285,6 +287,7 @@
         </div>
 
         <article class="content" id="content"></article>
+        <p class="hint hidden" id="markHint">在要插图的地方点「插入图片位」，或自己输入 &lt;此处放图片&gt;。保存后去「确认 → 配图」，图会落在这些位置。</p>
         <textarea class="editor hidden" id="editor" spellcheck="false"></textarea>
 
         <div class="cues hidden" id="cuesPane">

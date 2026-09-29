@@ -7,6 +7,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import { DATA_DIR, Speaks } from './db.js';
 import { generateJSON, PROVIDER } from './llm.js';
+import { liveSystem } from './promptrev.js';
 import { SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, speakReviewUser } from './prompts.js';
 
 const GATEWAY_URL = (process.env.LLM_GATEWAY_URL || 'https://aiapimgrapi.aidigitcloud.cn').replace(/\/$/, '');
@@ -87,7 +88,7 @@ export function settleReview(raw, script) {
 export async function reviewTake({ userId, script, cues, transcript }) {
   const out = await generateJSON({
     meta: { feature: '口播总评', userId, channel: 'quality' },
-    system: SPEAK_REVIEW_SYSTEM,
+    system: liveSystem('speak-review', SPEAK_REVIEW_SYSTEM),
     user: speakReviewUser(script, cues, transcript),
     schema: SPEAK_REVIEW_SCHEMA,
     mock: () => ({
