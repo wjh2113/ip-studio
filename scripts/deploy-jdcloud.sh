@@ -71,6 +71,8 @@ set_kv LLM_GATEWAY_URL https://aiapimgrapi.aidigitcloud.cn
 set_kv LLM_TENANT_ID IP
 set_kv LLM_CAPABILITY quality-chat
 set_kv LLM_CAPABILITY_JSON fast-chat
+set_kv LLM_CAPABILITY_IMAGE image-gen
+set_kv IMAGE_PROVIDER gateway
 set_kv PAY_NOTIFY_BASE "https://\${DOMAIN}"
 
 if ! grep -qE '^SECRET_KEY=.+' "\${ENV_FILE}"; then
