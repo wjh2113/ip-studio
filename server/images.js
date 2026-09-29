@@ -1,4 +1,5 @@
 /* 配图生成接入层
+ *   gateway   —— 站内 AIapiMgr（/api/ai/images），生产默认走这条，不直连上游密钥
  *   dashscope —— 阿里云百炼 通义万相（异步任务：提交 → 轮询 → 拿图片地址）
  *   openai    —— 任意 OpenAI 兼容的 /v1/images/generations
  *   mock      —— 本地画一张带文字的 SVG，没密钥也能把整条链路和视频合成跑通
@@ -17,6 +18,10 @@ const cfg = () => ({
   openaiKey: process.env.IMAGE_API_KEY || '',
   openaiBase: (process.env.IMAGE_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
   openaiModel: process.env.IMAGE_MODEL || 'gpt-image-1',
+  gatewayUrl: (process.env.LLM_GATEWAY_URL || 'https://aiapimgrapi.aidigitcloud.cn').replace(/\/$/, ''),
+  gatewayKey: process.env.LLM_GATEWAY_API_KEY || '',
+  gatewayTenant: process.env.LLM_TENANT_ID || 'IP',
+  gatewayCapability: process.env.LLM_CAPABILITY_IMAGE || 'image-gen',
 });
 
 /* 竖屏是自媒体的默认形态；横屏留给做长视频的 */
@@ -29,11 +34,20 @@ export const RATIOS = {
 export function imageInfo() {
   const c = cfg();
   const live = c.provider !== 'mock';
+  const labels = {
+    gateway: `AIapiMgr 网关 · ${c.gatewayCapability}`,
+    dashscope: `阿里云百炼 · ${c.dashModel}`,
+    openai: `OpenAI 兼容 · ${c.openaiModel}`,
+  };
+  const models = {
+    gateway: c.gatewayCapability,
+    dashscope: c.dashModel,
+    openai: c.openaiModel,
+  };
   return {
     provider: c.provider,
-    model: c.provider === 'dashscope' ? c.dashModel : c.provider === 'openai' ? c.openaiModel : '本地占位图',
-    label: c.provider === 'dashscope' ? `阿里云百炼 · ${c.dashModel}`
-      : c.provider === 'openai' ? `OpenAI 兼容 · ${c.openaiModel}` : '演示模式（不调外部服务）',
+    model: models[c.provider] || '本地占位图',
+    label: labels[c.provider] || '演示模式（不调外部服务）',
     live,
     ratios: Object.entries(RATIOS).map(([key, v]) => ({ key, label: v.label })),
   };
@@ -46,10 +60,42 @@ export async function generate({ prompt, ratio = 'portrait', negative = '' }) {
   const size = RATIOS[ratio] ? ratio : 'portrait';
 
   switch (c.provider) {
+    case 'gateway': return gatewayImage(c, { prompt: text, size, negative });
     case 'dashscope': return wanx(c, { prompt: text, size, negative });
     case 'openai': return openaiImage(c, { prompt: text, size });
     default: return placeholder(text, size);
   }
+}
+
+async function gatewayImage(c, { prompt, size, negative }) {
+  if (!c.gatewayKey) throw new Error('缺少 LLM_GATEWAY_API_KEY');
+  const res = await fetch(`${c.gatewayUrl}/api/ai/images`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(IMG_TIMEOUT),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${c.gatewayKey}`,
+    },
+    body: JSON.stringify({
+      tenantId: c.gatewayTenant,
+      capability: c.gatewayCapability,
+      prompt,
+      n: 1,
+      size,
+      ...(negative ? { negativePrompt: negative } : {}),
+      dataClass: 'internal',
+      fallback: true,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.detail?.message || data?.detail || data?.error?.message || data?.message;
+    throw new Error(`网关出图 ${res.status}${msg ? `：${typeof msg === 'string' ? msg : JSON.stringify(msg)}` : ''}`);
+  }
+  const hit = data?.data?.[0];
+  if (hit?.b64_json) return { buffer: Buffer.from(hit.b64_json, 'base64'), mime: 'image/png', ext: 'png' };
+  if (hit?.url) return download(hit.url);
+  throw new Error('网关没有返回图片');
 }
 
 /* ------------------------------------------------------------------ *
