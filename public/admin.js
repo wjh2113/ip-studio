@@ -390,6 +390,12 @@ function renderCases() {
 el.evFeature.addEventListener('change', loadEval);
 el.evCases.addEventListener('click', async (e) => {
   if (!e.target.dataset.evdel) return;
+  const c = ev.cases.find((x) => x.id === Number(e.target.dataset.evdel));
+  if (!await ask.confirm({
+    title: c?.title ? `删掉用例「${c.title}」？` : '删掉这个用例？',
+    body: '已经跑过的结果不受影响。',
+    ok: '删除', danger: true,
+  })) return;
   try { await api(`/admin/eval/cases/${e.target.dataset.evdel}`, { method: 'DELETE' }); await loadEval(); } catch (err) { toast(err.message); }
 });
 

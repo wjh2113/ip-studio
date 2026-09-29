@@ -2234,8 +2234,16 @@ el.fieldAddBtn.addEventListener('click', () => {
   el.fieldRows.lastElementChild.querySelector('.lbl').focus();
 });
 
-el.fieldRows.addEventListener('click', (e) => {
-  if (e.target.closest('.del')) e.target.closest('.field-row').remove();
+el.fieldRows.addEventListener('click', async (e) => {
+  const row = e.target.closest('.field-row');
+  if (!row || !e.target.closest('.del')) return;
+  const label = row.querySelector('.lbl')?.value.trim();
+  if (!await ask.confirm({
+    title: label ? `删掉「${label}」这项？` : '删掉这项？',
+    body: '还没保存的填写会一起去掉。',
+    ok: '删除', danger: true,
+  })) return;
+  row.remove();
 });
 
 const collectFields = () => [...el.fieldRows.querySelectorAll('.field-row')]
@@ -3323,6 +3331,12 @@ el.poolList.addEventListener('click', async (e) => {
   const t = e.target;
   if (t.id === 'poolAddBtn') { await addPool($('poolInput').value); return; }
   if (t.dataset.poolrm) {
+    const x = pool.list.find((i) => i.id === Number(t.dataset.poolrm));
+    if (!await ask.confirm({
+      title: x?.subject ? `删掉选题「${x.subject}」？` : '删掉这条选题？',
+      body: '选题池里去掉。已经写成的稿子还在。',
+      ok: '删除', danger: true,
+    })) return;
     try { await api(`/pool/${t.dataset.poolrm}`, { method: 'DELETE' }); await loadPool(); } catch (err) { toast(err.message); }
     return;
   }
