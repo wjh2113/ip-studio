@@ -31,6 +31,7 @@ import {
   ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, DIGEST_SYSTEM, GENDERS,
   ARTICLE_SUMMARY_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM,
   CUES_SCHEMA, CUES_SYSTEM, REVIEW_DIMENSIONS, TONE_TAGS, REVIEW_SCHEMA, REVIEW_SYSTEM, SECTION_PRESETS,
+  SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   ADAPT_SYSTEM, adaptUser,
   ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM,
@@ -341,6 +342,8 @@ const PROMPT_CATALOG = () => [
     system: DIGEST_SYSTEM },
   { key: 'cues', label: '口播提示', where: '成稿后切段并标语气/重读/停顿/表情/动作',
     system: CUES_SYSTEM, schema: CUES_SCHEMA },
+  { key: 'speak-review', label: '口播总评', where: '口播页上传录音后。走 quality-chat，不走 fast-chat',
+    system: SPEAK_REVIEW_SYSTEM, schema: SPEAK_REVIEW_SCHEMA },
 ];
 
 export async function handleAdminPrompts(req, res) {
