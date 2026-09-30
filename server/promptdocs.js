@@ -251,7 +251,11 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '开录前的口播提示仍走 fast-chat。上传后的文字总评走 **quality-chat**，这一步不测发音、不看出镜。',
-      '语音测评是单独按钮，才走网关 POST /api/ai/pronounce。视频测评是另一个按钮，整段视频走 POST /api/ai/appearance，由网关抽帧，language 与稿子一致（zh / en / ja），不走 quality-chat。',
+      '语音测评是单独按钮，走网关 POST /api/ai/pronounce（capability=pronunciation）：file 是这一遍录音，text 是当时要念的稿子（不是转写），只采用返回的 score（0–100）。',
+      '视频测评是另一个按钮，走网关 POST /api/ai/appearance（capability=appearance）：file 是这一遍口播视频（mp4 / webm）整段上传；text 只放口播提示里和出镜有关的句子（出镜提醒、表情、动作、看镜头），不是稿子，也不让模型改写。',
+      '**不要抽帧**：浏览器和业务侧都不抽帧，网关内部抽 4 帧再走 vision。纯音频网关回 400，业务侧提前挡掉，不编出镜分；画面没人时 score 为 null，这是合法结果。',
+      '转写、发音、出镜三次调用用同一个 language：稿子里有假名走 ja，拉丁字母明显多于汉字走 en，其余走 zh（网关也认 zh-CN / en-US / ja-JP）。出镜 note 由网关按 language 用中 / 英 / 日写。',
+      '发音分、出镜分都**不用 quality-chat 打**，代码里也不写上游模型名。',
       'user 消息按固定顺序拼：当时的稿子、当时的口播提示、转写、发音评测、出镜。没点过的那两项仍是「无」。',
       '发音分数只认网关评测。出镜分数只认 appearance。转写没有时间戳，不许编造语速秒数。',
       '待提升最多 6 条，quote 从这一遍的稿子快照逐字照抄。',
@@ -259,6 +263,7 @@ export const PROMPT_DOCS = () => [
     guards: [
       '**总分由代码按权重重算**（完整 25、发音 25、节奏 20、表达 20、出镜 10）。null 的权重摊到其余项，不当成 0 分',
       '没点视频测评时，出镜保持 null。没点语音测评时，发音保持 null。模型自己猜的分不采用',
+      '纯音频记录的「视频测评」按钮置灰；画面里没人时出镜分存 null，不补分',
       'quote 对不上这遍稿子快照的待提升条目丢掉',
       '录音先落盘。转写或总评失败也保留记录，只有用户点删除才去掉',
     ],

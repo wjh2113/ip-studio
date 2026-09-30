@@ -32,6 +32,14 @@ function gatewayError(data, fallback) {
   return `${fallback}${msg ? `：${typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 240)}` : ''}`;
 }
 
+/* 网关说「这份材料不行」（如纯音频做出镜评测）时原样按 400 回给前端，
+   不当成服务故障（500），用户也就不会反复点重试。其余一律 502。 */
+function gatewayFail(res, data, fallback) {
+  const err = new Error(gatewayError(data, `${fallback} ${res.status}`));
+  err.status = [400, 413, 415, 422].includes(res.status) ? 400 : 502;
+  return err;
+}
+
 async function postAudio(path, buffer, { filename, mime, userId, fields }) {
   const form = new FormData();
   form.append('file', new Blob([buffer], { type: mime || 'application/octet-stream' }), filename);
@@ -71,7 +79,7 @@ export async function transcribeAudio(buffer, { filename, mime, userId, language
     filename, mime, userId,
     fields: { capability: 'speech', language: lang },
   });
-  if (!res.ok) throw new Error(gatewayError(data, `转写失败 ${res.status}`));
+  if (!res.ok) throw gatewayFail(res, data, '转写失败');
   const text = String(data?.text || '').trim();
   if (!text) throw new Error('转写结果是空的');
   return { text };
@@ -93,7 +101,7 @@ export async function pronounceAudio(buffer, { filename, mime, userId, script, l
       tenantId: GATEWAY_TENANT,
     },
   });
-  if (!res.ok) throw new Error(gatewayError(data, `发音评测失败 ${res.status}`));
+  if (!res.ok) throw gatewayFail(res, data, '发音评测失败');
   const parsed = readPronounce(data);
   if (!parsed) throw new Error('发音评测没有返回分数');
   return parsed;
@@ -204,34 +212,53 @@ export async function reviewTake({ userId, script, cues, transcript, pronunciati
   return settleReview(out, script, pronunciation);
 }
 
-function cueLook(cues, language = 'zh') {
-  const empty = language === 'en' ? 'none' : language === 'ja' ? 'なし' : '无';
-  if (!cues?.cues?.length) return empty;
-  const expLabel = language === 'en' ? 'expression' : '表情';
-  const gesLabel = language === 'en' ? 'gesture' : language === 'ja' ? '動作' : '动作';
-  return cues.cues.map((c) => {
-    const bits = [
-      c.expression ? `${expLabel} ${c.expression}` : '',
-      c.gesture ? `${gesLabel} ${c.gesture}` : '',
-    ].filter(Boolean).join(language === 'en' ? '; ' : '；');
-    return bits ? `${c.quote}（${bits}）` : '';
-  }).filter(Boolean).join('\n') || empty;
-}
-
-const APPEAR_FALLBACK = {
-  zh: { scored: '按画面评的出镜', empty: '没有看到出镜的人', mock: '演示模式：这里会看出镜、表情和手势' },
-  en: { scored: 'Scored from the picture', empty: 'Nobody is on camera', mock: 'Demo: on-camera presence, expression, and gesture' },
-  ja: { scored: '画面から評価した出鏡です', empty: '出鏡している人が見えません', mock: 'デモ：出鏡・表情・ジェスチャーを見ます' },
+/* 出镜评测的 text：只取口播提示里和出镜有关的句子（出镜提醒、表情、动作、看镜头），
+   原样传给网关。不带稿子正文，也不让模型改写。 */
+const LOOK_LABEL = {
+  zh: { note: '出镜提醒：', exp: '表情：', ges: '动作：', sep: '；', none: '无' },
+  en: { note: 'On camera: ', exp: 'Expression: ', ges: 'Gesture: ', sep: '; ', none: 'none' },
+  ja: { note: '出鏡：', exp: '表情：', ges: '動作：', sep: '；', none: 'なし' },
 };
 
-/* 整段视频交给网关 appearance。网关抽帧；纯音频会 400。没有人出镜时分数是 null。language 与稿子一致：zh / en / ja。 */
+export function cueLook(cues, language = 'zh') {
+  const L = LOOK_LABEL[language] || LOOK_LABEL.zh;
+  const lines = [];
+  const note = String(cues?.overall?.note || '').trim();
+  if (note) lines.push(`${L.note}${note}`);
+  for (const c of cues?.cues || []) {
+    const bits = [
+      String(c?.expression || '').trim() ? `${L.exp}${String(c.expression).trim()}` : '',
+      String(c?.gesture || '').trim() ? `${L.ges}${String(c.gesture).trim()}` : '',
+    ].filter(Boolean);
+    if (bits.length) lines.push(bits.join(L.sep));
+  }
+  return [...new Set(lines)].join('\n') || L.none;
+}
+
+/* 纯音频没有画面：不送网关，也不编出镜分 */
+const AUDIO_EXT = /\.(mp3|wav|m4a|ogg|aac)$/i;
+export const isAudioOnly = (mime, filename) =>
+  /^audio\//i.test(String(mime || '')) || (!mime && AUDIO_EXT.test(String(filename || '')));
+
+const APPEAR_FALLBACK = {
+  zh: { scored: '按画面评的出镜', empty: '没有看到出镜的人', mock: '演示模式：这里会看出镜、表情和手势', audio: '这一遍只有声音、没有画面，不做出镜评测' },
+  en: { scored: 'Scored from the picture', empty: 'Nobody is on camera', mock: 'Demo: on-camera presence, expression, and gesture', audio: 'This take is audio only, so there is no on-camera score' },
+  ja: { scored: '画面から評価した出鏡です', empty: '出鏡している人が見えません', mock: 'デモ：出鏡・表情・ジェスチャーを見ます', audio: '音声のみで映像がないため、出鏡は評価しません' },
+};
+
+/* 整段视频（mp4 / webm）交给网关 appearance，网关内部抽帧，浏览器和业务侧都不抽帧。
+   纯音频直接 400；画面没人时 score 为 null，这是合法结果，不补分。language 与稿子一致：zh / en / ja。 */
 export async function scoreAppearance({ userId, cues, buffer, filename, mime, language, script } = {}) {
-  const lang = language || scriptLanguage(script) || scriptLanguage(
-    (cues?.cues || []).map((c) => [c.quote, c.expression, c.gesture].filter(Boolean).join(' ')).join('\n'),
-  );
+  const lang = language || scriptLanguage(script);
   const copy = APPEAR_FALLBACK[lang] || APPEAR_FALLBACK.zh;
   const text = cueLook(cues, lang);
   if (!buffer?.length) throw new Error(copy.empty);
+  // 和网关对纯音频回 400 一致：先在这里挡掉，演示模式也不编分
+  if (isAudioOnly(mime, filename)) {
+    const err = new Error(copy.audio);
+    err.status = 400;
+    throw err;
+  }
   if (!GATEWAY_KEY || PROVIDER === 'mock') {
     return { score: 74, note: copy.mock, usage: null };
   }
@@ -246,7 +273,7 @@ export async function scoreAppearance({ userId, cues, buffer, filename, mime, la
       tenantId: GATEWAY_TENANT,
     },
   });
-  if (!res.ok) throw new Error(gatewayError(data, `视频测评失败 ${res.status}`));
+  if (!res.ok) throw gatewayFail(res, data, '视频测评失败');
   const n = data?.score == null || data.score === '' ? null : Number(data.score);
   return {
     score: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null,

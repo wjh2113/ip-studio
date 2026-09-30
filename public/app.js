@@ -2390,6 +2390,10 @@ function speakStamp(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/* 纯音频没有画面，视频测评按钮置灰（网关对纯音频也会回 400） */
+const speakAudioOnly = (s) => /^audio\//i.test(s.mime || '')
+  || (!s.mime && /\.(mp3|wav|m4a|ogg|aac)$/i.test(s.audio || ''));
+
 function speakReviewHtml(s) {
   if (s.status === 'failed') {
     return `<div class="speak-fail">${esc(s.error || '评估失败')}</div>
@@ -2408,7 +2412,7 @@ function speakReviewHtml(s) {
     <p class="speak-next">${esc(s.review.next || '')}</p>
     <div class="speak-extra">
       <button type="button" class="btn ghost small" data-speak-pron="${s.id}">${s.review.checks?.voice ? '重新语音测评' : '语音测评'}</button>
-      <button type="button" class="btn ghost small" data-speak-look="${s.id}">${s.review.checks?.video ? '重新视频测评' : '视频测评'}</button>
+      <button type="button" class="btn ghost small" data-speak-look="${s.id}"${speakAudioOnly(s) ? ' disabled title="这一遍只有声音、没有画面，不做出镜评测"' : ''}>${s.review.checks?.video ? '重新视频测评' : '视频测评'}</button>
     </div>
     ${s.audio ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` : ''}`;
 }

@@ -175,10 +175,10 @@ const server = createServer(async (req, res) => {
       }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉
       const raw = req.method === 'POST' && /^\/api\/pay\/notify\//.test(path);
-      const frames = req.method === 'POST' && /^\/api\/speaks\/\d+\/appearance$/.test(path);
+      // 视频测评不带请求体：视频已在服务端，整段交给网关，这里不收截帧
       const body = raw || req.method === 'GET' || req.method === 'DELETE'
         ? {}
-        : await readJSON(req, frames ? 2 * 1024 * 1024 : MAX_BODY);
+        : await readJSON(req);
       await match[2](req, res, body, params, url);
     } catch (err) {
       // QuotaError 自带 402；别把它当 500，前端要靠状态码识别"该升级了"

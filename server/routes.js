@@ -1078,6 +1078,7 @@ function presentSpeak(row, userId, detail = false) {
     score: row.score,
     next: row.next,
     bytes: row.bytes,
+    mime: row.mime,
     audio: row.file ? `/speak/${userId}/${row.file}` : '',
   };
   if (!detail) return item;
