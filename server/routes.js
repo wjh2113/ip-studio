@@ -1182,6 +1182,7 @@ export async function handleSpeakAppearance(req, res, body, params) {
     buffer: buf,
     filename: row.file,
     mime: row.mime,
+    script: row.script,
   });
   chargeExtra(user.id, look.usage);
   const review = {

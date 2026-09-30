@@ -204,23 +204,36 @@ export async function reviewTake({ userId, script, cues, transcript, pronunciati
   return settleReview(out, script, pronunciation);
 }
 
-function cueLook(cues) {
-  if (!cues?.cues?.length) return '无';
+function cueLook(cues, language = 'zh') {
+  const empty = language === 'en' ? 'none' : language === 'ja' ? 'なし' : '无';
+  if (!cues?.cues?.length) return empty;
+  const expLabel = language === 'en' ? 'expression' : '表情';
+  const gesLabel = language === 'en' ? 'gesture' : language === 'ja' ? '動作' : '动作';
   return cues.cues.map((c) => {
     const bits = [
-      c.expression ? `表情 ${c.expression}` : '',
-      c.gesture ? `动作 ${c.gesture}` : '',
-    ].filter(Boolean).join('；');
+      c.expression ? `${expLabel} ${c.expression}` : '',
+      c.gesture ? `${gesLabel} ${c.gesture}` : '',
+    ].filter(Boolean).join(language === 'en' ? '; ' : '；');
     return bits ? `${c.quote}（${bits}）` : '';
-  }).filter(Boolean).join('\n') || '无';
+  }).filter(Boolean).join('\n') || empty;
 }
 
-/* 整段视频交给网关 appearance。网关抽帧；纯音频会 400。没有人出镜时分数是 null。 */
-export async function scoreAppearance({ userId, cues, buffer, filename, mime }) {
-  const text = cueLook(cues);
-  if (!buffer?.length) throw new Error('没有画面');
+const APPEAR_FALLBACK = {
+  zh: { scored: '按画面评的出镜', empty: '没有看到出镜的人', mock: '演示模式：这里会看出镜、表情和手势' },
+  en: { scored: 'Scored from the picture', empty: 'Nobody is on camera', mock: 'Demo: on-camera presence, expression, and gesture' },
+  ja: { scored: '画面から評価した出鏡です', empty: '出鏡している人が見えません', mock: 'デモ：出鏡・表情・ジェスチャーを見ます' },
+};
+
+/* 整段视频交给网关 appearance。网关抽帧；纯音频会 400。没有人出镜时分数是 null。language 与稿子一致：zh / en / ja。 */
+export async function scoreAppearance({ userId, cues, buffer, filename, mime, language, script } = {}) {
+  const lang = language || scriptLanguage(script) || scriptLanguage(
+    (cues?.cues || []).map((c) => [c.quote, c.expression, c.gesture].filter(Boolean).join(' ')).join('\n'),
+  );
+  const copy = APPEAR_FALLBACK[lang] || APPEAR_FALLBACK.zh;
+  const text = cueLook(cues, lang);
+  if (!buffer?.length) throw new Error(copy.empty);
   if (!GATEWAY_KEY || PROVIDER === 'mock') {
-    return { score: 74, note: '演示模式：这里会看出镜、表情和手势', usage: null };
+    return { score: 74, note: copy.mock, usage: null };
   }
   const { res, data } = await postAudio('/api/ai/appearance', buffer, {
     filename: filename || 'take.webm',
@@ -228,7 +241,7 @@ export async function scoreAppearance({ userId, cues, buffer, filename, mime }) 
     userId,
     fields: {
       capability: 'appearance',
-      language: 'zh',
+      language: lang,
       text,
       tenantId: GATEWAY_TENANT,
     },
@@ -237,7 +250,7 @@ export async function scoreAppearance({ userId, cues, buffer, filename, mime }) 
   const n = data?.score == null || data.score === '' ? null : Number(data.score);
   return {
     score: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null,
-    note: String(data?.note || '').trim() || (Number.isFinite(n) ? '按画面评的出镜' : '没有看到出镜的人'),
+    note: String(data?.note || '').trim() || (Number.isFinite(n) ? copy.scored : copy.empty),
     usage: {
       input: data.usage?.prompt_tokens || 0,
       output: data.usage?.completion_tokens || 0,
