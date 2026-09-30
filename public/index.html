@@ -41,6 +41,7 @@
     </nav>
     <div class="topbar-right">
       <span class="chip" id="llmChip" title="当前模型通道">…</span>
+      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" title="出图、口播转写与评测这类要等的活，关掉页面也会接着做">任务<span class="jobs-badge hidden" id="jobsBadge"></span></button>
       <button class="credit-chip" id="creditChip" title="点开看用量与套餐"></button>
       <span class="user-name" id="userName"></span>
       <a class="btn ghost small" href="/prompts" target="_blank" rel="noopener"
@@ -479,6 +480,18 @@
 </div>
 
 <!-- 标题候选 -->
+<div class="modal-mask hidden" id="jobsModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>任务<span class="modal-sub">出图和口播评测在后台做，关掉页面也不会丢</span></h2>
+      <button class="icon-btn" id="jobsClose" title="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="job-list" id="jobsList"></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-mask hidden" id="titleModal">
   <div class="modal">
     <div class="modal-head">

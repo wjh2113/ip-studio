@@ -15,6 +15,7 @@
  *   plan.js      用量、套餐与支付
  *   frameworks.js 写法框架：简报里的推荐与选择、框架库的浏览与编辑
  *   titles.js    标题候选
+ *   jobs.js      长任务（出图、口播转写与评测）的轮询和任务中心
  * 这里先按顺序加载它们（core 最先），最后启动。 */
 import { api, el, esc, state, syncLength, toast } from './js/core.js';
 import { enterApp } from './js/auth.js';
@@ -32,6 +33,7 @@ import './js/insights.js';
 import './js/plan.js';
 import './js/frameworks.js';
 import './js/titles.js';
+import './js/jobs.js';
 
 /* ---------------- 启动 ---------------- */
 (async function boot() {

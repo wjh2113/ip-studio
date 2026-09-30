@@ -27,7 +27,7 @@
 
 - 入口 `public/app.js` 只负责加载模块和启动；功能写在 `public/js/<模块>.js`。
 - 共享的 `el`、`state`、`api` 在 `public/js/core.js`；`core.js` 不能 import 功能模块。
-- 模块之间要「通知」而不是「调用」时，用 window 事件（现有：`cw-spent`、`cw-quota`）。
+- 模块之间要「通知」而不是「调用」时，用 window 事件（现有：`cw-spent`、`cw-quota`、`cw-enter`、`cw-job-done`）。
 - 拼 HTML 一律先 `esc()`；Markdown 用 `markdown()`（先转义再加标签）。
 - 不用浏览器原生 `alert` / `confirm`，用 `public/dialog.js` 的应用内浮层。
 

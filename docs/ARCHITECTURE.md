@@ -8,15 +8,17 @@
 flowchart LR
   subgraph 浏览器
     A[public/app.js 入口] --> C[public/js/core.js<br/>el · state · api · 小工具]
-    A --> F[public/js/*.js<br/>13 个功能模块]
+    A --> F[public/js/*.js<br/>16 个功能模块]
     F --> C
   end
   subgraph Node 服务
     I[server/index.js<br/>路由表 · 限流 · 静态文件] --> R[server/routes.js<br/>聚合导出]
-    R --> RD[server/routes/*.js<br/>14 个业务域]
+    R --> RD[server/routes/*.js<br/>16 个业务域]
     RD --> L[llm.js<br/>模型通道 · 分档 · 额度 · 超时]
     RD --> P[prompts.js<br/>提示词与拼装]
     RD --> S[speak.js · images.js · hotspots.js<br/>pay.js · docx.js]
+    RD --> J[jobs.js<br/>长任务队列 · 进程内 worker]
+    J --> D
     L --> Q[quota.js · plans.js<br/>预扣与结算]
     RD --> D[db.js<br/>数据访问]
     Q --> D
@@ -71,6 +73,8 @@ flowchart LR
 | `materials.js` | 素材库（`recallMaterials` 召回）与选题池 |
 | `insights.js` | 发布数据回填与复盘 |
 | `billing.js` | 套餐、下单、支付回调 |
+| `frameworks.js` | 写法框架库、从范文拆解 |
+| `jobs.js` | 任务中心：长任务的进度、取消、重试 |
 
 ## 前端模块（public/js/）
 
@@ -79,17 +83,19 @@ flowchart LR
 - `core.js` 放所有模块共享的东西：DOM 引用 `el`、全局状态 `state`、`api()`、`esc`、`toast`、`markdown` 等。
   **它不 import 任何功能模块**，所以永远最先执行完，别的模块在加载时读 `el` / `state` 不会出错。
 - 功能模块之间可以互相 import 函数（ES 模块里函数声明会提前可用）。
-- 需要「通知」而不是「调用」的地方用 window 事件：`cw-spent`（花了点数，刷新余额）、`cw-quota`（额度不够，弹用量面板）。
+- 需要「通知」而不是「调用」的地方用 window 事件：`cw-spent`（花了点数，刷新余额）、`cw-quota`（额度不够，弹用量面板）、
+  `cw-enter`（登录后进了应用）、`cw-job-done`（后台任务做完，`detail` 是任务）。
 
 ## 数据
 
-20 张表，按用途分：
+22 张表，按用途分：
 
 | 用途 | 表 |
 |---|---|
 | 账号与会话 | `users`、`sessions`、`admins`、`admin_sessions` |
 | 账号设定 | `personas`、`sections`、`style_samples` |
-| 创作 | `drafts`、`draft_revisions`、`speak_takes` |
+| 创作 | `drafts`、`draft_revisions`、`speak_takes`、`frameworks` |
+| 后台任务 | `jobs`（出图、口播转写与评测；worker 在 `server/jobs.js`） |
 | 素材与选题 | `materials`、`topic_pool` |
 | 提示词 | `prompt_revisions`、`prompt_variants`、`eval_cases`、`eval_runs`、`eval_votes` |
 | 计费与运营 | `orders`、`usage_events`、`settings` |
@@ -105,6 +111,7 @@ flowchart LR
 | 哪个功能用哪个档的模型 | `server/llm.js` 的 `FEATURE_TIER`；快档模型用 `ANTHROPIC_MODEL_FAST` / `OPENAI_MODEL_FAST` / `LLM_CAPABILITY_JSON` |
 | 套餐、点数、单价 | `server/plans.js`、`server/pricing.js` |
 | 新接口 | `server/index.js` 的 `ROUTES` 加一行 + 对应 `server/routes/<域>.js` 里 export 处理函数 |
+| 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `jobs.js` 的 `startJob` / `waitJob` |
 | 表结构 | `server/migrations.js` 末尾加一个编号迁移 |
 | 页面结构 / 样式 | `public/index.html` / `public/styles.css`（开头是设计令牌） |
 | 页面行为 | `public/js/<模块>.js` |

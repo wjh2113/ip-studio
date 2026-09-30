@@ -36,6 +36,27 @@ export const MIGRATIONS = [
   { version: 3, name: '栏目默认框架', up: (db) => db.exec(`
     ALTER TABLE sections ADD COLUMN default_framework TEXT NOT NULL DEFAULT '';
   `) },
+  { version: 4, name: '长任务队列：jobs 表', up: (db) => db.exec(`
+    CREATE TABLE jobs (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL,
+      kind         TEXT    NOT NULL,
+      ref          TEXT    NOT NULL DEFAULT '',
+      label        TEXT    NOT NULL DEFAULT '',
+      payload_json TEXT    NOT NULL DEFAULT '{}',
+      status       TEXT    NOT NULL DEFAULT 'queued',
+      result_json  TEXT    NOT NULL DEFAULT 'null',
+      error        TEXT    NOT NULL DEFAULT '',
+      held         REAL    NOT NULL DEFAULT 0,
+      hold_feature TEXT    NOT NULL DEFAULT '',
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT    NOT NULL,
+      started_at   TEXT    NOT NULL DEFAULT '',
+      finished_at  TEXT    NOT NULL DEFAULT ''
+    );
+    CREATE INDEX idx_jobs_user ON jobs(user_id, id DESC);
+    CREATE INDEX idx_jobs_status ON jobs(status, id);
+  `) },
 ];
 
 export function runMigrations(db) {

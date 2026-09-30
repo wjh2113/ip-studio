@@ -6,6 +6,7 @@ import { currentAdmin, currentUser, HttpError } from '../auth.js';
 import { PROVIDER } from '../llm.js';
 import { loadPricing } from '../pricing.js';
 import { liveSystem } from '../promptrev.js';
+import { waitFor } from '../jobs.js';
 
 loadPricing();
 
@@ -85,4 +86,20 @@ export async function dropImageFiles(userId, draftId) {
     await Promise.all(names.filter((n) => n.startsWith(`${draftId}-`))
       .map((n) => rm(resolvePath(dir, n), { force: true })));
   } catch { /* 目录不存在就没什么可删的 */ }
+}
+
+/* ---------------- 长任务的两种回法 ----------------
+   请求带 async: true（或 ?async=1）：立刻回 202 和任务，前端轮询 /api/jobs/:id。
+   不带的（老前端、脚本、测试）：在这里等它做完，回和以前一样的结果。
+   两种都走队列，所以请求断了活也照样做完、结果照样落库。 */
+export const JOB_WAIT_MS = 10 * 60 * 1000;
+
+export const wantsAsync = (body, url) => body?.async === true || url?.searchParams?.get('async') === '1';
+
+export async function awaitJob(job) {
+  const done = await waitFor(job.id, JOB_WAIT_MS);
+  if (done?.status === 'done') return done.result;
+  if (done?.status === 'failed') throw new HttpError(done.result?.code || 502, done.error);
+  if (done?.status === 'cancelled') throw new HttpError(409, '任务已取消');
+  throw new HttpError(504, '任务还没做完，稍后在任务中心看结果');
 }

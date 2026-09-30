@@ -6,14 +6,15 @@ import { HttpError } from '../auth.js';
 import { generateJSON, generateText } from '../llm.js';
 import { buildDocx } from '../docx.js';
 import { IMAGE_MARK, markAts } from '../../public/place.js';
-import { reserve, settle } from '../quota.js';
+import { assertQuota } from '../quota.js';
+import { defineJob, enqueue, presentJob } from '../jobs.js';
 import { generate, imageInfo } from '../images.js';
 import {
   ADAPT_SYSTEM, adaptUser, DEFAULT_PLATFORM, ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser, PLATFORMS,
   TITLE_LIMITS, TITLE_TYPES, TITLES_SCHEMA, TITLES_SYSTEM, titlesUser,
 } from '../prompts.js';
 import { scanLexicon } from '../lexicon.js';
-import { describe, json, requireUser, sys, withRetry } from './common.js';
+import { awaitJob, describe, json, requireUser, sys, wantsAsync, withRetry } from './common.js';
 
 /* ==================================================================
  * 配图文件：出图结果落盘与清理
@@ -240,46 +241,73 @@ export async function handleIllus(req, res, body, params) {
   json(res, 200, { version: v, illus: store[verKey(v)], image: imageInfo() });
 }
 
-export async function handleIllusImage(req, res, body, params) {
+/* 出一张图：请求只登记，出图在任务队列里做（几十秒，刷新页面也不丢） */
+export async function handleIllusImage(req, res, body, params, url) {
   const user = requireUser(req);
   const draft = Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const v = String(body?.version || '');
-  const store = draft.illus?.[verKey(v)];
   const idx = Number(params.i);
-  const item = store?.items?.[idx];
+  const item = draft.illus?.[verKey(v)]?.items?.[idx];
   if (!item) throw new HttpError(400, '这个配图位不存在');
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
+  // 额度不够当场告诉，别等排到了才失败
+  assertQuota(user.id, '图文配图', 1);
 
-  const info = imageInfo();
-  // 出图按张计费：先预扣一张，失败退回
-  const { held } = reserve(user.id, '图文配图', 1);
-  const prompt = store.look ? `${item.prompt}。整体风格：${store.look}` : item.prompt;
-  const started = Date.now();
-  let out;
-  try {
-    // 文章插图用横图，竖图在正文里会把一屏占满
-    out = await generate({ prompt, ratio: 'landscape' });
+  const job = enqueue(user.id, 'image', {
+    ref: `image:${draft.id}:${verKey(v)}:${idx}`,
+    label: `配图第 ${idx + 1} 张 · ${draft.title || draft.subject || '未命名'}`,
+    payload: { draftId: draft.id, version: v, index: idx },
+  });
+  if (wantsAsync(body, url)) { json(res, 202, { job: presentJob(job) }); return; }
+  json(res, 200, await awaitJob(job));
+}
+
+defineJob('image', {
+  label: '配图',
+  async run({ userId, payload }, ctx) {
+    const { draftId, version: v, index: idx } = payload;
+    const draft = Drafts.byId(draftId, userId);
+    if (!draft) throw new HttpError(404, '稿子已经不在了');
+    const store = draft.illus?.[verKey(v)];
+    const item = store?.items?.[idx];
+    if (!item?.prompt) throw new HttpError(400, '这个配图位已经不在了');
+
+    const info = imageInfo();
+    // 出图按张计费：先预扣一张，失败由队列自动退回
+    ctx.hold('图文配图', 1);
+    const prompt = store.look ? `${item.prompt}。整体风格：${store.look}` : item.prompt;
+    const started = Date.now();
+    let out;
+    try {
+      // 文章插图用横图，竖图在正文里会把一屏占满
+      out = await generate({ prompt, ratio: 'landscape' });
+    } catch (err) {
+      Usage.record({
+        userId, feature: '图文配图', provider: info.provider, model: info.model,
+        ok: false, ms: Date.now() - started, error: String(err?.message || err),
+      });
+      throw new HttpError(502, `出图失败：${describe(err)}`);
+    }
     Usage.record({
-      userId: user.id, feature: '图文配图', provider: info.provider, model: info.model,
+      userId, feature: '图文配图', provider: info.provider, model: info.model,
       ok: true, ms: Date.now() - started, units: 1, unit: '张',
     });
-  } catch (err) {
-    settle(user.id, '图文配图', held, 0);
-    Usage.record({
-      userId: user.id, feature: '图文配图', provider: info.provider, model: info.model,
-      ok: false, ms: Date.now() - started, error: String(err?.message || err),
-    });
-    throw new HttpError(502, `出图失败：${describe(err)}`);
-  }
+    ctx.settle(1);
 
-  const file = await saveImage(user.id, draft.id, `${verKey(v)}-${idx}`, out);
-  const image = { file, mime: out.mime, bytes: out.buffer.length, at: new Date().toISOString() };
-  const next = { ...store, items: store.items.map((it, i) => (i === idx ? { ...it, image } : it)) };
-  Drafts.setIllus(draft.id, user.id, { ...(draft.illus || {}), [verKey(v)]: next });
-  json(res, 200, { version: v, index: idx, image });
-}
+    const file = await saveImage(userId, draftId, `${verKey(v)}-${idx}`, out);
+    const image = { file, mime: out.mime, bytes: out.buffer.length, at: new Date().toISOString() };
+    // 出图要几十秒，这期间别的图可能已经写回去了：落库前重新读一遍，只改自己这一张
+    const fresh = Drafts.byId(draftId, userId);
+    const now = fresh?.illus?.[verKey(v)];
+    if (now?.items?.[idx]) {
+      const next = { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, image } : it)) };
+      Drafts.setIllus(draftId, userId, { ...(fresh.illus || {}), [verKey(v)]: next });
+    }
+    return { version: v, index: idx, image, draftId };
+  },
+});
 
 /* ==================================================================
  * 标题候选：定稿后按不同写法出一批，作者挑一个替换

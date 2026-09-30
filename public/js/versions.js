@@ -3,6 +3,7 @@ import { markAts, placeCuts } from '../place.js';
 import { api, busy, el, esc, markdown, state, toast } from './core.js';
 import { platformLabel } from './compose.js';
 import { currentText, updateActionLabels } from './export.js';
+import { activeJob, startJob, waitJob } from './jobs.js';
 
 /* ==================================================================
  * 多平台版本
@@ -177,7 +178,9 @@ export function renderIllusBar() {
         <div class="where">插在「${esc(it.anchor.slice(0, 16))}…」之后${it.alt ? ` · 图注：${esc(it.alt)}` : ''}</div>
         <textarea data-ill="${it.i}" rows="2">${esc(it.prompt)}</textarea>
       </div>
-      <button class="mini" data-illimg="${it.i}">${it.image ? '重出' : '出这张'}</button>
+      ${imageRunning(it.i)
+    ? `<button class="mini" data-illimg="${it.i}" disabled>出图中…</button>`
+    : `<button class="mini" data-illimg="${it.i}">${it.image ? '重出' : '出这张'}</button>`}
     </div>`).join('');
 }
 
@@ -194,14 +197,34 @@ el.illusList.addEventListener('change', (e) => {
   if (store) store.items[Number(t.dataset.ill)].prompt = t.value;
 });
 
+/* 这一张是不是正在后台出 */
+const imageRunning = (i) => Boolean(activeJob('image',
+  (p) => p.draftId === state.draft?.id && (p.version || '') === ver.current && p.index === i));
+
+/* 出图结果写回当前稿子（任务做完时稿子可能已经换了，对不上就不动） */
+function placeImage({ draftId, version, index, image }) {
+  if (!image || state.draft?.id !== draftId) return false;
+  const store = state.draft.illus?.[version || '__main__'];
+  if (!store?.items?.[index]) return false;
+  store.items[index] = { ...store.items[index], image };
+  if ((version || '') === ver.current) {
+    renderIllusBar();
+    showVersion();
+    updateActionLabels();
+  }
+  return true;
+}
+
 async function makeIllus(i, btn) {
   const label = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = '出图中…'; }
   try {
-    const { image } = await api(`/drafts/${state.draft.id}/illus/${i}/image`,
-      { method: 'POST', body: { version: ver.current } });
-    const store = illOf();
-    store.items[i] = { ...store.items[i], image };
+    const draftId = state.draft.id;
+    const version = ver.current;
+    const { job } = await startJob(`/drafts/${draftId}/illus/${i}/image`, { version });
+    renderIllusBar();
+    const { image } = await waitJob(job);
+    placeImage({ draftId, version, index: i, image });
     renderIllusBar();
     showVersion();
     updateActionLabels();
@@ -269,3 +292,11 @@ if (el.headStick) {
     threshold: 0,
   }).observe(sentinel);
 }
+
+/* 刷新前发起、或者切走后才做完的出图：回来时补上 */
+window.addEventListener('cw-job-done', (e) => {
+  const job = e.detail;
+  if (job.kind !== 'image') return;
+  if (job.status === 'done') placeImage(job.result || {});
+  else if (state.illusOpen) renderIllusBar();
+});

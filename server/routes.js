@@ -30,3 +30,4 @@ export * from './routes/materials.js';
 export * from './routes/insights.js';
 export * from './routes/billing.js';
 export * from './routes/frameworks.js';
+export * from './routes/jobs.js';

@@ -866,6 +866,81 @@ const parseJson = (raw, fallback) => {
 };
 
 /* 口播留档。draft_id 只是当时的稿子，不设外键，删稿不会带走录音和总评。 */
+/* ---------- jobs：长任务队列（出图、口播转写与评测） ---------- */
+const hydrateJob = (r) => (r ? {
+  id: r.id,
+  userId: r.user_id,
+  kind: r.kind,
+  ref: r.ref,
+  label: r.label,
+  payload: parseJson(r.payload_json, {}),
+  status: r.status,
+  result: parseJson(r.result_json, null),
+  error: r.error,
+  held: r.held,
+  holdFeature: r.hold_feature,
+  attempts: r.attempts,
+  createdAt: r.created_at,
+  startedAt: r.started_at,
+  finishedAt: r.finished_at,
+} : null);
+
+export const Jobs = {
+  create({ userId, kind, ref = '', label = '', payload = {} }) {
+    const { lastInsertRowid } = db.prepare(`INSERT INTO jobs (user_id, kind, ref, label, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(userId, kind, ref, label, JSON.stringify(payload), now());
+    return Jobs.byId(Number(lastInsertRowid));
+  },
+  byId(id, userId = null) {
+    const r = userId == null
+      ? db.prepare('SELECT * FROM jobs WHERE id = ?').get(id)
+      : db.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?').get(id, userId);
+    return hydrateJob(r);
+  },
+  /* 同一件事（同一张图、同一遍口播）还在排队或在跑，就不再重复建 */
+  activeByRef(userId, ref) {
+    if (!ref) return null;
+    return hydrateJob(db.prepare(`SELECT * FROM jobs WHERE user_id = ? AND ref = ?
+      AND status IN ('queued', 'running') ORDER BY id DESC LIMIT 1`).get(userId, ref));
+  },
+  list(userId, limit = 30) {
+    return db.prepare('SELECT * FROM jobs WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit).map(hydrateJob);
+  },
+  queued() {
+    return db.prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id").all().map(hydrateJob);
+  },
+  running() {
+    return db.prepare("SELECT * FROM jobs WHERE status = 'running'").all().map(hydrateJob);
+  },
+  /* 只有还在排队的才能被领走：UPDATE 带状态条件，领到返回 true */
+  claim(id) {
+    const r = db.prepare(`UPDATE jobs SET status = 'running', started_at = ?, attempts = attempts + 1
+      WHERE id = ? AND status = 'queued'`).run(now(), id);
+    return r.changes === 1;
+  },
+  setHeld(id, held, feature = '') {
+    db.prepare('UPDATE jobs SET held = ?, hold_feature = ? WHERE id = ?').run(held || 0, feature, id);
+  },
+  finish(id, { status, result = null, error = '' }) {
+    db.prepare(`UPDATE jobs SET status = ?, result_json = ?, error = ?, held = 0, finished_at = ?
+      WHERE id = ?`).run(status, JSON.stringify(result ?? null), error, now(), id);
+    return Jobs.byId(id);
+  },
+  requeue(id) {
+    db.prepare("UPDATE jobs SET status = 'queued', held = 0, started_at = '' WHERE id = ?").run(id);
+  },
+  cancel(id, userId) {
+    const r = db.prepare(`UPDATE jobs SET status = 'cancelled', finished_at = ?
+      WHERE id = ? AND user_id = ? AND status = 'queued'`).run(now(), id, userId);
+    return r.changes === 1;
+  },
+  /* 只留最近的：每人超过 limit 条的已结束任务删掉 */
+  prune(userId, keep = 100) {
+    db.prepare(`DELETE FROM jobs WHERE user_id = ? AND status NOT IN ('queued', 'running')
+      AND id NOT IN (SELECT id FROM jobs WHERE user_id = ? ORDER BY id DESC LIMIT ?)`).run(userId, userId, keep);
+  },
+};
+
 export const Speaks = {
   create({ userId, draftId, title, script, cues, file, mime, bytes }) {
     const info = db.prepare(`
@@ -878,6 +953,9 @@ export const Speaks = {
   setFile(id, userId, file, bytes) {
     db.prepare('UPDATE speak_takes SET file = ?, bytes = ? WHERE id = ? AND user_id = ?')
       .run(file, bytes, id, userId);
+  },
+  setStatus(id, userId, status, error = '') {
+    db.prepare('UPDATE speak_takes SET status = ?, error = ? WHERE id = ? AND user_id = ?').run(status, error, id, userId);
   },
   finish(id, userId, { transcript, review, status, error }) {
     db.prepare(`UPDATE speak_takes SET transcript = ?, review_json = ?, status = ?, error = ?
@@ -924,7 +1002,8 @@ function hydrateSpeak(row) {
   const review = parseJson(row.review_json, null);
   const live = row.live_content;
   const draftGone = row.draft_id != null && live == null;
-  const stale = live != null && live !== row.script;
+  // 上传时存的稿子去掉了首尾空白，比较时也要去掉，否则正文末尾多个换行就被当成「当时的稿子」
+  const stale = live != null && live.trim() !== row.script.trim();
   return {
     id: row.id,
     draftId: row.draft_id,

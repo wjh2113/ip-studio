@@ -19,6 +19,9 @@ ensureAccessUser();
 syncAdminPassword();
 const { syncPromptBuiltins } = await import('./promptrev.js');
 syncPromptBuiltins();
+// 上次没跑完的长任务：退回预扣、重新排队（任务类型在 routes/*.js 里登记，所以放在加载路由之后）
+const { recoverJobs } = await import('./jobs.js');
+recoverJobs();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
@@ -112,6 +115,10 @@ const ROUTES = [
   ['POST', /^\/api\/frameworks$/, R.handleFrameworkCreate],
   ['PUT', /^\/api\/frameworks\/(?<fid>\d+)$/, R.handleFrameworkUpdate],
   ['DELETE', /^\/api\/frameworks\/(?<fid>\d+)$/, R.handleFrameworkDelete],
+  ['GET', /^\/api\/jobs$/, R.handleJobList],
+  ['GET', /^\/api\/jobs\/(?<jid>\d+)$/, R.handleJobGet],
+  ['POST', /^\/api\/jobs\/(?<jid>\d+)\/cancel$/, R.handleJobCancel],
+  ['POST', /^\/api\/jobs\/(?<jid>\d+)\/retry$/, R.handleJobRetry],
   ['GET', /^\/api\/pool$/, R.handlePoolList],
   ['POST', /^\/api\/pool$/, R.handlePoolCreate],
   ['PUT', /^\/api\/pool\/(?<pid>\d+)$/, R.handlePoolUpdate],
@@ -178,7 +185,7 @@ const server = createServer(async (req, res) => {
       if (req.method === 'POST' && /^\/api\/drafts\/\d+\/(speaks|voice-edit)$/.test(path)) {
         const file = await readUpload(req);
         if (path.endsWith('/voice-edit')) await R.handleVoiceEdit(req, res, file, params);
-        else await R.handleSpeakCreate(req, res, file, params);
+        else await R.handleSpeakCreate(req, res, file, params, url);
         return;
       }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉

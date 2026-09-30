@@ -2,6 +2,7 @@
 import { api, busy, el, esc, state, toast } from './core.js';
 import { setDraft } from './brief.js';
 import { flushSave, setMode } from './editor.js';
+import { activeJob, startJob, trackJob, waitJob } from './jobs.js';
 
 /* ==================================================================
  * 口播提示：语气 / 重读 / 停顿 / 表情 / 动作
@@ -83,12 +84,27 @@ function speakStamp(iso) {
 const speakAudioOnly = (s) => /^audio\//i.test(s.mime || '')
   || (!s.mime && /\.(mp3|wav|m4a|ogg|aac)$/i.test(s.audio || ''));
 
+/* 语音 / 视频测评按钮：任务在跑时显示「测评中…」，刷新页面后也一样 */
+function checkBtn(s, kind) {
+  const voice = kind === 'pronounce';
+  const attr = voice ? 'data-speak-pron' : 'data-speak-look';
+  if (activeJob(kind, (p) => p.speakId === s.id)) {
+    return `<button type="button" class="btn ghost small" ${attr}="${s.id}" disabled>测评中…</button>`;
+  }
+  if (!voice && speakAudioOnly(s)) {
+    return `<button type="button" class="btn ghost small" ${attr}="${s.id}" disabled title="这一遍只有声音、没有画面，不做出镜评测">视频测评</button>`;
+  }
+  const again = voice ? s.review.checks?.voice : s.review.checks?.video;
+  const name = voice ? '语音测评' : '视频测评';
+  return `<button type="button" class="btn ghost small" ${attr}="${s.id}">${again ? `重新${name}` : name}</button>`;
+}
+
 function speakReviewHtml(s) {
   if (s.status === 'failed') {
     return `<div class="speak-fail">${esc(s.error || '评估失败')}</div>
       <button class="btn ghost small" data-speak-retry="${s.id}">重新评估</button>`;
   }
-  if (s.status !== 'ready' || !s.review) return '<div class="hint">正在评估…</div>';
+  if (s.status !== 'ready' || !s.review) return '<div class="hint">正在转写和总评…可以先去做别的，好了会提示</div>';
   const dims = (s.review.dims || []).map((d) => `
     <div class="speak-dim"><b>${esc(d.key)}</b><span>${d.score == null ? '—' : d.score}</span>
       <em>${esc(d.note || '')}</em></div>`).join('');
@@ -100,8 +116,8 @@ function speakReviewHtml(s) {
     ${lifts ? `<ol class="speak-lifts">${lifts}</ol>` : ''}
     <p class="speak-next">${esc(s.review.next || '')}</p>
     <div class="speak-extra">
-      <button type="button" class="btn ghost small" data-speak-pron="${s.id}">${s.review.checks?.voice ? '重新语音测评' : '语音测评'}</button>
-      <button type="button" class="btn ghost small" data-speak-look="${s.id}"${speakAudioOnly(s) ? ' disabled title="这一遍只有声音、没有画面，不做出镜评测"' : ''}>${s.review.checks?.video ? '重新视频测评' : '视频测评'}</button>
+      ${checkBtn(s, 'pronounce')}
+      ${checkBtn(s, 'appearance')}
     </div>
     ${s.audio ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` : ''}`;
 }
@@ -118,7 +134,9 @@ function replaceSpeak(speak) {
 
 async function runSpeakCheck(id, kind) {
   const path = kind === 'video' ? `/speaks/${id}/appearance` : `/speaks/${id}/pronounce`;
-  const { speak: next } = await api(path, { method: 'POST', body: {} });
+  const { job } = await startJob(path);
+  await waitJob(job);
+  const { speak: next } = await api(`/speaks/${id}`);
   replaceSpeak(next);
   toast(kind === 'video' ? '视频测评好了' : '语音测评好了');
 }
@@ -159,7 +177,7 @@ function renderDraftSpeaks() {
       <button type="button" class="speak-sum" data-speak-open="${s.id}">
         <b>${s.score == null ? '—' : s.score}</b>
         <span>${esc(speakStamp(s.createdAt))}</span>
-        <span class="grow">${esc(s.next || s.error || (s.status === 'failed' ? '评估失败' : ''))}</span>
+        <span class="grow">${esc(s.status === 'running' ? '正在转写和总评…' : (s.next || s.error || (s.status === 'failed' ? '评估失败' : '')))}</span>
         ${mark ? `<em>${mark}</em>` : ''}
       </button>
       <button type="button" class="mini del" data-speak-del="${s.id}" title="删除这遍">删除</button>
@@ -239,9 +257,9 @@ el.speakFile?.addEventListener('change', async () => {
   if (!file || !state.draft) return;
   if (file.size > 24 * 1024 * 1024) { toast('录音请小于 24MB'); return; }
   el.speakUploadBtn.disabled = true;
-  el.speakUploadBtn.textContent = '评估中…';
+  el.speakUploadBtn.textContent = '上传中…';
   try {
-    const res = await fetch(`/api/drafts/${state.draft.id}/speaks`, {
+    const res = await fetch(`/api/drafts/${state.draft.id}/speaks?async=1`, {
       method: 'POST',
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
@@ -252,8 +270,8 @@ el.speakFile?.addEventListener('change', async () => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `上传失败（${res.status}）`);
     state.focusSpeakId = data.speak?.id || null;
-    if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
-    else toast('文字总评好了。语音测评和视频测评要点开再做');
+    if (data.job) trackJob(data.job);
+    toast('录音已上传，正在转写和总评。可以先去做别的，好了会提示');
     await loadDraftSpeaks();
     if (state.historyMode === 'speaks') loadSpeakHistory();
   } catch (err) {
@@ -272,9 +290,8 @@ el.speakList?.addEventListener('click', async (e) => {
     retry.disabled = true;
     retry.textContent = '评估中…';
     try {
-      const { speak } = await api(`/speaks/${id}/retry`, { method: 'POST', body: {} });
+      const { speak } = await startJob(`/speaks/${id}/retry`);
       state.focusSpeakId = speak.id;
-      if (speak.status === 'failed') toast(speak.error || '评估失败');
       await loadDraftSpeaks();
       if (state.historyMode === 'speaks') loadSpeakHistory();
     } catch (err) { toast(err.message); }
@@ -553,7 +570,7 @@ async function submitPrompterTake(blob) {
   if (blob.size > 24 * 1024 * 1024) { toast('录音请小于 24MB'); return; }
   toast('正在评估这一遍');
   try {
-    const res = await fetch(`/api/drafts/${state.draft.id}/speaks`, {
+    const res = await fetch(`/api/drafts/${state.draft.id}/speaks?async=1`, {
       method: 'POST',
       headers: {
         'Content-Type': blob.type || 'audio/webm',
@@ -564,11 +581,11 @@ async function submitPrompterTake(blob) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `上传失败（${res.status}）`);
     state.focusSpeakId = data.speak?.id || null;
+    if (data.job) trackJob(data.job);
     if (state.mode !== 'cue') setMode('cue');
     else await loadDraftSpeaks();
     if (state.historyMode === 'speaks') loadSpeakHistory();
-    if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
-    else toast('文字总评好了。语音测评和视频测评要点开再做');
+    toast('录音已上传，正在转写和总评。好了会提示');
   } catch (err) {
     toast(err.message);
   }
@@ -666,3 +683,11 @@ el.pStage.addEventListener('wheel', (e) => {
   e.preventDefault();
   nudge(e.deltaY);
 }, { passive: false });
+
+/* 后台任务做完：转写总评或测评好了，刷新口播记录（发起的人可能已经切走了，这里兜底） */
+window.addEventListener('cw-job-done', (e) => {
+  const job = e.detail;
+  if (!['speak', 'pronounce', 'appearance'].includes(job.kind)) return;
+  if (state.draft && state.mode === 'cue') loadDraftSpeaks();
+  if (state.historyMode === 'speaks') loadSpeakHistory();
+});
