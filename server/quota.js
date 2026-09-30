@@ -66,6 +66,23 @@ export function assertQuota(userId, feature, units) {
   return { fromPlan: need };
 }
 
+/* 预扣：检查够不够，并立刻先扣掉预估的点数。
+   必须和检查在同一个同步片段里完成——中间不能有 await，否则并发请求会一起通过检查。 */
+export function reserve(userId, feature, units) {
+  const { fromPlan } = assertQuota(userId, feature, units);
+  if (fromPlan > 0) Quota.consume(userId, fromPlan, 0);
+  return { held: fromPlan };
+}
+
+/* 结算：按真实用量多退少补。actualUnits 为 0（失败）时整笔退回预扣。 */
+export function settle(userId, feature, held, actualUnits) {
+  const actual = creditsFor(feature, actualUnits) || 0;
+  const diff = actual - (held || 0);
+  if (diff > 0) Quota.consume(userId, diff, 0);
+  else if (diff < 0) Quota.refund(userId, -diff);
+  return actual;
+}
+
 /* 调用后：按真实用量扣。预估和实际的差在这里抹平 */
 export function consume(userId, feature, units) {
   const credits = creditsFor(feature, units);

@@ -2,7 +2,7 @@ import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { creditsFor, explain, planOf, periodOf } from '../server/plans.js';
-import { assertQuota, consume, snapshot, QuotaError } from '../server/quota.js';
+import { assertQuota, consume, reserve, settle, snapshot, QuotaError } from '../server/quota.js';
 import { Users, Quota } from '../server/db.js';
 
 test('creditsFor：文案按千 token 0.4 点向上取整，配图 14 点一张，未知功能不计费', () => {
@@ -32,4 +32,18 @@ test('配额：免费档不能配图；额度用完被拦；跨月重置', () =>
   assert.throws(() => assertQuota(u.id, '文案'), QuotaError);
   Quota.state(u.id, '1999-01');               // 模拟跨月
   assert.equal(snapshot(u.id).used, 0);
+});
+
+test('预扣与结算：检查和预扣是一步，余额不够的第二个请求直接被拦', () => {
+  const u = Users.create('reserve-user', 'x:y');
+  snapshot(u.id);                                 // 先进入本月计费周期
+  consume(u.id, '文案', 360_000);                 // 用掉 144 点，剩 6 点
+  const a = reserve(u.id, '文案');                // 预扣 5 点，剩 1 点
+  assert.equal(a.held, 5);
+  assert.throws(() => reserve(u.id, '文案'), QuotaError);
+  settle(u.id, '文案', a.held, 2000);             // 实际只用 1 点，退 4 点
+  assert.equal(snapshot(u.id).left, 5);
+  const b = reserve(u.id, '文案');
+  settle(u.id, '文案', b.held, 0);                // 失败，整笔退回
+  assert.equal(snapshot(u.id).left, 5);
 });

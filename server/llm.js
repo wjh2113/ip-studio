@@ -1,4 +1,4 @@
-import { assertQuota, consume } from './quota.js';
+import { reserve, settle } from './quota.js';
 /* 大模型接入层
  *   anthropic —— 官方 SDK（默认 claude-opus-5），结构化输出 + 流式正文
  *   openai    —— 任意 OpenAI 兼容接口（DeepSeek / Kimi / 通义 / vLLM / Ollama）
@@ -16,6 +16,42 @@ const GATEWAY_KEY = process.env.LLM_GATEWAY_API_KEY || '';
 const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP';
 const GATEWAY_CAPABILITY = process.env.LLM_CAPABILITY || 'quality-chat';
 const GATEWAY_CAPABILITY_JSON = process.env.LLM_CAPABILITY_JSON || 'fast-chat';
+// 快档模型：不配就和主模型一样（行为不变）。想省钱时给 fast 档配一个便宜模型即可
+const ANTHROPIC_MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || ANTHROPIC_MODEL;
+const OPENAI_MODEL_FAST = process.env.OPENAI_MODEL_FAST || OPENAI_MODEL;
+
+/* 按功能分档：quality = 读者会直接看到的长文、需要判断力的评估；fast = 结构化短输出。
+ * 这是调成本和质量的唯一入口——换档只改这张表，不用去各调用点找。
+ * 当前取值和拆表前的实际行为完全一致（JSON 默认 fast、文本和流式默认 quality）。 */
+export const FEATURE_TIER = {
+  成稿: 'quality',
+  划词改写: 'quality',
+  编辑器续写: 'quality',
+  多平台适配: 'quality',
+  语气档案: 'quality',
+  原文概要: 'quality',
+  语音改稿: 'quality',
+  口播总评: 'quality',
+  选题方向: 'fast',
+  '选题方向·换一批': 'fast',
+  题材推荐: 'fast',
+  热点比对: 'fast',
+  成稿检查: 'fast',
+  口播提示: 'fast',
+  图文配图方案: 'fast',
+};
+// 表里没有的功能：按调用方式给默认档；meta.channel === 'quality' 仍可单次指定
+const tierOf = (meta, fallback) => (meta.channel === 'quality' ? 'quality'
+  : FEATURE_TIER[String(meta.feature || '').replace(/^eval·/, '')] || fallback);
+const modelFor = (tier) => (PROVIDER === 'anthropic' ? (tier === 'fast' ? ANTHROPIC_MODEL_FAST : ANTHROPIC_MODEL)
+  : PROVIDER === 'openai' ? (tier === 'fast' ? OPENAI_MODEL_FAST : OPENAI_MODEL)
+  : PROVIDER === 'gateway' ? (tier === 'fast' ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY)
+  : 'mock');
+
+/* 每个用户同时最多几个生成请求。额度是先预扣的，但不设上限的话一个人可以
+   一口气开几十个流，把上游并发占满。 */
+const MAX_INFLIGHT = Number(process.env.LLM_MAX_INFLIGHT_PER_USER) || 3;
+const inflight = new Map();
 
 /* 采样参数：1.3 实测在中文长文里会跑出语无伦次的句子，降到 1.0（DeepSeek 的默认值）稳很多。
  * 语气由账号设定和语气档案负责，不靠高温度堆"创意"。可用环境变量微调。 */
@@ -71,15 +107,26 @@ let usageSink = null;
 export const setUsageSink = (fn) => { usageSink = fn; };
 
 /* 配额在这里统一拦，不在十几个调用点各写一遍——那样一定会漏一个。
-   eval 跑批不占用户额度（它是后台行为，成本记在管理员头上）。 */
+   eval 跑批不占用户额度（它是后台行为，成本记在管理员头上）。
+
+   额度是「预扣 → 结算」：调用前在同一个同步片段里检查并先扣一笔预估（Node 单线程，
+   检查和预扣之间不会插进别的请求），调完按真实用量多退少补。原来是先查后扣，
+   几个请求同时发出时都能通过检查，一起透支。 */
 async function tracked(meta, run) {
   const started = Date.now();
-  const model = PROVIDER === 'anthropic' ? ANTHROPIC_MODEL
-    : PROVIDER === 'openai' ? OPENAI_MODEL
-    : PROVIDER === 'gateway' ? GATEWAY_CAPABILITY
-    : 'mock';
+  const model = modelFor(meta.tier);
   const metered = meta.userId && !String(meta.feature || '').startsWith('eval');
-  if (metered) assertQuota(meta.userId, '文案');
+  let hold = 0;
+  if (metered) {
+    const n = inflight.get(meta.userId) || 0;
+    if (n >= MAX_INFLIGHT) {
+      const err = new Error(`同时进行的生成太多了（最多 ${MAX_INFLIGHT} 个），等前面的完成再试`);
+      err.status = 429;
+      throw err;
+    }
+    hold = reserve(meta.userId, '文案').held;   // 额度不够在这里抛 402
+    inflight.set(meta.userId, n + 1);
+  }
   try {
     const { value, usage } = await run();
     const tokens = (usage?.input || 0) + (usage?.output || 0);
@@ -88,7 +135,7 @@ async function tracked(meta, run) {
       inputTokens: usage?.input || 0, outputTokens: usage?.output || 0,
       units: tokens, unit: 'token',
     });
-    if (metered) consume(meta.userId, '文案', tokens);
+    if (metered) settle(meta.userId, '文案', hold, tokens);
     return value;
   } catch (err) {
     const partial = Number(err?.partialChars) || 0;
@@ -99,8 +146,13 @@ async function tracked(meta, run) {
       error: String(err?.message || err),
       ...(est ? { units: est, unit: 'token' } : {}),
     });
-    if (metered && est) consume(meta.userId, '文案', est);
+    if (metered) settle(meta.userId, '文案', hold, est);   // 失败退回预扣，中断按估算收
     throw err;
+  } finally {
+    if (metered) {
+      const n = (inflight.get(meta.userId) || 1) - 1;
+      if (n > 0) inflight.set(meta.userId, n); else inflight.delete(meta.userId);
+    }
   }
 }
 
@@ -108,12 +160,13 @@ async function tracked(meta, run) {
  * 结构化生成：返回符合 schema 的对象
  * ------------------------------------------------------------------ */
 export async function generateJSON({ system, user, schema, mock, meta = {} }) {
-  return tracked({ feature: 'unknown', ...meta }, async () => {
+  const tier = tierOf(meta, 'fast');
+  return tracked({ feature: 'unknown', ...meta, tier }, async () => {
     if (PROVIDER === 'mock') return { value: mock(), usage: null };
 
     if (PROVIDER === 'anthropic') {
       const res = await anthropic().messages.create({
-        model: ANTHROPIC_MODEL,
+        model: modelFor(tier),
         max_tokens: 16000,
         system,
         messages: [{ role: 'user', content: user }],
@@ -133,8 +186,7 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
       temperature: TEMP_JSON,    // 结构化输出用低温度，减少格式跑偏
       responseFormat: { type: 'json_object' },
       json: true,
-      // 口播总评要 quality-chat。其余 JSON 仍走 fast-chat。
-      capability: meta.channel === 'quality' ? 'quality' : undefined,
+      capability: tier,     // 档位见 FEATURE_TIER
       userId: meta.userId,
     });
     return { value: parseJSON(res.text), usage: res.usage };
@@ -145,12 +197,13 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
  * 一次性文本生成（不流式）：用于语气档案这类短输出
  * ------------------------------------------------------------------ */
 export async function generateText({ system, user, mock, meta = {} }) {
-  return tracked({ feature: 'unknown', ...meta }, async () => {
+  const tier = tierOf(meta, 'quality');
+  return tracked({ feature: 'unknown', ...meta, tier }, async () => {
     if (PROVIDER === 'mock') return { value: mock(), usage: null };
 
     if (PROVIDER === 'anthropic') {
       const res = await anthropic().messages.create({
-        model: ANTHROPIC_MODEL,
+        model: modelFor(tier),
         max_tokens: 4000,
         system,
         messages: [{ role: 'user', content: user }],
@@ -162,7 +215,7 @@ export async function generateText({ system, user, mock, meta = {} }) {
       };
     }
 
-    const res = await chat({ system, user, stream: false, userId: meta.userId });
+    const res = await chat({ system, user, stream: false, userId: meta.userId, capability: tier });
     return { value: res.text, usage: res.usage };
   });
 }
@@ -174,9 +227,10 @@ export async function streamText({ system, user, onDelta, mock, signal, meta = {
   let sent = 0;
   const count = (text) => { sent += text.length; onDelta(text); };
   const inputChars = String(system || '').length + String(user || '').length;
-  return tracked({ feature: 'unknown', ...meta, inputChars }, async () => {
+  const tier = tierOf(meta, 'quality');
+  return tracked({ feature: 'unknown', ...meta, inputChars, tier }, async () => {
     try {
-      return await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId });
+      return await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId, tier });
     } catch (err) {
       // 带上已收到的字数，tracked() 据此估算扣点
       if (err && typeof err === 'object') err.partialChars = sent;
@@ -185,13 +239,13 @@ export async function streamText({ system, user, onDelta, mock, signal, meta = {
   });
 }
 
-async function streamOnce({ system, user, onDelta, mock, signal, userId }) {
+async function streamOnce({ system, user, onDelta, mock, signal, userId, tier = 'quality' }) {
   if (PROVIDER === 'mock') return { value: await streamMock(mock(), onDelta, signal), usage: null };
 
   if (PROVIDER === 'anthropic') {
     const stream = anthropic().messages.stream(
       {
-        model: ANTHROPIC_MODEL,
+        model: modelFor(tier),
         max_tokens: 16000,
         system,
         messages: [{ role: 'user', content: user }],
@@ -216,7 +270,7 @@ async function streamOnce({ system, user, onDelta, mock, signal, userId }) {
     };
   }
 
-  const res = await chat({ system, user, stream: true, onDelta, signal, userId });
+  const res = await chat({ system, user, stream: true, onDelta, signal, userId, capability: tier });
   return { value: res.text, usage: res.usage };
 }
 
@@ -254,7 +308,9 @@ async function gatewayChat({
   return readChatResponse(res, stream, onDelta);
 }
 
-async function openaiChat({ system, user, stream, onDelta, responseFormat, signal, temperature = TEMP_PROSE }) {
+async function openaiChat({
+  system, user, stream, onDelta, responseFormat, signal, temperature = TEMP_PROSE, capability,
+}) {
   const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
     method: 'POST',
     signal: withTimeout(signal, stream ? STREAM_TIMEOUT : CALL_TIMEOUT),
@@ -263,7 +319,7 @@ async function openaiChat({ system, user, stream, onDelta, responseFormat, signa
       ...(OPENAI_KEY ? { Authorization: `Bearer ${OPENAI_KEY}` } : {}),
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: capability === 'fast' ? OPENAI_MODEL_FAST : OPENAI_MODEL,
       stream: Boolean(stream),
       temperature,
       top_p: TOP_P,

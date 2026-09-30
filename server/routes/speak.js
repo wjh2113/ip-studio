@@ -4,7 +4,7 @@ import { resolve as resolvePath } from 'node:path';
 import { DATA_DIR, Drafts, Personas, Speaks } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
-import { assertQuota, consume } from '../quota.js';
+import { reserve, settle } from '../quota.js';
 import { applyDim, pronounceAudio, removeTakeFile, runSpeakPipeline, saveTakeFile, scoreAppearance } from '../speak.js';
 import { CUES_SCHEMA, CUES_SYSTEM, cuesUser, TONE_TAGS } from '../prompts.js';
 import { json, requireUser, sys, withRetry } from './common.js';
@@ -145,27 +145,36 @@ function readyTake(row) {
   return row;
 }
 
-function chargeExtra(userId, usage) {
+/* 网关评测的用量：先预扣，调完按网关报的 token（或点数）结算；失败整笔退回 */
+function usageUnits(usage) {
   const tokens = (Number(usage?.input) || 0) + (Number(usage?.output) || 0);
-  const credits = Number(usage?.credits) || 0;
-  const n = tokens || credits;
-  if (n > 0) consume(userId, '文案', n);
+  return tokens || Number(usage?.credits) || 0;
+}
+
+async function withHold(userId, run) {
+  const { held } = reserve(userId, '文案');
+  try {
+    const out = await run();
+    settle(userId, '文案', held, usageUnits(out?.usage));
+    return out;
+  } catch (err) {
+    settle(userId, '文案', held, 0);
+    throw err;
+  }
 }
 
 /* 语音测评：上传时不做，点这个才走网关发音评测，并写回「发音」分。 */
 export async function handleSpeakPronounce(req, res, body, params) {
   const user = requireUser(req);
   const row = readyTake(Speaks.byId(Number(params.sid), user.id));
-  assertQuota(user.id, '文案');
   const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
-  const pronunciation = await pronounceAudio(buf, {
+  const pronunciation = await withHold(user.id, () => pronounceAudio(buf, {
     filename: row.file,
     mime: row.mime,
     userId: user.id,
     script: row.script,
-  });
+  }));
   if (!pronunciation) throw new HttpError(400, '没有稿子，评不了发音');
-  chargeExtra(user.id, pronunciation.usage);
   const review = {
     ...applyDim(row.review, '发音', pronunciation.score, pronunciation.note || '按网关发音评测'),
     checks: { ...(row.review.checks || {}), voice: true },
@@ -180,17 +189,15 @@ export async function handleSpeakPronounce(req, res, body, params) {
 export async function handleSpeakAppearance(req, res, body, params) {
   const user = requireUser(req);
   const row = readyTake(Speaks.byId(Number(params.sid), user.id));
-  assertQuota(user.id, '文案');
   const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
-  const look = await scoreAppearance({
+  const look = await withHold(user.id, () => scoreAppearance({
     userId: user.id,
     cues: row.cues,
     buffer: buf,
     filename: row.file,
     mime: row.mime,
     script: row.script,
-  });
-  chargeExtra(user.id, look.usage);
+  }));
   const review = {
     ...applyDim(row.review, '出镜', look.score, look.note),
     checks: { ...(row.review.checks || {}), video: true },

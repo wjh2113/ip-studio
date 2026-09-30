@@ -400,6 +400,10 @@ export const Quota = {
     if (fromPack) db.prepare('UPDATE users SET avatar_credits = MAX(0, avatar_credits - ?) WHERE id = ?').run(fromPack, userId);
     if (credits) db.prepare('UPDATE users SET used = used + ? WHERE id = ?').run(credits, userId);
   },
+  /* 退回预扣的点数（不会退成负数） */
+  refund(userId, credits) {
+    if (credits > 0) db.prepare('UPDATE users SET used = MAX(0, used - ?) WHERE id = ?').run(credits, userId);
+  },
   setPlan(userId, plan) {
     db.prepare('UPDATE users SET plan = ? WHERE id = ?').run(plan, userId);
   },

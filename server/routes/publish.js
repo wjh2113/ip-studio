@@ -6,7 +6,7 @@ import { HttpError } from '../auth.js';
 import { generateJSON, generateText } from '../llm.js';
 import { buildDocx } from '../docx.js';
 import { IMAGE_MARK, markAts } from '../../public/place.js';
-import { assertQuota, consume } from '../quota.js';
+import { reserve, settle } from '../quota.js';
 import { generate, imageInfo } from '../images.js';
 import { ADAPT_SYSTEM, adaptUser, DEFAULT_PLATFORM, ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser, PLATFORMS } from '../prompts.js';
 import { describe, json, requireUser, sys, withRetry } from './common.js';
@@ -156,7 +156,8 @@ export async function handleIllus(req, res, body, params) {
   const marks = markAts(text).slice(0, 8);
   const data = await withRetry(async () => {
     const out = await generateJSON({
-      meta: { feature: '图文配图', userId: user.id },
+      // 排插图位是一次文案调用，功能名要和出图（按张计费）分开，否则用量面板会把 token 当成张数折算
+      meta: { feature: '图文配图方案', userId: user.id },
       system: sys('illus', ILLUS_SYSTEM),
       user: illusUser(draft, persona, text, platform, marks.length),
       schema: ILLUS_SCHEMA,
@@ -248,7 +249,8 @@ export async function handleIllusImage(req, res, body, params) {
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
 
   const info = imageInfo();
-  assertQuota(user.id, '图文配图', 1);
+  // 出图按张计费：先预扣一张，失败退回
+  const { held } = reserve(user.id, '图文配图', 1);
   const prompt = store.look ? `${item.prompt}。整体风格：${store.look}` : item.prompt;
   const started = Date.now();
   let out;
@@ -259,8 +261,8 @@ export async function handleIllusImage(req, res, body, params) {
       userId: user.id, feature: '图文配图', provider: info.provider, model: info.model,
       ok: true, ms: Date.now() - started, units: 1, unit: '张',
     });
-    consume(user.id, '图文配图', 1);
   } catch (err) {
+    settle(user.id, '图文配图', held, 0);
     Usage.record({
       userId: user.id, feature: '图文配图', provider: info.provider, model: info.model,
       ok: false, ms: Date.now() - started, error: String(err?.message || err),
