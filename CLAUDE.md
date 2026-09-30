@@ -1,6 +1,6 @@
 # 给 AI 编程助手的约定（Claude Code / Cursor 等）
 
-先读 `docs/ARCHITECTURE.md`，再动手。
+先读 `docs/ARCHITECTURE.md`，再动手。涉及技术选型、加依赖、代码分层、注释和编码规范的，读 `docs/TECH-GUIDE.md`（第 11 节是给 AI 编程助手的执行清单）。
 
 ## 基本
 
