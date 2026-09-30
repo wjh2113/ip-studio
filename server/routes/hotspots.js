@@ -3,7 +3,8 @@ import { Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON, generateText } from '../llm.js';
 import { enrichSummaries, fetchBoards, parseManual, riskOf, screenItems } from '../hotspots.js';
-import { ARTICLE_SUMMARY_SYSTEM, articleSummaryUser, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, hotspotUser, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, subjectsUser } from '../prompts.js';
+import { ARTICLE_SUMMARY_SYSTEM, articleSummaryUser, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, hotspotUser, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, performanceBlock, subjectsUser } from '../prompts.js';
+import { performanceOf } from '../performance.js';
 import { json, requireUser, sys, withRetry } from './common.js';
 
 /* ---------------- 热点板块 ---------------- */
@@ -194,7 +195,7 @@ async function generateIdeas(persona, userId) {
     const data = await generateJSON({
       meta: { feature: '题材推荐', userId },
       system: sys('subjects', SUBJECTS_SYSTEM),
-      user: subjectsUser(persona, [...used, ...pending]),
+      user: subjectsUser(persona, [...used, ...pending], performanceBlock(performanceOf(userId, persona.id), 'subjects')),
       schema: SUBJECTS_SCHEMA,
       mock: () => mockIdeas(persona, used.length),
     });

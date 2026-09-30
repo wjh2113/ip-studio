@@ -1,5 +1,6 @@
 /* 路由 · admin：管理后台：登录与首次设置、用量概览、提示词目录、运行时配置、A/B 变体与 eval。从原 routes.js 原样拆出。 */
-import { Admins, Evals, Usage, Users, Variants } from '../db.js';
+import { Admins, Drafts, Evals, Usage, Users, Variants } from '../db.js';
+import { adoption, median } from '../quality.js';
 import { accessGateOn, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, createAdmin, currentAdmin, HttpError, publicAdmin, setupHttpEnabled, startAdminSession, validateCredentials } from '../auth.js';
 import { generateJSON, generateText, providerInfo } from '../llm.js';
 import { costOf, priceOf } from '../pricing.js';
@@ -100,7 +101,47 @@ export async function handleAdminOverview(req, res, body, params, url) {
     byDay: Usage.byDay(since),
     errors: Usage.recentErrors(15),
     cost: costReport(since),
+    quality: qualityReport(since),
   });
+}
+
+/* 线上质量指标：作者把初稿改掉了多少、检查提的建议改了多少。按成稿提示词的 A/B 变体分开看——
+   变体 B 的稿子作者改得少、建议照着改得多，比 eval 里人打的分更接近真实效果。 */
+export function qualityReport(since) {
+  const groups = new Map();
+  const bucket = (key) => {
+    if (!groups.has(key)) groups.set(key, { variant: key, drafts: 0, ratios: [], issues: 0, changed: 0, applied: 0 });
+    return groups.get(key);
+  };
+  for (const r of Drafts.qualityRows(since)) {
+    let review = null;
+    try { review = JSON.parse(r.review_json); } catch { /* 脏数据当没检查过 */ }
+    const a = adoption(review?.issues, r.content);
+    for (const g of [bucket('全部'), bucket(r.gen_variant || '默认')]) {
+      g.drafts += 1;
+      if (r.edit_ratio != null) g.ratios.push(r.edit_ratio);
+      g.issues += a.total;
+      g.changed += a.changed;
+      g.applied += a.applied;
+    }
+  }
+  const rows = [...groups.values()].map((g) => ({
+    variant: g.variant,
+    drafts: g.drafts,
+    editMedian: g.ratios.length ? Math.round(median(g.ratios) * 100) / 100 : null,
+    heavy: g.ratios.length ? Math.round((g.ratios.filter((x) => x > 0.3).length / g.ratios.length) * 100) / 100 : null,
+    untouched: g.ratios.length ? Math.round((g.ratios.filter((x) => x === 0).length / g.ratios.length) * 100) / 100 : null,
+    issues: g.issues,
+    changed: g.changed,
+    applied: g.applied,
+    adoptRate: g.issues ? Math.round((g.changed / g.issues) * 100) / 100 : null,
+  }));
+  // 「全部」放第一行，其余按篇数
+  rows.sort((a, b) => (a.variant === '全部' ? -1 : b.variant === '全部' ? 1 : b.drafts - a.drafts));
+  return {
+    rows,
+    note: '改动比例按句子算：初稿里原样留下的句子占多少字。检查建议「改了」= 被点名的原句已不在正文里，「照着改」= 建议的写法出现在正文里。只统计这段时间里有更新、且有模型初稿的稿子。',
+  };
 }
 
 /* 成本估算。**只是估算**——单价会调、有阶梯、有免费额度，

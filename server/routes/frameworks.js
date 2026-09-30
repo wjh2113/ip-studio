@@ -6,6 +6,7 @@ import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, extractUser, PLATFORMS, platformSpec } 
 import {
   BUILTIN_FRAMEWORKS, FRAMEWORK_LIMITS, builtinOf, normalizeFramework, recommendFrameworks,
 } from '../frameworks.js';
+import { frameworkBonus, performanceOf } from '../performance.js';
 import { json, requireUser, sys, withRetry } from './common.js';
 
 const builtinFor = (userId) => {
@@ -53,12 +54,18 @@ export async function handleFrameworkRecommend(req, res, body, params, url) {
   const sectionId = Number(q?.get('section_id')) || null;
   const section = sectionId ? Sections.byId(sectionId, user.id) : null;
   const list = [...Frameworks.list(user.id), ...builtinFor(user.id)];
+  const personaId = Number(q?.get('persona_id')) || null;
+  const perf = performanceOf(user.id, personaId);
   const picks = recommendFrameworks(list, {
     platform,
     subject: String(q?.get('subject') || '').slice(0, 200),
     section: section ? `${section.name} ${section.purpose || ''}` : '',
+    bonus: (key) => frameworkBonus(perf, key),
   });
-  json(res, 200, { frameworks: picks });
+  // 带上数据依据，前端在推荐卡上说明「为什么推它」
+  json(res, 200, {
+    frameworks: picks.map((f) => (perf.byFramework[f.key] ? { ...f, perf: { ...perf.byFramework[f.key], overall: perf.overall } } : f)),
+  });
 }
 
 export async function handleFrameworkCreate(req, res, body) {

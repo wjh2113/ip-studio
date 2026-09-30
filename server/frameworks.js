@@ -200,7 +200,7 @@ export function copyOverlap(text, source, n = 8) {
 
 /* 推荐：按平台、题材/栏目与场景标签的字面重合、用户自己的优先、用得多的优先。
    量级几十条，规则打分足够，结果可解释。 */
-export function recommendFrameworks(list, { platform, subject = '', section = '' } = {}, limit = 3) {
+export function recommendFrameworks(list, { platform, subject = '', section = '', bonus = () => 0 } = {}, limit = 3) {
   const hay = `${subject} ${section}`;
   const scored = list
     .filter((f) => !f.platforms.length || f.platforms.includes(platform))
@@ -210,6 +210,7 @@ export function recommendFrameworks(list, { platform, subject = '', section = ''
       if (f.name && hay && [...f.name].some((ch) => /[一-龥]/.test(ch) && hay.includes(ch))) score += 0.2;
       if (!f.builtin) score += 1;
       score += Math.log1p(f.used_count || 0) * 0.5;
+      score += bonus(f.key);                 // 发布数据：这个号用它的稿子数据好不好
       return { f, score };
     });
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.f);

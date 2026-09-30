@@ -177,10 +177,34 @@ export const TOPICS_SYSTEM =
 7. 若给出了写法框架，三个方向的内容骨架都按框架的段落顺序展开（骨架条目和框架槽位一一对应），差异仍然体现在切入角度上。
 8. 全部使用简体中文。`;
 
-export const topicsUser = (d, persona, samples) =>
+export const topicsUser = (d, persona, samples, perf = '') =>
 `请基于下面这份创作简报，给出 3 个差异化的选题方向。
 
-${brief(d, persona, samples)}`;
+${brief(d, persona, samples)}${perf ? `\n\n${perf}` : ''}`;
+
+/* 过往发布数据（server/performance.js 算好的），只在样本够时才有。
+   数字和标题放在标签里当资料；怎么用写在标签外面，而且明确排在题材契合和差异化之后。 */
+export function performanceBlock(perf, use = 'topics') {
+  if (!perf?.enough) return '';
+  const byLift = Object.entries(perf.byLabel || {}).sort((a, b) => b[1].lift - a[1].lift);
+  const good = byLift.filter(([, g]) => g.lift >= 1.3);
+  const weak = byLift.filter(([, g]) => g.lift <= 0.7);
+  const fmt = (list) => list.map(([k, g]) => `「${k}」阅读中位数 ${g.median}（${g.n} 篇）`).join('；');
+  const lines = [];
+  if (use === 'topics') {
+    if (good.length) lines.push(`数据好的方向类型：${fmt(good)}`);
+    if (weak.length) lines.push(`数据弱的方向类型：${fmt(weak)}`);
+  }
+  if (perf.top?.length) lines.push(`数据最好的几篇：${perf.top.map((t) => `《${t.title}》阅读 ${t.views}`).join('；')}`);
+  if (!lines.length) return '';
+  const how = use === 'topics'
+    ? '参考用法：三个方向里可以有一个用数据好的方向类型，少用数据弱的；题材契合和三个方向之间的差异仍然优先，不要为了套类型硬凑。'
+    : '参考用法：可以沿着数据好的那几篇的主题往深处或旁边延伸，但不能重复它们；账号定位仍然优先。';
+  return `—— 这个号过往的发布数据（${perf.n} 篇，阅读中位数 ${perf.overall}）——
+${fence('performance', lines.join('\n'))}
+${DATA_NOTE}
+${how}`;
+}
 
 export const CONTENT_SYSTEM =
 `你是一位一线自媒体写手，为指定平台产出可直接发布的成稿。
@@ -431,7 +455,7 @@ export const SUBJECTS_SYSTEM =
 5. 每条配一句话理由，说人话，别写"能引发共鸣"这类套话。
 6. 全部使用简体中文。`;
 
-export const subjectsUser = (persona, used = []) => {
+export const subjectsUser = (persona, used = [], perf = '') => {
   const head = [personaBlock(persona), creatorBlock(persona)].filter(Boolean).join('\n\n');
   const history = used.length
     ? used.map((u, i) => `${i + 1}. ${u.subject}${u.title && u.title !== u.subject ? `（成稿标题：${u.title}）` : ''}`).join('\n')
@@ -442,7 +466,7 @@ export const subjectsUser = (persona, used = []) => {
 —— 这个号已经写过的（务必避开）——
 ${history}
 
-请给出 3 条这个号还没写过的新题材。`;
+${perf ? `${perf}\n\n` : ''}请给出 3 条这个号还没写过的新题材。`;
 };
 
 /* ==================================================================

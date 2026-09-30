@@ -20,10 +20,11 @@ export async function handleReview(req, res, body, params) {
 
   // 检查要看到账号设定、平台规范、语气档案和借势的热点，才谈得上"符合度"
   const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  json(res, 200, {
-    review: await reviewText(draft, text, persona, styleSamples(persona, user.id),
-      { feature: '成稿检查', userId: user.id }),
-  });
+  const review = await reviewText(draft, text, persona, styleSamples(persona, user.id),
+    { feature: '成稿检查', userId: user.id });
+  // 记下这次的替换建议，线上指标看作者后来改没改
+  Drafts.setReview(draft.id, user.id, review.issues);
+  json(res, 200, { review });
 }
 
 async function reviewText(draft, text, persona, samples, meta = {}) {

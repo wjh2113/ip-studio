@@ -4,7 +4,8 @@ import { HttpError } from '../auth.js';
 import { generateJSON, streamText } from '../llm.js';
 import { pickVariant } from '../abtest.js';
 import { mockContent, mockTopics } from '../mock.js';
-import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, topicsUser } from '../prompts.js';
+import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
+import { performanceOf } from '../performance.js';
 import { describe, json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { recallMaterials } from './materials.js';
 import { resolveFramework } from './frameworks.js';
@@ -106,7 +107,7 @@ export async function handleTopics(req, res, body) {
   try {
     const ctx = { ...form, hotspot: normalizeHotspot(body?.hotspot), section, inputs, framework };
     topics = await generateTopics(ctx, persona, [], styleSamples(persona, user.id),
-      { feature: '选题方向', userId: user.id });
+      { feature: '选题方向', userId: user.id }, perfFor(user.id, persona));
   } catch (err) {
     Drafts.remove(draft.id, user.id);   // 失败就别在历史里留一条空记录
     throw err;
@@ -126,12 +127,15 @@ export async function handleRetopics(req, res, body, params) {
   // 换一批 = 重新开始：若账号还在，用它最新的设定；账号已删则沿用创作时的快照
   const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const topics = await generateTopics(draft, persona, draft.topics, styleSamples(persona, user.id),
-    { feature: '选题方向·换一批', userId: user.id });
+    { feature: '选题方向·换一批', userId: user.id }, perfFor(user.id, persona));
   Drafts.setTopics(draft.id, user.id, topics, persona);
   json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
 }
 
-async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}) {
+/* 这个号过往的发布数据，拼进选题提示词；样本不够时是空串，提示词和以前一样 */
+const perfFor = (userId, persona) => performanceBlock(performanceOf(userId, persona?.id ?? null), 'topics');
+
+async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}, perf = '') {
   const extra = avoid.length
     ? `\n\n以下方向已经出过，请给出与它们明显不同的新角度：\n${avoid.map((t) => `- ${t.title}（${t.angle}）`).join('\n')}`
     : '';
@@ -142,7 +146,7 @@ async function generateTopics(form, persona = null, avoid = [], samples = [], me
     const data = await generateJSON({
       meta: { ...meta, variant: v.name },
       system: v.system,
-      user: topicsUser(form, persona, samples) + extra
+      user: topicsUser(form, persona, samples, perf) + extra
         + (attempt ? '\n\n上一次的返回不完整。请严格按 schema 输出恰好 3 个方向，每个方向的字段都要填满。' : ''),
       schema: TOPICS_SCHEMA,
       mock: () => mockTopics(form),
@@ -221,6 +225,7 @@ export async function handleContent(req, res, body, params) {
     Drafts.setContent(draft.id, user.id, {
       chosen: index, title: topic.title, content, status: 'done',
     });
+    Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
     send('done', { draft: Drafts.byId(draft.id, user.id) });
   } catch (err) {
     // 失败或中途关页面：别让草稿停在 writing + 空正文，退回到选方向这一步（上一版正文在历史里）

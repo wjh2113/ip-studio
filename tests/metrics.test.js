@@ -3,14 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runMigrations } from '../server/migrations.js';
+import { MIGRATIONS, runMigrations } from '../server/migrations.js';
 import { Drafts, Metrics, Users } from '../server/db.js';
 import { dayOf, near7 } from '../server/routes/insights.js';
 
 test('迁移 5：老的单份发布数据搬成一行快照，日期取发布日期', () => {
   const db = new DatabaseSync(join(TEST_DIR, 'metrics-mig.db'));
   runMigrations(db);
-  db.exec('DROP TABLE draft_metrics; PRAGMA user_version = 4;');
+  db.exec('DROP TABLE draft_metrics;');                 // 回到迁移 5 之前，只重跑这一个
   db.prepare("INSERT INTO users (username, pass_hash, created_at) VALUES ('m', 'x:y', '2026-01-01')").run();
   const uid = db.prepare('SELECT id FROM users').get().id;
   const ins = db.prepare(`INSERT INTO drafts (user_id, subject, platform, tone, audience, keywords, length, metrics_json, published_at, created_at, updated_at)
@@ -18,7 +18,7 @@ test('迁移 5：老的单份发布数据搬成一行快照，日期取发布日
   ins.run(uid, JSON.stringify({ views: 1200, likes: 30, note: '被转了' }), '2026-03-02');
   ins.run(uid, JSON.stringify({ views: 50 }), '');
   ins.run(uid, 'null', '');
-  runMigrations(db);
+  MIGRATIONS.find((m) => m.version === 5).up(db);
   const rows = db.prepare('SELECT * FROM draft_metrics ORDER BY draft_id').all();
   assert.equal(rows.length, 2);
   assert.equal(rows[0].captured_on, '2026-03-02');

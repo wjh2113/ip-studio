@@ -33,6 +33,7 @@ async function loadRecs() {
   if (!state.user) return;
   const q = new URLSearchParams({ platform: el.platformSel.value || '' });
   if (state.sectionId) q.set('section_id', state.sectionId);
+  if (state.personaId) q.set('persona_id', state.personaId);
   const subject = el.briefForm.subject.value.trim();
   if (subject) q.set('subject', subject.slice(0, 200));
   try {
@@ -41,6 +42,11 @@ async function loadRecs() {
   } catch { fw.recs = []; }
   renderPick();
 }
+
+/* 推荐理由：这个号用这个框架的稿子，阅读中位数比整体高多少 */
+const perfTip = (f) => (f.perf
+  ? `你用它写的 ${f.perf.n} 篇，阅读中位数 ${f.perf.median}，整体是 ${f.perf.overall}${f.summary ? `\n${f.summary}` : ''}`
+  : '');
 
 function renderPick() {
   const list = [...fw.recs];
@@ -51,7 +57,7 @@ function renderPick() {
   ui.pick.innerHTML = [
     `<button type="button" class="section-chip ${state.frameworkKey ? '' : 'on'}" data-fw="">不套框架</button>`,
     ...list.map((f) => `<button type="button" class="section-chip ${state.frameworkKey === f.key ? 'on' : ''}"
-      data-fw="${esc(f.key)}" title="${esc(f.summary || '')}">${esc(f.name)}${f.builtin ? '' : '<span class="n">我的</span>'}</button>`),
+      data-fw="${esc(f.key)}" title="${esc(perfTip(f) || f.summary || '')}">${esc(f.name)}${f.builtin ? '' : '<span class="n">我的</span>'}${f.perf?.lift >= 1.2 ? '<span class="n up">数据好</span>' : ''}</button>`),
   ].join('');
 }
 

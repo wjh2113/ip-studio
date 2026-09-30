@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fromRoot } from './paths.js';
 import { rebindCues, rebindIllus } from './keep.js';
 import { runMigrations } from './migrations.js';
+import { editRatio } from './quality.js';
 
 const DB_PATH = process.env.DB_PATH ? resolve(process.env.DB_PATH) : fromRoot('data/app.db');
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -685,7 +686,7 @@ export const Drafts = {
     const next = String(content ?? '');
     return withTx(() => {
       const row = db.prepare(
-        'SELECT content, cues_json, illus_json FROM drafts WHERE id = ? AND user_id = ?',
+        'SELECT content, cues_json, illus_json, generated FROM drafts WHERE id = ? AND user_id = ?',
       ).get(id, userId);
       if (!row) return null;
       // 自动保存（1.2 秒防抖）每次都留一整版会让库线性膨胀：只有手动保存/离开编辑，
@@ -694,14 +695,36 @@ export const Drafts = {
       if (snapshot && row.content && row.content !== next) Revisions.keep(id, userId, row.content);
       const cues = rebindCues(next, parseJson(row.cues_json, null));
       const illus = rebindIllus(next, parseJson(row.illus_json, null));
+      // 线上指标：模型初稿被作者改掉了多少（没有初稿的老稿子不算）
+      const ratio = row.generated ? editRatio(row.generated, next) : null;
       const ok = db.prepare(`UPDATE drafts SET content = ?, status = 'done',
-                         cues_json = ?, illus_json = ?, updated_at = ?
+                         cues_json = ?, illus_json = ?, edit_ratio = ?, updated_at = ?
                          WHERE id = ? AND user_id = ?`)
-        .run(next, JSON.stringify(cues.cues), JSON.stringify(illus.illus), now(), id, userId).changes > 0;
+        .run(next, JSON.stringify(cues.cues), JSON.stringify(illus.illus), ratio, now(), id, userId).changes > 0;
       if (!ok) return null;
       Revisions.keep(id, userId, next, keepOpts);
       return { cuesDropped: cues.dropped, illusDropped: illus.dropped };
     });
+  },
+
+  /* 模型刚写完的初稿，和用的哪个提示词变体：之后每次保存拿它算改动比例 */
+  setGenerated(id, userId, text, variant = '') {
+    db.prepare(`UPDATE drafts SET generated = ?, gen_variant = ?, edit_ratio = 0
+                WHERE id = ? AND user_id = ?`).run(String(text || ''), variant || '', id, userId);
+  },
+
+  /* 最近一次成稿检查的替换建议，只留原句和建议写法：之后看作者有没有改 */
+  setReview(id, userId, issues) {
+    const keep = (issues || []).filter((it) => it?.quote).slice(0, 40)
+      .map((it) => ({ dimension: it.dimension || '', quote: it.quote, fix: it.fix || '' }));
+    db.prepare('UPDATE drafts SET review_json = ? WHERE id = ? AND user_id = ?')
+      .run(JSON.stringify({ at: now(), issues: keep }), id, userId);
+  },
+
+  /* 管理后台的质量指标：一段时间内有初稿的稿子 */
+  qualityRows(since) {
+    return db.prepare(`SELECT id, gen_variant, edit_ratio, review_json, content FROM drafts
+      WHERE generated != '' AND updated_at >= ?`).all(since).map((r) => ({ ...r }));
   },
 
   setTitle(id, userId, title) {
@@ -727,7 +750,7 @@ export const Drafts = {
   withMetrics(userId, personaId) {
     const byPersona = personaId !== undefined && personaId !== null;
     return db.prepare(`
-      SELECT id, subject, title, platform, section_id, topics_json, metrics_json, published_at, created_at
+      SELECT id, subject, title, platform, section_id, topics_json, metrics_json, framework_json, published_at, created_at
       FROM drafts
       WHERE user_id = ? AND metrics_json != 'null' ${byPersona ? 'AND persona_id = ?' : ''}
       ORDER BY published_at DESC, id DESC LIMIT 200
@@ -1098,7 +1121,7 @@ function hydrate(row) {
   const {
     topics_json, persona_json, hotspot_json, section_json,
     inputs_json, cues_json, variants_json, illus_json,
-    metrics_json, framework_json, user_id, ...rest
+    metrics_json, framework_json, user_id, generated, review_json, ...rest
   } = row;
   return {
     ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics, framework,

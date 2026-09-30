@@ -58,6 +58,12 @@ export const MIGRATIONS = [
     CREATE INDEX idx_jobs_status ON jobs(status, id);
   `) },
   { version: 5, name: '发布数据多次回填：draft_metrics 表', up: migrateMetrics },
+  { version: 6, name: '线上质量指标：初稿、改动比例、检查建议', up: (db) => db.exec(`
+    ALTER TABLE drafts ADD COLUMN generated TEXT NOT NULL DEFAULT '';
+    ALTER TABLE drafts ADD COLUMN gen_variant TEXT NOT NULL DEFAULT '';
+    ALTER TABLE drafts ADD COLUMN edit_ratio REAL;
+    ALTER TABLE drafts ADD COLUMN review_json TEXT NOT NULL DEFAULT 'null';
+  `) },
 ];
 
 /* 以前一篇稿子只存一份数字（drafts.metrics_json），再填就覆盖——看不出「发了三天后涨了多少」。

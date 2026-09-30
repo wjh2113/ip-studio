@@ -7,6 +7,7 @@ const el = {
   panel: $('panel'), adminName: $('adminName'), logoutBtn: $('logoutBtn'), llmChip: $('llmChip'),
   days: $('days'), refreshBtn: $('refreshBtn'), stats: $('stats'), spark: $('spark'),
   costTable: $('costTable'), costNote: $('costNote'), adminNav: $('adminNav'),
+  qualityTable: $('qualityTable'), qualityNote: $('qualityNote'),
   setWarn: $('setWarn'), setFields: $('setFields'), setCheck: $('setCheck'),
   setChecks: $('setChecks'), setChecked: $('setChecked'),
   abFeature: $('abFeature'), abNewBtn: $('abNewBtn'), abHint: $('abHint'), abList: $('abList'),
@@ -141,6 +142,7 @@ async function loadOverview() {
     renderUsers(d.users);
     renderFeatures(d.byFeature, d.errors);
     renderCost(d.cost);
+    renderQuality(d.quality);
     loadAB();
     loadEval();
     if (!el.adminNav.children.length) renderAdminNav();
@@ -172,6 +174,33 @@ function renderStats(d) {
       title="${x.day}：${x.calls} 次调用 / ${fmtTokens(x.tokens)} tokens">
       <span>${x.day.slice(5)}</span>
     </div>`).join('');
+}
+
+/* 内容质量：作者改了初稿多少、检查建议改了多少，按成稿提示词变体分行 */
+function renderQuality(q) {
+  if (!q) return;
+  el.qualityNote.textContent = q.note;
+  const pct = (x) => (x == null ? '<span class="dim">—</span>' : `${Math.round(x * 100)}%`);
+  el.qualityTable.innerHTML = q.rows.length ? `
+    <thead><tr>
+      <th>成稿提示词变体</th><th class="num">篇数</th>
+      <th class="num" title="初稿被改掉的比例，中位数">改动中位数</th>
+      <th class="num" title="一个字没改就发的">原样</th>
+      <th class="num" title="改掉三成以上的">大改</th>
+      <th class="num">检查建议</th><th class="num">改了</th><th class="num">照着改</th><th class="num">采纳率</th>
+    </tr></thead>
+    <tbody>${q.rows.map((r) => `
+      <tr${r.variant === '全部' ? ' class="total"' : ''}>
+        <td>${esc(r.variant)}</td>
+        <td class="num">${fmt(r.drafts)}</td>
+        <td class="num">${pct(r.editMedian)}</td>
+        <td class="num">${pct(r.untouched)}</td>
+        <td class="num">${pct(r.heavy)}</td>
+        <td class="num">${fmt(r.issues)}</td>
+        <td class="num">${fmt(r.changed)}</td>
+        <td class="num">${fmt(r.applied)}</td>
+        <td class="num">${pct(r.adoptRate)}</td>
+      </tr>`).join('')}</tbody>` : '<tbody><tr><td class="dim">这段时间还没有模型写的成稿。</td></tr></tbody>';
 }
 
 /* 成本表。每行都标出用的哪个单价、是不是精确匹配到型号——
@@ -523,6 +552,7 @@ el.evResult.addEventListener('click', async (e) => {
 
 const ADMIN_SECTIONS = [
   { key: 'overview', label: '概览', hint: '调用量与趋势' },
+  { key: 'quality', label: '内容质量', hint: '改稿与采纳' },
   { key: 'cost', label: '成本', hint: '按模型估算' },
   { key: 'ab', label: '提示词 A/B', hint: '变体与分流' },
   { key: 'eval', label: 'Eval', hint: '用例与盲测' },
