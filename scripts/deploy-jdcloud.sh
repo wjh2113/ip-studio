@@ -112,19 +112,21 @@ if ! grep -qE '^REDIS_URL=.+' "\${ENV_FILE}"; then
   set_kv REDIS_URL redis://127.0.0.1:6379
 fi
 
-if ! pg_isready -q; then
+PG_PORT=\$(sudo -u postgres psql -tAc "SHOW port" 2>/dev/null | tr -d '[:space:]' || true)
+if ! [[ "\${PG_PORT}" =~ ^[0-9]+\$ ]]; then
   echo "==> 安装并启动 PostgreSQL"
   sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql
   sudo systemctl enable --now postgresql
+  PG_PORT=\$(sudo -u postgres psql -tAc "SHOW port" | tr -d '[:space:]')
 fi
 if ! grep -qE '^DATABASE_URL=.+' "\${ENV_FILE}"; then
-  echo "==> 创建 PostgreSQL 库 ip_studio"
+  echo "==> 创建 PostgreSQL 库 ip_studio（端口 \${PG_PORT}）"
   PG_PASS=\$(openssl rand -hex 24)
   sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ip_studio') THEN CREATE ROLE ip_studio LOGIN PASSWORD '\${PG_PASS}'; ELSE ALTER ROLE ip_studio WITH PASSWORD '\${PG_PASS}'; END IF; END \\\$\\\$;"
   sudo -u postgres psql -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'ip_studio'" | grep -q 1 \
     || sudo -u postgres createdb -O ip_studio ip_studio
-  set_kv DATABASE_URL "postgres://ip_studio:\${PG_PASS}@127.0.0.1:5432/ip_studio"
+  set_kv DATABASE_URL "postgres://ip_studio:\${PG_PASS}@127.0.0.1:\${PG_PORT}/ip_studio"
 fi
 
 npm install --omit=dev
