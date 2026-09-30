@@ -18,15 +18,22 @@ npm start              # http://localhost:5177
 
 ## 模型通道
 
-`server/llm.js` 支持三种通道，按环境变量自动选择：
+`server/llm.js` 支持四种通道，按环境变量自动选择：
 
 | 通道 | 配置 | 说明 |
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | 官方 SDK，默认 `claude-opus-5`；选题走结构化输出（`output_config.format`），正文走流式 |
 | `openai` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | 任意 OpenAI 兼容接口：DeepSeek / Kimi / 通义 / vLLM / Ollama |
+| `gateway` | `LLM_GATEWAY_API_KEY` + `LLM_TENANT_ID` | 站内 LLM 网关（生产默认），按 capability 选模型，业务侧不持有上游密钥 |
 | `mock` | 无需配置 | 无密钥时的本地模板，保证全流程可跑通，便于演示和开发 |
 
 也可用 `LLM_PROVIDER` 强制指定。
+
+**按功能分档**：每个功能走 quality 还是 fast 档，集中在 `llm.js` 的 `FEATURE_TIER` 一张表里（默认：成稿、改写、多平台、语气档案、口播总评走 quality；选题、检查、口播提示、题材推荐、热点比对走 fast）。
+快档模型用 `LLM_CAPABILITY_JSON`（网关）、`ANTHROPIC_MODEL_FAST`、`OPENAI_MODEL_FAST` 配置，不配就和主模型一样。
+
+**额度与并发**：每次调用先预扣一笔估算点数，调完按真实 token 多退少补；失败退回，中途中断按已生成字数收。
+同一用户同时最多 3 个生成请求（`LLM_MAX_INFLIGHT_PER_USER`）。
 
 ## 账号设定
 
@@ -842,64 +849,143 @@ Token 数取自上游返回的真实用量，不是估算：非流式读 `usage.
 
 ## 目录
 
+模块划分、请求链路和「改什么去哪」详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；给 AI 编程助手的约定在 [CLAUDE.md](CLAUDE.md)。
+
 ```
 server/
-  index.js    HTTP 服务与路由（node:http，无框架）
-  routes.js   API 处理函数
-  db.js       node:sqlite 数据层（users / sessions / admins / admin_sessions /
-              personas / sections / style_samples / drafts / usage_events）
-  auth.js     scrypt 密码 + httpOnly cookie 会话（业务与管理各一套，互不相认）
-  llm.js      模型接入层（anthropic / openai / mock）
-  prompts.js  平台规范、调性、账号/人设/语气块、改写与续写指令、JSON Schema
-  hotspots.js 榜单抓取（6 个源，独立容错）与不适合蹭的硬过滤规则
-  mock.js     演示模式模板
-public/       前台单页（index.html + app.js）与后台（admin.html + admin.js），共用 styles.css，无构建步骤
+  index.js        HTTP 服务：路由表、限流、静态文件（node:http，无框架）
+  routes.js       API 处理函数的聚合导出
+  routes/         按业务域拆开的处理函数（common / auth / prompts / admin / personas / hotspots /
+                  drafts / review / speak / editor / publish / materials / insights / billing）
+  db.js           node:sqlite 数据访问
+  migrations.js   表结构：按编号的迁移（改表只在这里加）
+  llm.js          模型接入：四种通道、按功能分档、超时、额度预扣与结算、并发上限
+  prompts.js      平台规范、调性、各功能 system 提示词与 user 拼装、JSON Schema
+  promptrev.js    提示词线上版本；promptdocs.js 说明书内容；abtest.js A/B 与 eval 打分
+  quota.js · plans.js · pricing.js   额度、套餐、单价
+  speak.js        转写、口播总评、网关发音 / 出镜评测
+  images.js · hotspots.js · pay.js · docx.js · settings.js · secrets.js · auth.js · limit.js · security.js
+public/
+  index.html · styles.css             主应用页面与样式（设计令牌在 styles.css 开头）
+  app.js                              前端入口：加载 js/ 下的模块并启动
+  js/core.js                          共享的 el / state / api / 小工具
+  js/*.js                             13 个功能模块（账号、简报、成稿、编辑器、口播、热点、素材……）
+  admin.* · prompts.* · landing.* · promo.*   后台、提示词说明书、落地页、投放页
+tests/            node:test 单测（npm test）
+scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdcloud.sh 部署
 ```
 
 ## API
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/auth/register` `/api/auth/login` `/api/auth/logout` | 账号 |
-| GET | `/api/me` `/api/meta` | 当前用户 / 平台·调性·模型信息 |
-| GET | `/api/admin/session` | 后台登录态 + 是否需要首次设置 |
-| POST | `/api/admin/setup` | 创建第一个管理员（仅在一个都没有时开放） |
-| POST | `/api/admin/login` `/api/admin/logout` | 管理员登录 / 登出 |
-| GET | `/api/admin/overview` | 用户、用量统计（`?days=`），需管理员会话 |
-| GET | `/api/admin/prompts` | 各功能的 system 提示词与 Schema，需管理员会话 |
-| GET POST | `/api/personas` | 账号设定列表 / 新建 |
-| PUT DELETE | `/api/personas/:id` | 修改 / 删除账号设定 |
-| GET | `/api/hotspots` | 全网榜单（20 分钟缓存，`?force=1` 强刷） |
-| GET POST | `/api/personas/:id/hotspots` | 读上次比对结果 / 重新比对（可传 `manual` 用手动榜单） |
-| GET POST | `/api/personas/:id/subjects` | 读推荐题材缓存 / 重新生成一批 |
-| POST | `/api/drafts/topics` | 提交简报（带 `persona_id`），返回 3 个方向 |
-| POST | `/api/drafts/:id/topics` | 换一批（会避开已出过的角度） |
-| POST | `/api/drafts/:id/content` | 选定方向，SSE 流式返回成稿 |
-| PUT | `/api/drafts/:id/content` | 保存编辑器里改过的正文 |
-| POST | `/api/drafts/:id/assist` | 划词改写 / `/` 续写，SSE 流式返回 |
-| POST | `/api/drafts/:id/review` | 两层检查：语言错误 + 调性风险 |
-| POST | `/api/drafts/:id/cues` | 生成口播提示（语气/重读/停顿/表情/动作） |
-| GET POST | `/api/personas/:id/sections` | 栏目列表（含模板）/ 新建 |
-| PUT DELETE | `/api/personas/:id/sections/:sid` | 修改 / 删除栏目 |
-| GET POST | `/api/personas/:id/samples` | 语气样本列表 / 新增（可传 `draft_id`） |
-| DELETE | `/api/personas/:id/samples/:sid` | 删除样本并重学 |
-| POST | `/api/personas/:id/digest` | 重新蒸馏语气档案 |
-| GET | `/api/drafts` `/api/drafts/:id` | 历史列表（`?persona_id=` 按账号筛选，`none` 为未绑定；`?archived=1` 看归档）/ 详情 |
-| POST | `/api/drafts/:id/archive` | 归档 / 恢复单条 |
-| POST | `/api/drafts/archive-done` | 批量归档当前范围内已完成的 |
-| DELETE | `/api/drafts/:id` | 删除 |
+下表由 `server/index.js` 的路由表整理（共 92 条）。处理函数在 `server/routes/` 对应文件里；
+除注册、登录、`/api/me`、`/api/meta`、`/api/pricing`、`/api/prompt-docs`（只读）、后台的登录与初始化、支付回调外都要登录；其余 `/api/admin/*` 和提示词编辑要管理员会话。
+
+| 方法 | 路径 | 处理函数 | 文件 |
+|---|---|---|---|
+| POST | `/api/auth/register` | `handleRegister` | auth.js |
+| POST | `/api/auth/login` | `handleLogin` | auth.js |
+| POST | `/api/auth/logout` | `handleLogout` | auth.js |
+| GET | `/api/me` | `handleMe` | auth.js |
+| GET | `/api/meta` | `handleMeta` | auth.js |
+| GET | `/api/personas` | `handlePersonaList` | personas.js |
+| POST | `/api/personas` | `handlePersonaCreate` | personas.js |
+| PUT | `/api/personas/:id` | `handlePersonaUpdate` | personas.js |
+| DELETE | `/api/personas/:id` | `handlePersonaDelete` | personas.js |
+| GET | `/api/personas/:id/sections` | `handleSectionList` | personas.js |
+| POST | `/api/personas/:id/sections` | `handleSectionCreate` | personas.js |
+| PUT | `/api/personas/:id/sections/:sid` | `handleSectionUpdate` | personas.js |
+| DELETE | `/api/personas/:id/sections/:sid` | `handleSectionDelete` | personas.js |
+| GET | `/api/personas/:id/samples` | `handleSampleList` | personas.js |
+| POST | `/api/personas/:id/samples` | `handleSampleCreate` | personas.js |
+| DELETE | `/api/personas/:id/samples/:sampleId` | `handleSampleDelete` | personas.js |
+| POST | `/api/personas/:id/digest` | `handleDigestRebuild` | personas.js |
+| GET | `/api/admin/session` | `handleAdminSession` | admin.js |
+| POST | `/api/admin/setup` | `handleAdminSetup` | admin.js |
+| POST | `/api/admin/login` | `handleAdminLogin` | admin.js |
+| POST | `/api/admin/logout` | `handleAdminLogout` | admin.js |
+| GET | `/api/admin/overview` | `handleAdminOverview` | admin.js |
+| GET | `/api/admin/prompts` | `handleAdminPrompts` | admin.js |
+| GET | `/api/admin/settings` | `handleSettingsList` | admin.js |
+| POST | `/api/admin/settings` | `handleSettingsSave` | admin.js |
+| GET | `/api/admin/settings/check` | `handleSettingsCheck` | admin.js |
+| GET | `/api/admin/variants` | `handlePromptVariantList` | admin.js |
+| POST | `/api/admin/variants` | `handlePromptVariantSave` | admin.js |
+| PUT | `/api/admin/variants/:vid` | `handlePromptVariantSave` | admin.js |
+| DELETE | `/api/admin/variants/:vid` | `handlePromptVariantDelete` | admin.js |
+| GET | `/api/admin/eval/cases` | `handleEvalCases` | admin.js |
+| POST | `/api/admin/eval/cases` | `handleEvalCaseAdd` | admin.js |
+| DELETE | `/api/admin/eval/cases/:cid` | `handleEvalCaseDelete` | admin.js |
+| POST | `/api/admin/eval/run` | `handleEvalRun` | admin.js |
+| GET | `/api/admin/eval/batches` | `handleEvalBatches` | admin.js |
+| GET | `/api/admin/eval/:batch` | `handleEvalResult` | admin.js |
+| POST | `/api/admin/eval/:batch/vote` | `handleEvalVote` | admin.js |
+| GET | `/api/hotspots` | `handleBoards` | hotspots.js |
+| GET | `/api/personas/:id/hotspots` | `handleHotspotRead` | hotspots.js |
+| POST | `/api/personas/:id/hotspots` | `handleHotspotAnalyze` | hotspots.js |
+| GET | `/api/personas/:id/subjects` | `handleSubjectList` | hotspots.js |
+| POST | `/api/personas/:id/subjects` | `handleSubjectGenerate` | hotspots.js |
+| POST | `/api/drafts/topics` | `handleTopics` | drafts.js |
+| POST | `/api/drafts/:id/topics` | `handleRetopics` | drafts.js |
+| POST | `/api/drafts/:id/content` | `handleContent` | drafts.js |
+| PUT | `/api/drafts/:id/content` | `handleSaveContent` | drafts.js |
+| GET | `/api/drafts/:id/revisions` | `handleRevisionList` | drafts.js |
+| GET | `/api/drafts/:id/revisions/:rid` | `handleRevisionGet` | drafts.js |
+| POST | `/api/drafts/:id/assist` | `handleAssist` | editor.js |
+| POST | `/api/drafts/:id/voice-edit` | `handleVoiceEdit` | editor.js |
+| POST | `/api/drafts/:id/review` | `handleReview` | review.js |
+| POST | `/api/drafts/:id/cues` | `handleCues` | speak.js |
+| GET | `/api/drafts/:id/speaks` | `handleSpeakList` | speak.js |
+| POST | `/api/drafts/:id/speaks` | `handleSpeakCreate` | speak.js |
+| GET | `/api/speaks` | `handleSpeakList` | speak.js |
+| GET | `/api/speaks/:sid` | `handleSpeakGet` | speak.js |
+| POST | `/api/speaks/:sid/retry` | `handleSpeakRetry` | speak.js |
+| POST | `/api/speaks/:sid/pronounce` | `handleSpeakPronounce` | speak.js |
+| POST | `/api/speaks/:sid/appearance` | `handleSpeakAppearance` | speak.js |
+| DELETE | `/api/speaks/:sid` | `handleSpeakDelete` | speak.js |
+| POST | `/api/drafts/:id/variants` | `handleVariant` | publish.js |
+| POST | `/api/drafts/:id/illus` | `handleIllus` | publish.js |
+| POST | `/api/drafts/:id/illus/:i/image` | `handleIllusImage` | publish.js |
+| DELETE | `/api/drafts/:id/variants/:platform` | `handleVariantDelete` | publish.js |
+| GET | `/api/images` | `handleImageInfo` | publish.js |
+| GET | `/api/drafts/:id/export.docx` | `handleExportDocx` | publish.js |
+| GET | `/api/prompt-docs` | `handlePromptDocs` | prompts.js |
+| PUT | `/api/prompt-docs/:key` | `handlePromptSave` | prompts.js |
+| POST | `/api/prompt-docs/:key/revisions/:rid/activate` | `handlePromptActivate` | prompts.js |
+| GET | `/api/personas/:id/materials` | `handleMaterialList` | materials.js |
+| POST | `/api/personas/:id/materials` | `handleMaterialCreate` | materials.js |
+| PUT | `/api/materials/:mid` | `handleMaterialUpdate` | materials.js |
+| DELETE | `/api/materials/:mid` | `handleMaterialDelete` | materials.js |
+| GET | `/api/pool` | `handlePoolList` | materials.js |
+| POST | `/api/pool` | `handlePoolCreate` | materials.js |
+| PUT | `/api/pool/:pid` | `handlePoolUpdate` | materials.js |
+| DELETE | `/api/pool/:pid` | `handlePoolDelete` | materials.js |
+| GET | `/api/metrics` | `handleMetricsMeta` | insights.js |
+| GET | `/api/pricing` | `handlePricing` | billing.js |
+| GET | `/api/plan` | `handlePlanInfo` | billing.js |
+| POST | `/api/plan` | `handlePlanChange` | billing.js |
+| GET | `/api/pay` | `handlePayInfo` | billing.js |
+| POST | `/api/pay/order` | `handleOrderCreate` | billing.js |
+| GET | `/api/pay/order/:no` | `handleOrderStatus` | billing.js |
+| POST | `/api/pay/notify/:channel` | `handlePayNotify` | billing.js |
+| POST | `/api/drafts/:id/metrics` | `handleMetricsSave` | insights.js |
+| GET | `/api/insights` | `handleReview2` | insights.js |
+| GET | `/api/drafts` | `handleList` | drafts.js |
+| GET | `/api/drafts/:id` | `handleGet` | drafts.js |
+| POST | `/api/drafts/:id/archive` | `handleArchive` | drafts.js |
+| POST | `/api/drafts/archive-done` | `handleArchiveDone` | drafts.js |
+| DELETE | `/api/drafts/:id` | `handleDelete` | drafts.js |
 
 ## 第一版的边界
 
 - 会话存在 SQLite，密码用 scrypt。生产已加 HTTPS Cookie、IP 限流、后台环境变量初始化；注册仍开放但有频控，可用 `REGISTER_CODE` 加邀请码。
-- 管理后台只读，没有改密码、封号、调额度这类操作；也没有在后台里增删管理员（第一个之后要加人得直接写库）。
-- 用量按调用计数和 token 记，没有换算成金额（各家单价不同，也会变）。
+- 管理后台能看用量与成本、改支付配置、管理提示词 A/B 变体和 eval；但没有改密码、封号、调额度这类用户管理操作，也不能在后台增删管理员（第一个之后要加人得直接写库）。
+- 用量按调用和 token / 张数记，成本看板按 `pricing.js` 的单价**估算**金额；真实账单以服务商控制台为准。
 - 未做协作、团队空间、定时发布与平台直发。
 - 结构化生成（三个方向、三条题材）偶发格式跑偏时会自动重试一次，两次都失败才报错；失败不会在历史里留空记录。
 - 口播提示只标不改；正文一改就作废需要重新生成。
 - 提词器是匀速滚动，没有做跟读语音识别式的自动对齐。
 - 栏目素材是每篇现填的，没有做「上次填过的自动带出来」——同一个栏目写第二篇时要重填。
-- 尚无多版本对比与历史回滚：编辑器里的改动是就地覆盖，只能靠「重来一次」重新生成。
+- 正文有历史版本（手动保存、离开编辑、重新生成时留版，自动保存每 10 分钟最多一版，每篇最多 50 版），可以对比和取回；多平台版本和配图不单独留历史。
 - 语气档案是全量重蒸馏，样本多了以后每次增删都要重算一遍（当前上限 30 篇，成本可接受）。
 - 划词菜单在阅读模式下靠文本反查定位，跨越加粗/链接等行内格式的选区需要切到编辑模式。
 - 热点抓的是非官方接口，平台改版或限流就会失效；风险过滤是关键词规则，会有漏网也会有误杀，只能算一道兜底而不是保证。
