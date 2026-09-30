@@ -219,6 +219,8 @@ export async function loadSections(personaId, { forPicker = true } = {}) {
 }
 
 export function renderSectionChips() {
+  // 账号或栏目变了，写法框架的推荐也要跟着换
+  window.dispatchEvent(new Event('cw-brief-context'));
   const list = state.sections;
   const persona = currentPersona();
   el.sectionPick.classList.toggle('hidden', !persona);

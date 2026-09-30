@@ -13,6 +13,7 @@
  *   library.js   素材库与选题池
  *   insights.js  发布数据回填与复盘
  *   plan.js      用量、套餐与支付
+ *   frameworks.js 写法框架：简报里的推荐与选择、框架库的浏览与编辑
  * 这里先按顺序加载它们（core 最先），最后启动。 */
 import { api, el, esc, state, syncLength, toast } from './js/core.js';
 import { enterApp } from './js/auth.js';
@@ -28,6 +29,7 @@ import './js/versions.js';
 import './js/library.js';
 import './js/insights.js';
 import './js/plan.js';
+import './js/frameworks.js';
 
 /* ---------------- 启动 ---------------- */
 (async function boot() {

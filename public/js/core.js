@@ -92,7 +92,7 @@ export const el = {
 
 export const state = {
   user: null, meta: null, draft: null, streaming: false, busy: false,
-  personas: [], personaId: null, editingId: null, skipOnboard: false,
+  personas: [], personaId: null, editingId: null, skipOnboard: false, frameworkKey: null,
   mode: 'read', dirty: false, assist: null, ideaFailed: new Set(), voiceApplying: false,
   revOpen: false, revId: null, revText: '', revisions: [],
   view: 'write', boards: null, paramsUnlocked: false,

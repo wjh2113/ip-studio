@@ -1,3 +1,4 @@
+import { frameworkBlock } from './frameworks.js';
 /* 平台/风格预设与提示词构造 —— 系统的“产品知识”都集中在这里 */
 
 export const PLATFORMS = {
@@ -131,8 +132,9 @@ const brief = (d, persona, samples) => {
   const creator = creatorBlock(persona);
   const style = styleBlock(persona, samples);
   const section = sectionBlock(d.section, d.inputs);
+  const framework = frameworkBlock(d.framework, d.length);
   const hot = hotspotRefBlock(d.hotspot);
-  const head = [account, creator, style, section].filter(Boolean);
+  const head = [account, creator, style, section, framework].filter(Boolean);
   return [
     head.join('\n\n') || null,
     hot ? `\n${hot}` : null,
@@ -162,7 +164,8 @@ export const TOPICS_SYSTEM =
 5. 若给出了账号设定，三个方向都必须服务于该账号的定位与它要解决的问题——差异体现在切入角度上，而不是跑到账号定位之外去。
    若给出了博主本人的人设，优先选那些他凭自身年龄、行业、岗位和性格真的写得出来、别人写不出来的角度。
 6. 若指定了栏目，三个方向都必须是这个栏目该有的样子——比如「来时路」就该讲来历和差异，不要写成干货教程。
-7. 全部使用简体中文。`;
+7. 若给出了写法框架，三个方向的内容骨架都按框架的段落顺序展开（骨架条目和框架槽位一一对应），差异仍然体现在切入角度上。
+8. 全部使用简体中文。`;
 
 export const topicsUser = (d, persona, samples) =>
 `请基于下面这份创作简报，给出 3 个差异化的选题方向。
@@ -179,7 +182,8 @@ export const CONTENT_SYSTEM =
 5. 若给出了账号设定，全文的立场、称呼、举例和知识密度都要贴合该账号的目标用户，并遵守其中列出的要求与禁忌。
    若还给出了博主本人的人设，第一人称就是这个人——他的年龄、行业、岗位和性格要落在具体的措辞与例子里，而不是被直白地写出来。
 6. 输出 Markdown：第一行是 # 标题，正文分段；口播类脚本按规范分栏标注。
-7. 全部使用简体中文。`;
+7. 若给出了写法框架，按框架的段落顺序和各段篇幅比例组织全文；框架只决定结构，事实仍然只能来自作者素材和简报。
+8. 全部使用简体中文。`;
 
 export const contentUser = (d, topic, persona, samples, materials = []) =>
 `按下面选定的方向写出完整成稿。

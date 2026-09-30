@@ -13,6 +13,7 @@
  *   materials.js  素材库与选题池
  *   insights.js   发布数据回填与复盘
  *   billing.js    套餐、额度、下单与支付回调
+ *   frameworks.js 框架库：内置与我的、推荐、增删改
  * index.js 和测试仍然从这里 import，不用关心函数具体在哪个文件。 */
 export * from './routes/common.js';
 export * from './routes/auth.js';
@@ -28,3 +29,4 @@ export * from './routes/publish.js';
 export * from './routes/materials.js';
 export * from './routes/insights.js';
 export * from './routes/billing.js';
+export * from './routes/frameworks.js';

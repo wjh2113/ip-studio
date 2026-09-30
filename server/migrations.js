@@ -14,6 +14,25 @@
 
 export const MIGRATIONS = [
   { version: 1, name: '基线：全部建表与历史增量迁移', up: baseline },
+  { version: 2, name: '框架库：frameworks 表 + 草稿上的框架快照', up: (db) => db.exec(`
+    CREATE TABLE frameworks (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind        TEXT    NOT NULL DEFAULT 'structure',   -- structure；以后加 exemplar / hook / ending / title
+      name        TEXT    NOT NULL,
+      summary     TEXT    NOT NULL DEFAULT '',
+      platforms   TEXT    NOT NULL DEFAULT '[]',          -- 空数组 = 通用
+      scenes      TEXT    NOT NULL DEFAULT '[]',
+      slots_json  TEXT    NOT NULL DEFAULT '[]',          -- [{role, guide, ratio}]
+      source_text TEXT    NOT NULL DEFAULT '',            -- 范文原文（二期拆解用），只作语感参考
+      from_key    TEXT    NOT NULL DEFAULT '',            -- 从哪个内置框架复制来的
+      used_count  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL,
+      updated_at  TEXT    NOT NULL
+    );
+    CREATE INDEX idx_frameworks_user ON frameworks(user_id, id DESC);
+    ALTER TABLE drafts ADD COLUMN framework_json TEXT NOT NULL DEFAULT 'null';
+  `) },
 ];
 
 export function runMigrations(db) {

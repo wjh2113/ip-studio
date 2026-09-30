@@ -1725,3 +1725,44 @@ pre, code, .tts-out { font-family: var(--font-mono); }
 
 /* 成稿检查：本地词库命中的标记 */
 .flag-src { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+
+/* ---------------- 框架库 ---------------- */
+.fw-modal { max-width: 760px; }
+.fw-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.fw-bar select { width: auto; }
+.fw-bar #fwNewBtn { margin-left: auto; }
+.fw-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.fw-tabs button { border: 0; background: transparent; padding: 5px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.fw-tabs button.on { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.fw-list { display: grid; gap: 10px; }
+.fw-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.fw-card.on { border-color: var(--accent); }
+.fw-card-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fw-tag { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.fw-sum { margin: 0; font-size: 13px; color: var(--muted); }
+.fw-actions { display: flex; gap: 6px; }
+.fw-bar-slots { display: flex; gap: 2px; height: 22px; border-radius: 6px; overflow: hidden; }
+.fw-seg { display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 4px;
+  font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.fw-seg.s0 { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.fw-seg.s1 { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.fw-seg.s2 { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.fw-seg.s3 { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.fw-seg.s4 { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.fw-seg.s5 { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.fw-editor { display: grid; gap: 10px; }
+.fw-plats { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fw-plat { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; }
+.fw-plat input { width: auto; margin: 0; }
+.fw-slots { display: grid; gap: 6px; }
+.fw-slot { display: flex; gap: 6px; align-items: center; }
+.fw-slot input { padding: 6px 9px; font-size: 12.5px; }
+.fw-slot .fw-role { flex: 0 0 26%; }
+.fw-slot .fw-guide { flex: 1; min-width: 0; }
+.fw-slot .fw-ratio { flex: 0 0 64px; }
+.fw-slot .icon-btn { font-size: 15px; }
+.fw-bar-preview { margin-top: 6px; }
+@media (max-width: 700px) {
+  .fw-slot { flex-wrap: wrap; }
+  .fw-slot .fw-role, .fw-slot .fw-guide { flex: 1 1 100%; }
+}

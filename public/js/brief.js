@@ -331,6 +331,7 @@ el.briefForm.addEventListener('submit', async (e) => {
     const inputs = collectSectionInputs();
     if (inputs) body.inputs = inputs;
   }
+  if (state.frameworkKey) body.framework = state.frameworkKey;
   const p = currentPersona();
   hint(p ? `正在以「${p.name}」的定位拆解题材…` : '正在拆解题材，生成三个差异化方向…');
 
@@ -415,6 +416,7 @@ function fillBrief(d) {
   f.keywords.value = d.keywords || '';
   f.length.value = d.length;
   state.sectionId = d.section_id ?? null;
+  state.frameworkKey = d.framework?.key || null;
   renderSectionChips();
   renderSectionInputs(d.inputs || {});
   lockParams(true);
@@ -423,6 +425,8 @@ function fillBrief(d) {
 /* 一个方向一横条：左边是"这是什么"，右边是"怎么写"。
    原来三个窄长条并排，每条 900 多像素高，读起来要上下扫三趟，也没法横向比较。 */
 export function renderTopics(draft) {
+  const fwNote = document.getElementById('topicsFw');
+  if (fwNote) fwNote.textContent = draft.framework ? `写法：${draft.framework.name}` : '';
   el.topics.innerHTML = draft.topics.map((t, i) => `
     <div class="topic ${draft.chosen === i ? 'chosen' : ''}">
       <div class="topic-main">

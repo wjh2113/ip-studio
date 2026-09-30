@@ -530,6 +530,59 @@ export const Materials = {
   },
 };
 
+/* ---------- frameworks（框架库：用户自己的；内置的在 frameworks.js） ---------- */
+function hydrateFramework(r) {
+  const arr = (v) => { try { const x = JSON.parse(v); return Array.isArray(x) ? x : []; } catch { return []; } };
+  return {
+    key: `u:${r.id}`, id: r.id, builtin: false, kind: r.kind, name: r.name, summary: r.summary,
+    platforms: arr(r.platforms), scenes: arr(r.scenes), slots: arr(r.slots_json),
+    from_key: r.from_key, used_count: r.used_count, created_at: r.created_at, updated_at: r.updated_at,
+  };
+}
+
+export const Frameworks = {
+  list(userId) {
+    return db.prepare('SELECT * FROM frameworks WHERE user_id = ? ORDER BY id DESC').all(userId).map(hydrateFramework);
+  },
+  count(userId) {
+    return db.prepare('SELECT COUNT(*) AS n FROM frameworks WHERE user_id = ?').get(userId).n;
+  },
+  byId(id, userId) {
+    const r = db.prepare('SELECT * FROM frameworks WHERE id = ? AND user_id = ?').get(id, userId);
+    return r ? hydrateFramework(r) : null;
+  },
+  create(userId, f) {
+    const t = now();
+    const info = db.prepare(`
+      INSERT INTO frameworks (user_id, name, summary, platforms, scenes, slots_json, from_key, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, f.name, f.summary || '', JSON.stringify(f.platforms || []), JSON.stringify(f.scenes || []),
+      JSON.stringify(f.slots), f.from_key || '', t, t);
+    return this.byId(Number(info.lastInsertRowid), userId);
+  },
+  update(id, userId, f) {
+    const n = db.prepare(`
+      UPDATE frameworks SET name = ?, summary = ?, platforms = ?, scenes = ?, slots_json = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?
+    `).run(f.name, f.summary || '', JSON.stringify(f.platforms || []), JSON.stringify(f.scenes || []),
+      JSON.stringify(f.slots), now(), id, userId).changes;
+    return n ? this.byId(id, userId) : null;
+  },
+  remove(id, userId) {
+    return db.prepare('DELETE FROM frameworks WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
+  },
+  markUsed(id, userId) {
+    db.prepare('UPDATE frameworks SET used_count = used_count + 1 WHERE id = ? AND user_id = ?').run(id, userId);
+  },
+  /* 内置框架的使用次数不存表，从草稿快照里数 */
+  builtinUsage(userId) {
+    return Object.fromEntries(db.prepare(`
+      SELECT json_extract(framework_json, '$.key') AS k, COUNT(*) AS n FROM drafts
+      WHERE user_id = ? AND framework_json != 'null' GROUP BY k
+    `).all(userId).map((r) => [r.k, r.n]));
+  },
+};
+
 /* ---------- topic_pool（选题池与排期） ---------- */
 export const Pool = {
   create(userId, personaId, t) {
@@ -586,16 +639,17 @@ export const Samples = {
 
 /* ---------- drafts ---------- */
 export const Drafts = {
-  create(userId, f, persona = null, hotspot = null, section = null, inputs = null) {
+  create(userId, f, persona = null, hotspot = null, section = null, inputs = null, framework = null) {
     const t = now();
     const info = db.prepare(`
       INSERT INTO drafts (user_id, subject, platform, tone, audience, keywords, length,
                           topics_json, status, persona_id, persona_json, hotspot_json,
-                          section_id, section_json, inputs_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'topics', ?, ?, ?, ?, ?, ?, ?, ?)
+                          section_id, section_json, inputs_json, framework_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'topics', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(userId, f.subject, f.platform, f.tone, f.audience, f.keywords, f.length,
            persona?.id ?? null, JSON.stringify(persona), JSON.stringify(hotspot),
-           section?.id ?? null, JSON.stringify(section), JSON.stringify(inputs), t, t);
+           section?.id ?? null, JSON.stringify(section), JSON.stringify(inputs),
+           JSON.stringify(framework), t, t);
     return this.byId(Number(info.lastInsertRowid), userId);
   },
   setTopics(id, userId, topics, persona) {
@@ -891,6 +945,8 @@ function hydrate(row) {
   let variants = null;
   let illus = null;
   let metrics = null;
+  let framework = null;
+  try { framework = JSON.parse(row.framework_json ?? 'null'); } catch { /* 同上 */ }
   try { topics = JSON.parse(row.topics_json); } catch { /* 容错：脏数据当作空 */ }
   try { persona = JSON.parse(row.persona_json); } catch { /* 同上 */ }
   try { hotspot = JSON.parse(row.hotspot_json); } catch { /* 同上 */ }
@@ -903,9 +959,9 @@ function hydrate(row) {
   const {
     topics_json, persona_json, hotspot_json, section_json,
     inputs_json, cues_json, variants_json, illus_json,
-    metrics_json, user_id, ...rest
+    metrics_json, framework_json, user_id, ...rest
   } = row;
   return {
-    ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics,
+    ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics, framework,
   };
 }

@@ -129,6 +129,13 @@
 
           <div class="section-inputs hidden" id="sectionInputs"></div>
 
+          <!-- 写法框架：默认不套；推荐三个，点一下就用。框架管结构，素材管事实 -->
+          <div class="sections-pick" id="fwPick">
+            <span class="sections-label">写法框架</span>
+            <div class="section-chips" id="fwChips"></div>
+            <button type="button" class="btn ghost small" id="fwLibBtn">框架库</button>
+          </div>
+
           <div class="hot-ref hidden" id="hotRef"></div>
 
           <!-- 选题池：热点里看到的、推荐里想留的，不当场写也不丢 -->
@@ -179,7 +186,7 @@
       <section class="card hidden" id="topicsCard">
         <div class="card-head">
           <button class="btn ghost small step-back" data-goto="1">← 改题材</button>
-          <h2>三个话题方向</h2>
+          <h2>三个话题方向<span class="modal-sub" id="topicsFw"></span></h2>
           <button class="btn ghost small" id="retopicsBtn">换一批</button>
         </div>
         <div class="topics" id="topics"></div>
@@ -460,6 +467,49 @@
         <div class="section-form-foot">
           <button class="btn ghost small" type="button" id="sectionCancelBtn">取消</button>
           <button class="btn primary small" type="button" id="sectionSaveBtn">保存栏目</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 框架库：内置 + 我的；可以新建、编辑、复制内置的再改 -->
+<div class="modal-mask hidden" id="fwModal">
+  <div class="modal fw-modal">
+    <div class="modal-head">
+      <h2>框架库<span class="modal-sub">写法的结构：每段干什么、各占多少篇幅</span></h2>
+      <button class="icon-btn" id="fwClose" title="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="fw-bar">
+        <div class="fw-tabs" id="fwTabs">
+          <button type="button" data-tab="all" class="on">全部</button>
+          <button type="button" data-tab="mine">我的</button>
+          <button type="button" data-tab="builtin">内置</button>
+        </div>
+        <select id="fwPlatform"></select>
+        <button type="button" class="btn primary small" id="fwNewBtn">＋ 新建框架</button>
+      </div>
+      <div class="fw-list" id="fwList"></div>
+
+      <div class="fw-editor hidden" id="fwEditor">
+        <label class="full">框架名 <span class="req">*</span><input id="fwName" maxlength="30" placeholder="例：我的种草五段式" /></label>
+        <label class="full">一句话说明<input id="fwSummary" maxlength="200" placeholder="适合什么内容、为什么好用" /></label>
+        <div class="fw-plats" id="fwPlats"></div>
+        <label class="full">适用场景<input id="fwScenes" maxlength="60" placeholder="用逗号分隔，例：种草，好物（推荐时会按它和题材匹配）" /></label>
+        <div class="field-editor">
+          <div class="field-editor-head">
+            <span>段落（按顺序）</span>
+            <button type="button" class="btn ghost small" id="fwSlotAdd">＋ 加一段</button>
+          </div>
+          <p class="hint">每段写清作用和要点，篇幅填百分比（会自动按比例换算，不必凑满 100）。</p>
+          <div class="fw-slots" id="fwSlots"></div>
+          <div class="fw-bar-preview" id="fwPreview"></div>
+        </div>
+        <p class="form-error" id="fwError"></p>
+        <div class="section-form-foot">
+          <button class="btn ghost small" type="button" id="fwCancel">取消</button>
+          <button class="btn primary small" type="button" id="fwSave">保存框架</button>
         </div>
       </div>
     </div>

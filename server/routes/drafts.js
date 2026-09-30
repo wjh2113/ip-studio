@@ -1,5 +1,5 @@
 /* 路由 · drafts：创作主流程：三个方向、流式成稿、保存与历史版本、列表、归档、删除。从原 routes.js 原样拆出。 */
-import { Drafts, Materials, Personas, Revisions, Sections } from '../db.js';
+import { Drafts, Frameworks, Materials, Personas, Revisions, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON, streamText } from '../llm.js';
 import { pickVariant } from '../abtest.js';
@@ -7,6 +7,8 @@ import { mockContent, mockTopics } from '../mock.js';
 import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, topicsUser } from '../prompts.js';
 import { describe, json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { recallMaterials } from './materials.js';
+import { resolveFramework } from './frameworks.js';
+import { frameworkSnapshot } from '../frameworks.js';
 
 /* 本篇未填的字段，继承所选账号设定 */
 function normalizeForm(body = {}, persona = null) {
@@ -95,11 +97,14 @@ export async function handleTopics(req, res, body) {
   const section = persona ? resolveSection(user.id, persona.id, body?.section_id) : null;
   const inputs = normalizeInputs(section, body?.inputs);
   const form = normalizeForm(body, persona);
-  const draft = Drafts.create(user.id, form, persona, normalizeHotspot(body?.hotspot), section, inputs);
+  // 写法框架：不传或 'none' = 不套框架（和以前一样）；传 key 就把框架快照存进草稿
+  const fw = resolveFramework(user.id, body?.framework);
+  const framework = frameworkSnapshot(fw);
+  const draft = Drafts.create(user.id, form, persona, normalizeHotspot(body?.hotspot), section, inputs, framework);
 
   let topics;
   try {
-    const ctx = { ...form, hotspot: normalizeHotspot(body?.hotspot), section, inputs };
+    const ctx = { ...form, hotspot: normalizeHotspot(body?.hotspot), section, inputs, framework };
     topics = await generateTopics(ctx, persona, [], styleSamples(persona, user.id),
       { feature: '选题方向', userId: user.id });
   } catch (err) {
@@ -108,6 +113,7 @@ export async function handleTopics(req, res, body) {
   }
 
   if (persona) consumeIdea(persona, user.id, form.subject);
+  if (fw && !fw.builtin) Frameworks.markUsed(fw.id, user.id);
   Drafts.setTopics(draft.id, user.id, topics, persona);
   json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
 }
