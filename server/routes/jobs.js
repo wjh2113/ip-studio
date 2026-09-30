@@ -28,7 +28,8 @@ export async function handleJobCancel(req, res, body, params) {
   const { user, job } = await mine(req, params);
   if (job.status === 'running') throw new HttpError(409, '已经开始做了，取消不了，等它做完');
   if (!await Jobs.cancel(job.id, user.id)) throw new HttpError(409, '这个任务已经结束了');
-  await forgetQueued(job.id);
+  // 表里已经是「已取消」，Redis 里那条轮到时会自己跳过；这里不等 Redis，断线时也能立刻回
+  void forgetQueued(job.id);
   json(res, 200, { job: presentJob(await Jobs.byId(job.id, user.id)) });
 }
 

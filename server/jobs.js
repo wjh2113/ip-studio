@@ -35,11 +35,24 @@ const LIMIT_ALL = () => Math.max(1, Number(process.env.JOB_CONCURRENCY) || 3);
 const LIMIT_USER = () => Math.max(1, Number(process.env.JOB_PER_USER) || 2);
 // 每人上限满了以后多久再看一次。有人让出名额会立刻提前，这个只是兜底，不要设太短（会空转）
 const DEFER_MS = 3000;
-const SWEEP_MS = 60_000;
+// Redis 恢复后最多这么久开始执行积压的任务（投递是快速失败的，靠对账补投）
+const SWEEP_MS = 15_000;
 const READY_MS = 10_000;
 const QUEUE_NAME = 'ip-studio';
 
 export const ACTIVE = new Set(['queued', 'running']);
+
+function withTimeout(p, ms, message) {
+  return Promise.race([
+    p,
+    new Promise((_, reject) => { setTimeout(() => reject(new Error(message)), ms).unref(); }),
+  ]);
+}
+
+/* 请求路径上的 Redis 操作（投递、取消、提前）最多等这么久。
+   BullMQ 每条命令都会先等连接就绪，Redis 断着时会一直等下去；这里到点就放弃，状态以数据库为准，之后由 sweep() 补。 */
+const REDIS_OP_MS = 3000;
+const redisOp = (p, what) => withTimeout(p, REDIS_OP_MS, `Redis ${REDIS_OP_MS / 1000} 秒没响应（${what}）`);
 
 function redisConnection() {
   const raw = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -72,8 +85,14 @@ export function defineJob(kind, def) {
   KINDS.set(kind, def);
 }
 
-function queueOpts() {
-  return { connection: redisConnection(), prefix: queuePrefix() };
+/* Worker 的连接按 BullMQ 要求无限重试（maxRetriesPerRequest: null），断线时安静地等 Redis 回来。
+   投递、查询用的 Queue 连接设成「快速失败」：连上过之后再断，命令会立刻报错。
+   注意：从启动起就没连上过时，BullMQ 会先等初始化，这种情况靠下面的 redisOp 超时兜底。
+   任务本来就先记在 PostgreSQL 里，投递失败或超时由 sweep() 补投，不丢。 */
+function queueOpts({ failFast = false } = {}) {
+  const connection = redisConnection();
+  if (failFast) Object.assign(connection, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
+  return { connection, prefix: queuePrefix() };
 }
 
 /* Redis 断线时 ioredis 会每次重连失败都报一次错，日志别刷屏：同一条消息一分钟最多记一次 */
@@ -88,7 +107,7 @@ function logRedis(where, err) {
 
 function ensureQueue() {
   if (!queue) {
-    queue = new Queue(QUEUE_NAME, queueOpts());
+    queue = new Queue(QUEUE_NAME, queueOpts({ failFast: true }));
     queue.on('error', (err) => logRedis('队列', err));
   }
   return queue;
@@ -114,13 +133,13 @@ async function doAdd(job) {
   if (closing) return;
   ensureQueue();
   ensureWorker();
-  await queue.add(job.kind, { id: job.id, userId: job.userId }, {
+  await redisOp(queue.add(job.kind, { id: job.id, userId: job.userId }, {
     jobId: bullId(job.id),
     removeOnComplete: true,
     removeOnFail: true,
   }).catch((err) => {
     if (!/already exists|JobId/i.test(String(err?.message))) throw err;
-  });
+  }), '投递');
 }
 
 /* 登记一件事。同一个 ref（同一张图、同一遍口播的同一种评测）还没做完，就返回那一条，不重复建。
@@ -150,7 +169,8 @@ export async function retry(job) {
 /* 排队中的任务取消后，把 Redis 里对应的那条也拿掉，避免过一会儿又跑起来 */
 export async function forgetQueued(id) {
   if (!queue) return;
-  await queue.remove(bullId(id)).catch(() => {});
+  // 删不掉也没关系：Redis 里那条轮到时会发现表里已经不是「排队中」，直接跳过
+  await redisOp(queue.remove(bullId(id)), '取消').catch(() => {});
 }
 
 async function processBull(bullJob, token) {
@@ -185,7 +205,7 @@ function promoteNext(userId) {
   if (!list?.length || !queue || closing) return;
   const next = list.shift();
   if (!list.length) deferred.delete(userId);
-  void queue.getJob(next)
+  void redisOp(queue.getJob(next), '提前')
     .then((j) => (j ? j.promote() : null))
     .catch(() => { /* 已经被别的路径跑起来或取消了，忽略 */ });
 }
@@ -299,10 +319,6 @@ async function sweep() {
   }
 }
 
-const withTimeout = (p, ms, message) => Promise.race([
-  p,
-  new Promise((_, reject) => { setTimeout(() => reject(new Error(message)), ms).unref(); }),
-]);
 
 /* 启动：连上 Redis 后按表投递排队中的任务。
  * 不再清空整个队列（以前的 obliterate）：同一个 Redis 上的其他实例、或者上一进程留下的任务号，

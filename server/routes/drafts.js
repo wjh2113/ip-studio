@@ -209,6 +209,10 @@ export async function handleContent(req, res, body, params) {
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
 
   send('start', { title: topic.title });
+  // 记下生成前的样子：失败或中途断开时恢复它，而不是把已有的稿子清空
+  const before = {
+    chosen: draft.chosen ?? null, title: draft.title || '', content: draft.content || '', status: draft.status,
+  };
   await Drafts.setContent(draft.id, user.id, {
     chosen: index, title: topic.title, content: '', status: 'writing',
   });
@@ -228,12 +232,27 @@ export async function handleContent(req, res, body, params) {
     await Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
     send('done', { draft: await Drafts.byId(draft.id, user.id) });
   } catch (err) {
-    // 失败或中途关页面：别让草稿停在 writing + 空正文，退回到选方向这一步（上一版正文在历史里）
-    await Drafts.setContent(draft.id, user.id, { chosen: null, title: '', content: '', status: 'topics' });
+    /* 失败或中途关页面：别让草稿停在 writing + 空正文。
+       原来有正文（重新生成、换方向）就原样恢复，这篇不会因为一次失败被清掉；
+       第一次生成就失败的，退回到选方向这一步。 */
+    await restoreAfterFailure(draft.id, user.id, before, index)
+      .catch((e) => console.error('[content] 恢复草稿失败', e?.message));
     if (!controller.signal.aborted) send('error', { message: describe(err) });
   } finally {
     res.end();
   }
+}
+
+/* 只在草稿还是「这次请求写进去的样子」（writing、空正文、选的是这个方向）时才恢复：
+   生成期间另一个标签页保存了正文、或者另一次生成已经成功，就别拿开始时的旧快照去覆盖它们。 */
+export async function restoreAfterFailure(draftId, userId, before, index) {
+  const next = before.content
+    ? {
+      chosen: before.chosen, title: before.title, content: before.content,
+      status: before.status === 'writing' ? 'done' : (before.status || 'done'),
+    }
+    : { chosen: null, title: '', content: '', status: 'topics' };
+  return Drafts.setContentIf(draftId, userId, { status: 'writing', content: '', chosen: index }, next);
 }
 
 /* ---------------- 编辑器：手工保存 ---------------- */

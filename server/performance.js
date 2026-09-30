@@ -31,10 +31,17 @@ function groupBy(items, key, overall) {
   return out;
 }
 
+/* 这篇最后用的是哪个方向。drafts.chosen 存的是方向的下标（第几个），方向对象上没有 chosen 字段；
+   没选过或下标对不上时返回 null（这篇不参与按方向类型分组），不要退回第一个方向——那会把数据算到别的类型头上。 */
+export function chosenTopic(row) {
+  const topics = parse(row.topics_json, []);
+  const i = Number(row.chosen);
+  return Array.isArray(topics) && Number.isInteger(i) && row.chosen !== null && topics[i] ? topics[i] : null;
+}
+
 export async function performanceOf(userId, personaId) {
   const items = (await Drafts.withMetrics(userId, personaId ?? undefined)).map((r) => {
-    const topics = parse(r.topics_json, []);
-    const chosen = topics.find?.((t) => t?.chosen) || topics[0] || null;
+    const chosen = chosenTopic(r);
     return {
       title: r.title || r.subject,
       subject: r.subject,

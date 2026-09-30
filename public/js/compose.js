@@ -1,5 +1,5 @@
 /* 前端 · compose：第二步流式成稿、创作记录列表。从原 app.js 原样拆出。 */
-import { api, busy, countChars, currentPersona, el, esc, goStep, markSteps, markdown, state, toast } from './core.js';
+import { api, countChars, el, esc, goStep, markSteps, markdown, state, toast } from './core.js';
 import { renderPersonaBar } from './account.js';
 import { renderTopics, setDraft } from './brief.js';
 import { closeAssist, renderContent, setMode } from './editor.js';
@@ -50,6 +50,25 @@ export async function generate(index) {
     el.counter.textContent = '';
     el.content.innerHTML = `<p style="color:var(--danger)">生成中断：${esc(err.message)}</p>`
       + (text ? markdown(text) : '');
+    // 服务端在失败时会把原来的稿子恢复回去（重新生成失败不会把已有的正文清掉）：取回来显示
+    // 网络断开时服务端可能还没来得及恢复（它要先察觉连接断了）：看到还是 writing 就稍等再取
+    try {
+      let fresh;
+      for (let i = 0; i < 5; i += 1) {
+        ({ draft: fresh } = await api(`/drafts/${draft.id}`));
+        if (fresh.status !== 'writing') break;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      if (state.draft?.id === fresh.id && fresh.status !== 'writing') {
+        state.draft = fresh;
+        if (fresh.content) {
+          el.contentTitle.textContent = fresh.title || '完整文案';
+          renderContent();
+          toast(`生成中断：${err.message}。原来那版还在`);
+        }
+        loadHistory();
+      }
+    } catch { /* 取不回来就停在错误提示上 */ }
   } finally {
     state.streaming = false;
     el.topics.querySelectorAll('button').forEach((b) => { b.disabled = false; });
@@ -87,12 +106,10 @@ export async function loadHistory() {
     if (state.personaId !== null) q.set('persona_id', state.personaId);
     if (state.showArchived) q.set('archived', '1');
     const { drafts, counts } = await api(`/drafts${q.toString() ? `?${q}` : ''}`);
+    // 列表、计数由 Vue 渲染（web/src/components/Sidebar.vue），这里只更新数据
     state.list = drafts;
     state.counts = counts;
-    renderHistory();
-    api('/speaks').then(({ speaks }) => {
-      if (el.cntSpeaks) el.cntSpeaks.textContent = speaks.length || '';
-    }).catch(() => {});
+    api('/speaks').then(({ speaks }) => { state.speakCount = speaks.length; }).catch(() => {});
   } catch { /* 未登录或网络异常时静默 */ }
 }
 
@@ -101,7 +118,6 @@ el.historyFilter.addEventListener('click', (e) => {
   if (!btn || state.streaming) return;
   state.historyMode = btn.dataset.view === 'speaks' ? 'speaks' : 'drafts';
   if (state.historyMode === 'drafts') state.showArchived = btn.dataset.arch === '1';
-  [...el.historyFilter.children].forEach((b) => b.classList.toggle('on', b === btn));
   loadHistory();
 });
 
@@ -109,55 +125,27 @@ el.archiveDoneBtn.addEventListener('click', async () => {
   const n = state.counts.activeDone;
   if (!n) return;
   if (!await ask.confirm({ title: `把 ${n} 篇已完成的创作收进归档？`, body: '随时可以在「已归档」里恢复。', ok: '归档' })) return;
-  await busy(el.archiveDoneBtn, async () => {
-    try {
-      const { archived } = await api('/drafts/archive-done', {
-        method: 'POST',
-        body: { persona_id: state.personaId === null ? '' : state.personaId },
-      });
-      toast(`已归档 ${archived} 篇`);
-      loadHistory();
-    } catch (err) { toast(err.message); }
-  });
+  // 按钮归 Vue 管：不用 busy()（它会改按钮的 innerHTML），改 archivingDone 让组件显示「处理中」
+  if (state.archivingDone) return;
+  state.archivingDone = true;
+  try {
+    const { archived } = await api('/drafts/archive-done', {
+      method: 'POST',
+      body: { persona_id: state.personaId === null ? '' : state.personaId },
+    });
+    toast(`已归档 ${archived} 篇`);
+    await loadHistory();
+  } catch (err) { toast(err.message); } finally { state.archivingDone = false; }
 });
 
+/* 创作记录列表由 Vue 渲染（Sidebar.vue 读 state.list / counts / draft），数据一变自动更新。
+   这个函数留着给口播模式用，也兼容以前「改完数据调一下 renderHistory」的调用。 */
 export function renderHistory() {
-  if (state.historyMode === 'speaks') {
-    loadSpeakHistory();
-    return;
-  }
-  const list = state.list || [];
-  el.cntActive.textContent = state.counts.active || '';
-  el.cntArchived.textContent = state.counts.archived || '';
-  el.historyFoot.classList.toggle('hidden', state.showArchived || !state.counts.activeDone);
-  el.archiveDoneBtn.textContent = `把 ${state.counts.activeDone} 篇已完成的收起来`;
-
-  if (!list.length) {
-    const p = currentPersona();
-    el.history.innerHTML = state.showArchived
-      ? '<div class="empty">归档里还是空的<br />在「进行中」把不再需要的收起来</div>'
-      : `<div class="empty">${p ? `「${esc(p.name)}」还没有创作记录` : '还没有创作记录'}<br />从右边填写题材开始</div>`;
-    return;
-  }
-  const STATUS = { topics: '待选方向', writing: '生成中', done: '已完成' };
-  const showTag = state.personaId === null;
-  el.history.innerHTML = list.map((d) => {
-    const owner = state.personas.find((p) => p.id === d.persona_id);
-    const tag = showTag ? `<span class="persona-tag">${esc(owner ? owner.name : '无账号')}</span>` : '';
-    return `
-    <div class="history-item ${state.draft?.id === d.id ? 'active' : ''} ${d.archived_at ? 'archived' : ''}" data-id="${d.id}">
-      <div class="acts">
-        <button data-arch-id="${d.id}" data-to="${d.archived_at ? '0' : '1'}"
-          title="${d.archived_at ? '恢复到进行中' : '归档'}">${d.archived_at ? '↩' : '📥'}</button>
-        <button class="del" data-del="${d.id}" title="删除">×</button>
-      </div>
-      <h4>${esc(d.title || d.subject)}</h4>
-      <p>${tag}<span>${esc(platformLabel(d.platform))}</span><span>·</span><span>${STATUS[d.status] || d.status}</span></p>
-    </div>`;
-  }).join('');
+  if (state.historyMode === 'speaks') loadSpeakHistory();
 }
 
-el.history.addEventListener('click', async (e) => {
+// 创作记录（Vue 渲染）和口播记录（speak.js 渲染）两个列表共用一套点击处理，都是事件委托
+async function onHistoryClick(e) {
   if (await onSpeakCheck(e)) return;
   const speakDel = e.target.closest('button[data-speak-del]');
   if (speakDel) {
@@ -214,7 +202,10 @@ el.history.addEventListener('click', async (e) => {
     loadHistory();
   }
   setDraft(draft);
-});
+}
+
+el.history.addEventListener('click', onHistoryClick);
+el.speakHistory.addEventListener('click', onHistoryClick);
 
 export const platformLabel = (key) =>
   state.meta?.platforms.find((p) => p.key === key)?.label || key;

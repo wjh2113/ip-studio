@@ -642,8 +642,12 @@ export const Samples = {
   },
 };
 
-const REVISION_GAP = 10 * 60 * 1000;
-const REVISION_MAX = 50;
+/* 正文历史的密度：自动保存时距上一版超过 REVISION_GAP_MIN 分钟才另存一版（手动保存、离开编辑总会存），
+   每篇最多留 REVISION_MAX 版。要更密的历史就调小间隔、调大上限（多占一些库空间）。 */
+const gapMin = Number(process.env.REVISION_GAP_MIN);
+// 没配、配空、配错（不是非负数）都按默认 10 分钟，别让一个笔误变成「每次自动保存都存一版」
+const REVISION_GAP = (process.env.REVISION_GAP_MIN && Number.isFinite(gapMin) && gapMin >= 0 ? gapMin : 10) * 60 * 1000;
+const REVISION_MAX = Math.max(5, Math.floor(Number(process.env.REVISION_MAX) || 50));
 const parseJson = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
 
 export const Revisions = {
@@ -717,6 +721,17 @@ export const Drafts = {
       if (next) await Revisions.keep(id, userId, next);
     });
   },
+  /* 条件写入：锁住这一行，当前的 status / content / chosen 和 expect 一致才写 next，返回写没写 */
+  async setContentIf(id, userId, expect, next) {
+    return withTx(async () => {
+      const row = await one(orm().select({ status: drafts.status, content: drafts.content, chosen: drafts.chosen })
+        .from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).for('update'));
+      if (!row) return false;
+      if (row.status !== expect.status || (row.content || '') !== expect.content || row.chosen !== expect.chosen) return false;
+      await this.setContent(id, userId, next);
+      return true;
+    });
+  },
   async saveContent(id, userId, content, { snapshot = false } = {}) {
     const next = String(content ?? '');
     return withTx(async () => {
@@ -772,7 +787,7 @@ export const Drafts = {
   async withMetrics(userId, personaId) {
     const byPersona = personaId !== undefined && personaId !== null;
     return read(sql`
-      SELECT id, subject, title, platform, section_id, topics_json, metrics_json, framework_json, published_at, created_at
+      SELECT id, subject, title, platform, section_id, chosen, topics_json, metrics_json, framework_json, published_at, created_at
       FROM drafts
       WHERE user_id = ${userId} AND metrics_json != 'null' ${byPersona ? sql`AND persona_id = ${personaId}` : sql`AND TRUE`}
       ORDER BY published_at DESC, id DESC LIMIT 200`);

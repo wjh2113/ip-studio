@@ -1,8 +1,8 @@
 {
-  "name": "copywriter-studio",
+  "name": "ip-studio",
   "version": "0.1.0",
   "private": true,
-  "description": "多用户自媒体文案生成系统 —— 给题材，出三个话题方向，选一个，生成完整文案",
+  "description": "自媒体助手：多用户自媒体选题、成稿与口播系统",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "build:web": "vite build --config web/vite.config.js",
     "check": "node scripts/check.js",
     "test": "node scripts/check.js && node --test tests/*.test.js",
+    "test:ui": "node tests/ui/run.mjs",
     "deploy": "bash scripts/deploy-jdcloud.sh"
   },
   "engines": {

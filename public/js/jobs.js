@@ -12,7 +12,7 @@ import { setDraft } from './brief.js';
 import { openSpeakRecord } from './speak.js';
 
 const $ = (id) => document.getElementById(id);
-const ui = { btn: $('jobsBtn'), badge: $('jobsBadge'), modal: $('jobsModal'), close: $('jobsClose'), list: $('jobsList') };
+const ui = { btn: $('jobsBtn'), modal: $('jobsModal'), close: $('jobsClose'), list: $('jobsList') };
 
 const ACTIVE = new Set(['queued', 'running']);
 const STATUS = { queued: '排队中', running: '进行中', done: '完成', failed: '失败', cancelled: '已取消' };
@@ -107,11 +107,8 @@ const took = (j) => {
 
 function render() {
   const active = list.filter((j) => ACTIVE.has(j.status)).length;
-  if (ui.badge) {
-    ui.badge.textContent = active || '';
-    ui.badge.classList.toggle('hidden', !active);
-  }
-  ui.btn?.classList.toggle('busy', active > 0);
+  // 角标由 Vue 渲染（TopBar.vue 读 state.jobsActive）
+  state.jobsActive = active;
   if (!ui.modal || ui.modal.classList.contains('hidden')) return;
   if (!list.length) {
     ui.list.innerHTML = '<p class="hint">还没有任务。出图、上传口播、语音测评和视频测评会出现在这里，关掉页面也会接着做。</p>';

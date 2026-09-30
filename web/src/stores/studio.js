@@ -3,7 +3,7 @@ import { defineStore } from 'pinia';
 /* 和原来 public/js/core.js 里的 state 是同一份字段（core.js 里 state = useStudioStore().$state）。
  * 功能模块通过 core.js 读写，组件通过这个 store 读写，指向同一份。
  *
- * 目前真正由 Vue 渲染的只有顶栏的模型标识和余额（TopBar.vue 读 llm、quota）；
+ * 已由 Vue 渲染的：顶栏的模型标识、余额、任务数角标（TopBar.vue），左侧创作记录列表和计数（Sidebar.vue）。
  * 其余界面还是 public/js 里的模块按 id 找元素、拼 HTML。迁移规则见 docs/ARCHITECTURE.md。 */
 export const useStudioStore = defineStore('studio', {
   state: () => ({
@@ -43,5 +43,9 @@ export const useStudioStore = defineStore('studio', {
     // 以下由 Vue 组件渲染：功能模块只改数据，不要再去碰对应的 DOM
     llm: null,          // /api/meta 的 llm：{ live, label, model, provider }（TopBar）
     quota: null,        // /api/plan 的 quota：{ label, left, total, … }（TopBar 余额）
+    jobsActive: 0,      // 排队中 + 在跑的后台任务数（TopBar 角标）
+    list: [],           // 左侧创作记录（Sidebar）
+    speakCount: 0,      // 口播记录条数（Sidebar 筛选上的数字）
+    archivingDone: false, // 「把已完成的收起来」进行中（Sidebar）
   }),
 });

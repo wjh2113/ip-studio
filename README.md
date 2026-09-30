@@ -1,5 +1,7 @@
 # 自媒体助手 · 多用户自媒体文案生成系统
 
+> 命名：产品名叫**自媒体助手**（界面、文档、支付订单里用）；代码里的内部标识统一叫 **ip-studio**（目录、`package.json`、pm2 进程、`/health` 的 `app` 字段、队列名；Redis 键前缀是 `ipstudio:<库名>`），线上域名是 `ip.aidigitcloud.cn`。以前的名字「文案工坊」「copywriter-studio」已不再使用。
+
 两个板块：**创作**（题材 → 方向 → 成稿 → 编辑 → 学语气）和**热点**（抓榜单 → 和账号比对 → 找可蹭的点）。
 
 **账号设定** → 给一个题材 → 自动生成 **3 个差异化话题方向** → 选中一个 → **流式生成完整成稿** → **编辑器里划词改 / 唤起 AI** → 确认后**喂回账号学语气**。
@@ -16,6 +18,7 @@ npm start              # http://localhost:5177
 ```
 
 需要本机有 PostgreSQL 和 Redis。跑测试：`DATABASE_URL=postgres://用户@127.0.0.1:5432/postgres npm test`（每个测试进程用独立 schema，跑完删掉）。
+浏览器回归测试：`npm run build:web && npm run test:ui`（需要 Playwright：`npm i -D playwright && npx playwright install chromium`；只跑某几个：`npm run test:ui -- history jobs`）。
 
 首次打开先注册一个账号即可。
 

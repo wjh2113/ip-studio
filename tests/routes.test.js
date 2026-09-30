@@ -78,7 +78,7 @@ function client() {
     try { data = JSON.parse(text); } catch { /* 流式或文本 */ }
     return { status: res.status, data, text, headers: res.headers };
   }
-  return { call };
+  return { call, cookieHeader: cookie };
 }
 
 async function untilJob(api, id, ms = 10_000) {
@@ -109,6 +109,29 @@ test('注册、升级、出三个方向、流式成稿', async () => {
   r = await api.call('POST', `/api/drafts/${draftId}/content`, { index: 0 });
   assert.equal(r.status, 200);
   assert.match(r.text, /event: done/);
+});
+
+test('重新生成中途断开：原来的稿子还在（以前会被清回选方向）', async () => {
+  const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  assert.ok(before.content);
+  const ctrl = new AbortController();
+  const res = await fetch(`${BASE}/api/drafts/${draftId}/content`, {
+    method: 'POST', signal: ctrl.signal,
+    headers: { 'content-type': 'application/json', cookie: api.cookieHeader() },
+    body: JSON.stringify({ index: 1 }),
+  });
+  const reader = res.body.getReader();
+  await reader.read();                                   // 收到第一段就断开
+  ctrl.abort();
+  let after;
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((r) => setTimeout(r, 100));
+    after = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+    if (after.status !== 'writing') break;
+  }
+  assert.equal(after.status, before.status);
+  assert.equal(after.chosen, before.chosen);
+  assert.equal(after.content, before.content);
 });
 
 test('划词改写和 / 续写（以前 500：selection.trim is not a function）', async () => {

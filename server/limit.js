@@ -30,6 +30,8 @@ function hit(key, max, windowMs) {
 }
 
 export function rateLimit(req, path) {
+  // 浏览器回归测试会在一分钟里从本机发几百个请求；只在非生产环境允许关掉
+  if (process.env.RATE_LIMIT === 'off' && process.env.NODE_ENV !== 'production') return;
   if (path === '/health' || path === '/api/health') return;
   if (path.startsWith('/api/pay/notify/')) return;
 

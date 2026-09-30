@@ -191,7 +191,6 @@ export async function loadDraftSpeaks() {
   try {
     const { speaks } = await api(`/drafts/${state.draft.id}/speaks`);
     state.speaks = speaks;
-    if (el.cntSpeaks) el.cntSpeaks.textContent = '';
     renderDraftSpeaks();
   } catch (err) { toast(err.message); }
 }
@@ -200,13 +199,13 @@ export async function loadSpeakHistory() {
   try {
     const { speaks } = await api('/speaks');
     state.speakHistory = speaks;
-    if (el.cntSpeaks) el.cntSpeaks.textContent = speaks.length || '';
-    el.historyFoot.classList.add('hidden');
+    state.speakCount = speaks.length;
+    // 口播记录有自己的容器（#speakHistory），和 Vue 渲染的创作记录列表分开
     if (!speaks.length) {
-      el.history.innerHTML = '<div class="empty">还没有口播记录<br />生成口播提示后上传录音</div>';
+      el.speakHistory.innerHTML = '<div class="empty">还没有口播记录<br />生成口播提示后上传录音</div>';
       return;
     }
-    el.history.innerHTML = speaks.map((s) => `
+    el.speakHistory.innerHTML = speaks.map((s) => `
       <div class="history-item ${state.focusSpeakId === s.id ? 'active' : ''}" data-speak="${s.id}">
         <div class="acts">
           <button class="del" data-speak-del="${s.id}" title="删除">×</button>
@@ -228,7 +227,7 @@ export async function openSpeakRecord(id) {
   state.focusSpeakId = id;
   if (!speak.draftId || speak.draftGone) {
     document.querySelectorAll('.speak-orphan').forEach((n) => n.remove());
-    const item = el.history.querySelector(`[data-speak="${id}"]`);
+    const item = el.speakHistory.querySelector(`[data-speak="${id}"]`);
     if (item) {
       const box = document.createElement('div');
       box.className = 'speak-orphan';

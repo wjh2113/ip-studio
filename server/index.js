@@ -165,7 +165,8 @@ async function dispatch(req, res) {
 
   if (path === '/health' || path === '/api/health') {
     const info = providerInfo();
-    R.json(res, 200, { ok: true, app: 'copywriter-studio', llm: info.label, live: info.live });
+    // app 是内部标识（和目录、pm2 进程名一致），name 是给人看的产品名
+    R.json(res, 200, { ok: true, app: 'ip-studio', name: '自媒体助手', llm: info.label, live: info.live });
     return;
   }
 
@@ -434,5 +435,29 @@ async function serveBuilt(path, res) {
   const where = HOST === '0.0.0.0' ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
   console.log(`\n  自媒体助手 已启动  →  ${where}`);
   console.log(`  模型通道：${info.label}${info.live ? `（${info.model}）` : ' —— 复制 .env.example 为 .env 并填入密钥即可接入真实模型'}`);
-  console.log('  任务队列：BullMQ / Redis\n');
+  console.log('  任务队列：BullMQ / Redis');
+  for (const line of await startupNotes()) console.log(`  ${line}`);
+  console.log('');
+}
+
+/* 启动时把「线上容易踩的配置」说清楚：不是报错，只是提醒，免得上线后才发现付不了钱、进不了后台 */
+async function startupNotes() {
+  const notes = [];
+  const prod = process.env.NODE_ENV === 'production';
+  const { adminSetupNeeded, setupHttpEnabled, accessGateOn } = await import('./auth.js');
+  if (await adminSetupNeeded()) {
+    notes.push(setupHttpEnabled()
+      ? '管理后台：还没有管理员，打开 /admin 做首次设置'
+      : '⚠ 管理后台：还没有管理员，公网也关了首次设置。在 .env 里配 ADMIN_USERNAME 和 ADMIN_PASSWORD（至少 8 位，不要和访问密码 ACCESS_PASSWORD 共用）后重启');
+  }
+  const { payInfo, mockAllowed } = await import('./pay.js');
+  const pay = payInfo();
+  if (!pay.live) {
+    notes.push(prod && !mockAllowed()
+      ? '⚠ 支付：没有配置真实支付（PAY_PROVIDER），线上现在收不了钱；演示支付在生产环境也是关的。验收付费流程要么接好微信 / 支付宝，要么临时设 PAY_ALLOW_MOCK=1'
+      : '支付：演示模式（不真扣钱）');
+  }
+  if (accessGateOn()) notes.push('注册：只能用访问密码进入（配了 ACCESS_PASSWORD）');
+  else if (process.env.REGISTER_OPEN === '0') notes.push('注册：已关闭（REGISTER_OPEN=0），新用户需要访问密码或在后台开通');
+  return notes;
 }

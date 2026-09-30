@@ -8,7 +8,8 @@
     <div class="topbar-right">
       <!-- 模型标识和余额由 Vue 渲染：数据在 store 的 llm / quota，功能模块只改数据 -->
       <span class="chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle">{{ llmText }}</span>
-      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" title="出图、口播转写与评测这类要等的活，关掉页面也会接着做">任务<span class="jobs-badge hidden" id="jobsBadge"></span></button>
+      <!-- 任务数角标归 Vue（store 的 jobsActive）；按钮的点击仍由 jobs.js 处理 -->
+      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" :class="{ busy: s.jobsActive > 0 }" title="出图、口播转写与评测这类要等的活，关掉页面也会接着做">任务<span class="jobs-badge" :class="{ hidden: !s.jobsActive }">{{ s.jobsActive || '' }}</span></button>
       <!-- id 留着：plan.js 在这个按钮上挂了点击打开用量面板。按钮本身不会被 Vue 换掉，只换里面的字 -->
       <button class="credit-chip" id="creditChip" :class="{ hidden: !s.quota, low }" :title="creditTitle"><template v-if="s.quota">{{ s.quota.label }} · 剩 <b>{{ s.quota.left.toLocaleString() }}</b></template></button>
       <span class="user-name" id="userName"></span>

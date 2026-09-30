@@ -1,5 +1,6 @@
 /* 路由 · insights：发布数据回填与复盘。从原 routes.js 原样拆出。 */
 import { Drafts, METRIC_FIELDS, Metrics, Sections } from '../db.js';
+import { chosenTopic } from '../performance.js';
 import { HttpError } from '../auth.js';
 import { json, requireUser } from './common.js';
 
@@ -120,9 +121,7 @@ export async function handleReview2(req, res, body, params, url) {
   const snaps = await Metrics.forDrafts(user.id, rows.map((r) => r.id));
   const items = [];
   for (const r of rows) {
-    let topics = [];
-    try { topics = JSON.parse(r.topics_json) || []; } catch { /* 脏数据当没有 */ }
-    const chosen = topics.find?.((t) => t?.chosen) || topics[0] || null;
+    const chosen = chosenTopic(r);
     const byPlatform = new Map();
     for (const m of snaps.get(r.id) || []) {
       const key = m.platform || r.platform;
