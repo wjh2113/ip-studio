@@ -14,6 +14,7 @@ const files = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
+    if (name === 'assets' && dir.endsWith('/public')) continue;
     if (statSync(p).isDirectory()) walk(p);
     else if (name.endsWith('.js')) files.push(p);
   }

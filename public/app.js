@@ -1,4 +1,5 @@
-/* 前端入口。各块功能在 public/js/ 下按业务拆开：
+/* 功能入口。页面由 Vue 3（web/src/main.js）挂载后再加载本文件。
+ * 各块功能在 public/js/ 下按业务拆开：
  *   core.js      全局共享：DOM 引用 el、状态 state、接口封装 api、通用小工具（转义、提示、Markdown 渲染等）
  *   auth.js      登录 / 注册
  *   account.js   账号设定、语气样本与语气档案、内容栏目

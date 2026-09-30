@@ -5,7 +5,7 @@
 ## 基本
 
 - 注释、界面文案、README 用中文；git 提交信息用英文。
-- 保持零依赖：前端无框架无构建，后端只用 Node 内置模块（唯一例外 `@anthropic-ai/sdk`）。加依赖之前先问。
+- 后端只用 Node 内置模块（唯一例外 `@anthropic-ai/sdk`）。前端是 Vue 3，构建依赖放在 devDependencies（`vue`、`vite`）。再加别的依赖之前先问。
 - 改完跑 `npm test`，不通过不提交。测试用临时数据库和演示模式，不读 `.env`。
 - 不要读取、打印或提交 `.env` 和 `data/`。
 
@@ -25,7 +25,7 @@
 
 ## 前端
 
-- 入口 `public/app.js` 只负责加载模块和启动；功能写在 `public/js/<模块>.js`。
+- 页面结构在 `web/src/App.vue`（Vue 3）。`public/app.js` 在挂载之后加载模块并启动；功能写在 `public/js/<模块>.js`。改完页面执行 `npm run build:web`。本地看界面：先 `npm run dev`，再 `npm run dev:web`（http://127.0.0.1:5180）。
 - 共享的 `el`、`state`、`api` 在 `public/js/core.js`；`core.js` 不能 import 功能模块。
 - 模块之间要「通知」而不是「调用」时，用 window 事件（现有：`cw-spent`、`cw-quota`、`cw-enter`、`cw-job-done`）。
 - 拼 HTML 一律先 `esc()`；Markdown 用 `markdown()`（先转义再加标签）。

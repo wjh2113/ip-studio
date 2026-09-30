@@ -7,7 +7,7 @@
 ```mermaid
 flowchart LR
   subgraph 浏览器
-    A[public/app.js 入口] --> C[public/js/core.js<br/>el · state · api · 小工具]
+    A[Vue 3 web/src/App.vue<br/>挂载后加载 public/app.js] --> C[public/js/core.js<br/>el · state · api · 小工具]
     A --> F[public/js/*.js<br/>17 个功能模块]
     F --> C
   end
@@ -35,7 +35,7 @@ flowchart LR
 
 | 部分 | 用的是 | 说明 |
 |---|---|---|
-| 前端 | 原生 HTML / CSS / JavaScript（ES Modules） | 无框架、无构建，浏览器直接加载 `public/` |
+| 前端 | Vue 3（`web/`）+ 原有 `public/js` 模块 | Vite 构建进 `public/`。页面结构在 `web/src/App.vue`，交互仍在 `public/js`。样式是 `public/styles.css` |
 | 后端 | Node.js ≥ 22.5（ESM），原生 `node:http` | 无 Express / Koa；唯一依赖 `@anthropic-ai/sdk` |
 | 数据库 | SQLite，Node 内置 `node:sqlite`，WAL 模式 | 表结构在 `server/migrations.js` |
 | 部署 | nginx 反代 + pm2 + rsync | `scripts/deploy-jdcloud.sh`，每日备份 `scripts/backup.sh` |
@@ -78,7 +78,7 @@ flowchart LR
 
 ## 前端模块（public/js/）
 
-`public/app.js` 是入口：先加载 `core.js`，再加载各功能模块，最后启动。
+页面由 Vue 3 挂载（`web/src/main.js` → `App.vue`，标记和原来的页面一致）。挂载完成后才加载 `public/app.js`：先加载 `core.js`，再加载各功能模块，最后启动。改页面结构改 `web/src/App.vue`，改完执行 `npm run build:web`。
 
 - `core.js` 放所有模块共享的东西：DOM 引用 `el`、全局状态 `state`、`api()`、`esc`、`toast`、`markdown` 等。
   **它不 import 任何功能模块**，所以永远最先执行完，别的模块在加载时读 `el` / `state` 不会出错。
@@ -114,7 +114,7 @@ flowchart LR
 | 新接口 | `server/index.js` 的 `ROUTES` 加一行 + 对应 `server/routes/<域>.js` 里 export 处理函数 |
 | 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `jobs.js` 的 `startJob` / `waitJob` |
 | 表结构 | `server/migrations.js` 末尾加一个编号迁移 |
-| 页面结构 / 样式 | `public/index.html` / `public/styles.css`（开头是设计令牌） |
+| 页面结构 / 样式 | `web/src/App.vue` / `public/styles.css`（开头是设计令牌）。改完 `npm run build:web` |
 | 页面行为 | `public/js/<模块>.js` |
 
 ## 本地开发

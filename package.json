@@ -8,6 +8,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "dev:web": "vite --config web/vite.config.js",
+    "build:web": "vite build --config web/vite.config.js",
     "check": "node scripts/check.js",
     "test": "node scripts/check.js && node --test tests/*.test.js",
     "deploy": "bash scripts/deploy-jdcloud.sh"
@@ -17,5 +19,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.5",
+    "vue": "^3.5.22"
   }
 }
