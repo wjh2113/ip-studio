@@ -1,5 +1,5 @@
 /* 路由 · insights：发布数据回填与复盘。从原 routes.js 原样拆出。 */
-import { Drafts, Sections } from '../db.js';
+import { Drafts, METRIC_FIELDS, Metrics, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
 import { json, requireUser } from './common.js';
 
@@ -13,35 +13,93 @@ import { json, requireUser } from './common.js';
  * （没有开放接口，爬取违反条款），而几个数字的手工成本远低于它带来的信息。
  * ================================================================== */
 
-const METRIC_FIELDS = ['views', 'likes', 'comments', 'shares', 'follows'];
-
 const METRIC_LABELS = { views: '阅读/播放', likes: '点赞', comments: '评论', shares: '转发/收藏', follows: '涨粉' };
 
-export async function handleMetricsSave(req, res, body, params) {
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const today = () => new Date().toISOString().slice(0, 10);
+
+/* 发布后第几天：发布当天算第 0 天 */
+export function dayOf(publishedAt, capturedOn) {
+  if (!DAY.test(String(publishedAt || '').slice(0, 10)) || !DAY.test(capturedOn || '')) return null;
+  const d = (Date.parse(capturedOn) - Date.parse(String(publishedAt).slice(0, 10))) / 86400000;
+  return Number.isFinite(d) ? Math.round(d) : null;
+}
+
+/* 这篇能回填哪些平台：主稿的平台 + 已生成的平台版本 */
+const platformsOf = (draft) => [...new Set([draft.platform, ...Object.keys(draft.variants || {})].filter(Boolean))];
+
+function mineDraft(req, params) {
   const user = requireUser(req);
   const draft = Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
+  return { user, draft };
+}
 
-  const metrics = {};
+/* drafts.metrics_json 是「最新一次」的缓存：列表和复盘筛选靠它，不用每次去翻快照表 */
+function syncLatest(draft, userId, publishedAt) {
+  const history = Metrics.list(draft.id, userId);
+  const last = history[0];
+  const cache = last
+    ? { ...Object.fromEntries(METRIC_FIELDS.filter((k) => last[k] != null).map((k) => [k, last[k]])), ...(last.note ? { note: last.note } : {}) }
+    : null;
+  Drafts.setMetrics(draft.id, userId, cache, cache ? publishedAt : '');
+  return { metrics: cache, published_at: cache ? publishedAt : '', history };
+}
+
+/* 回填一次：存一行快照。同一天同一平台再填就改那一行；这一天这个平台全部留空保存 = 删掉这一行 */
+export async function handleMetricsSave(req, res, body, params) {
+  const { user, draft } = mineDraft(req, params);
+
+  const values = {};
   for (const k of METRIC_FIELDS) {
-    const v = Number(body?.[k]);
-    if (Number.isFinite(v) && v >= 0) metrics[k] = Math.round(v);
+    if (body?.[k] === '' || body?.[k] == null) continue;
+    const v = Number(body[k]);
+    if (Number.isFinite(v) && v >= 0) values[k] = Math.round(v);
   }
   const note = String(body?.note || '').trim().slice(0, 300);
-  if (note) metrics.note = note;
 
-  const published = /^\d{4}-\d{2}-\d{2}$/.test(String(body?.published_at || ''))
-    ? String(body.published_at) : (draft.published_at || new Date().toISOString().slice(0, 10));
+  const platform = String(body?.platform || draft.platform || '');
+  if (platform && !platformsOf(draft).includes(platform)) throw new HttpError(400, '这篇没有这个平台的版本');
+  const capturedOn = DAY.test(String(body?.captured_on || '')) ? String(body.captured_on) : today();
+  const published = DAY.test(String(body?.published_at || ''))
+    ? String(body.published_at) : (draft.published_at || capturedOn);
+  if (capturedOn < published) throw new HttpError(400, '记录日期早于发布日期');
 
-  // 全空就是撤销回填，存 null 而不是一个空对象——复盘时才好过滤
-  const empty = !METRIC_FIELDS.some((k) => k in metrics) && !note;
-  Drafts.setMetrics(draft.id, user.id, empty ? null : metrics, empty ? '' : published);
-  json(res, 200, { metrics: empty ? null : metrics, published_at: empty ? '' : published });
+  const empty = !Object.keys(values).length && !note;
+  if (empty) {
+    const hit = Metrics.list(draft.id, user.id).find((m) => m.platform === platform && m.capturedOn === capturedOn);
+    if (hit) Metrics.remove(hit.id, draft.id, user.id);
+  } else {
+    Metrics.put(draft.id, user.id, { platform, capturedOn, values, note });
+  }
+  json(res, 200, { ...syncLatest(draft, user.id, published), removed: empty });
+}
+
+export async function handleMetricsHistory(req, res, body, params) {
+  const { user, draft } = mineDraft(req, params);
+  json(res, 200, {
+    history: Metrics.list(draft.id, user.id),
+    platforms: platformsOf(draft),
+    published_at: draft.published_at || '',
+  });
+}
+
+export async function handleMetricsDelete(req, res, body, params) {
+  const { user, draft } = mineDraft(req, params);
+  if (!Metrics.remove(Number(params.mid), draft.id, user.id)) throw new HttpError(404, '这条记录不存在');
+  json(res, 200, syncLatest(draft, user.id, draft.published_at || ''));
 }
 
 export async function handleMetricsMeta(req, res) {
   requireUser(req);
   json(res, 200, { fields: METRIC_FIELDS.map((k) => ({ key: k, label: METRIC_LABELS[k] })) });
+}
+
+/* 发布后第 7 天前后（5～9 天）记下的阅读数，取最接近第 7 天的一次 */
+export function near7(trend) {
+  const hits = trend.filter((t) => t.day != null && t.day >= 5 && t.day <= 9 && t.views != null)
+    .sort((a, b) => Math.abs(a.day - 7) - Math.abs(b.day - 7));
+  return hits.length ? hits[0].views : null;
 }
 
 /* 复盘：按维度分组比中位数。
@@ -58,22 +116,36 @@ export async function handleReview2(req, res, body, params, url) {
     (personaId ? Sections.list(personaId, user.id) : []).map((s) => [s.id, s.name]),
   );
 
-  const items = rows.map((r) => {
-    let m = null;
+  // 每篇每个平台一条：数字取这个平台最近一次回填，另带整条走势和「发布后第 7 天」的数
+  const snaps = Metrics.forDrafts(user.id, rows.map((r) => r.id));
+  const items = [];
+  for (const r of rows) {
     let topics = [];
-    try { m = JSON.parse(r.metrics_json); } catch { /* 脏数据跳过 */ }
-    try { topics = JSON.parse(r.topics_json) || []; } catch { /* 同上 */ }
+    try { topics = JSON.parse(r.topics_json) || []; } catch { /* 脏数据当没有 */ }
     const chosen = topics.find?.((t) => t?.chosen) || topics[0] || null;
-    return {
-      id: r.id,
-      title: r.title || r.subject,
-      platform: r.platform,
-      section: sections[r.section_id] || '',
-      label: chosen?.label || '',
-      published_at: r.published_at,
-      metrics: m,
-    };
-  }).filter((x) => x.metrics);
+    const byPlatform = new Map();
+    for (const m of snaps.get(r.id) || []) {
+      const key = m.platform || r.platform;
+      if (!byPlatform.has(key)) byPlatform.set(key, []);
+      byPlatform.get(key).push(m);
+    }
+    for (const [platform, list] of byPlatform) {
+      const last = list[list.length - 1];
+      const trend = list.map((m) => ({ day: dayOf(r.published_at, m.capturedOn), on: m.capturedOn, views: m.views, likes: m.likes }));
+      items.push({
+        id: r.id,
+        title: r.title || r.subject,
+        platform,
+        section: sections[r.section_id] || '',
+        label: chosen?.label || '',
+        published_at: r.published_at,
+        metrics: Object.fromEntries([...METRIC_FIELDS, 'note'].map((k) => [k, last[k]])),
+        views7: near7(trend),
+        trend,
+      });
+    }
+  }
+  items.sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)) || b.id - a.id);
 
   const median = (nums) => {
     const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
@@ -96,6 +168,8 @@ export async function handleReview2(req, res, body, params, url) {
       // 样本太少不给中位数——两三条数据得出的"规律"是噪声
       views: list.length >= 3 ? median(list.map((x) => x.metrics.views)) : null,
       likes: list.length >= 3 ? median(list.map((x) => x.metrics.likes)) : null,
+      // 同口径：只比发布后第 5～9 天记下的数，早填晚填的不混在一起
+      views7: list.filter((x) => x.views7 != null).length >= 3 ? median(list.map((x) => x.views7)) : null,
     })).sort((a, b) => (b.views ?? -1) - (a.views ?? -1));
   };
 

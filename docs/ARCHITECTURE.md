@@ -88,13 +88,14 @@ flowchart LR
 
 ## 数据
 
-22 张表，按用途分：
+23 张表，按用途分：
 
 | 用途 | 表 |
 |---|---|
 | 账号与会话 | `users`、`sessions`、`admins`、`admin_sessions` |
 | 账号设定 | `personas`、`sections`、`style_samples` |
 | 创作 | `drafts`、`draft_revisions`、`speak_takes`、`frameworks` |
+| 复盘 | `draft_metrics`（发布数据快照，一次回填一行） |
 | 后台任务 | `jobs`（出图、口播转写与评测；worker 在 `server/jobs.js`） |
 | 素材与选题 | `materials`、`topic_pool` |
 | 提示词 | `prompt_revisions`、`prompt_variants`、`eval_cases`、`eval_runs`、`eval_votes` |

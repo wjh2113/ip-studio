@@ -57,7 +57,48 @@ export const MIGRATIONS = [
     CREATE INDEX idx_jobs_user ON jobs(user_id, id DESC);
     CREATE INDEX idx_jobs_status ON jobs(status, id);
   `) },
+  { version: 5, name: '发布数据多次回填：draft_metrics 表', up: migrateMetrics },
 ];
+
+/* 以前一篇稿子只存一份数字（drafts.metrics_json），再填就覆盖——看不出「发了三天后涨了多少」。
+   现在每次回填存一行快照；同一天同一平台再填就改那一行。drafts.metrics_json 留作「最新一次」的缓存。
+   老数据搬成一行快照：日期取发布日期（没有就取最后修改那天）。 */
+function migrateMetrics(db) {
+  db.exec(`
+    CREATE TABLE draft_metrics (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_id    INTEGER NOT NULL,
+      user_id     INTEGER NOT NULL,
+      platform    TEXT    NOT NULL DEFAULT '',
+      captured_on TEXT    NOT NULL,
+      views       INTEGER,
+      likes       INTEGER,
+      comments    INTEGER,
+      shares      INTEGER,
+      follows     INTEGER,
+      note        TEXT    NOT NULL DEFAULT '',
+      created_at  TEXT    NOT NULL,
+      updated_at  TEXT    NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_metrics_day ON draft_metrics(draft_id, platform, captured_on);
+    CREATE INDEX idx_metrics_user ON draft_metrics(user_id, draft_id);
+  `);
+  const rows = db.prepare("SELECT id, user_id, platform, metrics_json, published_at, updated_at FROM drafts WHERE metrics_json != 'null'").all();
+  const put = db.prepare(`INSERT OR IGNORE INTO draft_metrics
+    (draft_id, user_id, platform, captured_on, views, likes, comments, shares, follows, note, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Math.round(Number(v)) : null);
+  for (const r of rows) {
+    let m;
+    try { m = JSON.parse(r.metrics_json); } catch { continue; }
+    if (!m || typeof m !== 'object') continue;
+    const day = /^\d{4}-\d{2}-\d{2}/.test(r.published_at || '') ? r.published_at.slice(0, 10) : String(r.updated_at || '').slice(0, 10);
+    if (!day) continue;
+    const at = new Date().toISOString();
+    put.run(r.id, r.user_id, r.platform || '', day, num(m.views), num(m.likes), num(m.comments), num(m.shares), num(m.follows),
+      String(m.note || ''), at, at);
+  }
+}
 
 export function runMigrations(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;

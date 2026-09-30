@@ -1801,3 +1801,12 @@ pre, code, .tts-out { font-family: var(--font-mono); }
 .job-st.failed { color: var(--signal); }
 @keyframes job-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .job-dot.running { animation: none; } }
+
+/* ---------- 发布数据：历次回填 ---------- */
+.metrics-history { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.metrics-history:empty { display: none; }
+.metrics-history h4 { margin: 0 0 2px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.metrics-snap { display: flex; gap: 10px; align-items: center; font-size: 13px; padding: 4px 0; border-top: 1px dashed var(--border); }
+.metrics-snap .grow { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metrics-snap.on { color: var(--accent-ink); }
+.ins-trend { color: var(--muted); font-size: 12px; white-space: nowrap; }

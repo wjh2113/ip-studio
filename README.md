@@ -633,13 +633,19 @@ const v = await ask.form({ fields: [...] });   // 取消返回 null
 
 回填做得很轻：发完手填阅读/点赞/评论/转发/涨粉几个数字加一句备注。
 **不指望自动抓平台数据**——没有开放接口，爬取违反条款，而几个数字的手工成本远低于它带来的信息。
-全部留空并保存 = 撤销这次回填（存 `null` 而不是空对象，复盘时才好过滤）。
+
+**可以回填多次**（`draft_metrics` 表，一次一行快照）：发完第 1 天填一次、第 7 天再填一次，复盘里能看到走势。
+同一篇、同一平台、同一天再填是改那一行；某天全部留空并保存 = 删掉那天的记录，弹窗里也能逐条删。
+生成过多平台版本的稿子可以分平台记。`drafts.metrics_json` 留作「最新一次」的缓存，列表和筛选靠它。
+老数据在迁移 5 里搬成一行快照，日期取发布日期。
 
 复盘按平台 / 栏目 / 方向类型分组。两条统计上的选择：
 
 - **用中位数不用平均数**。自媒体数据长尾极重。实测样例里公众号有一条 18 万的爆款，
   中位数 3850，平均数会是 3.2 万——完全误导。
 - **样本少于 3 篇的维度不给结论**，只报数量。两三条数据得出的"规律"是噪声。
+- **「第 7 天阅读」同口径比**：只取发布后第 5～9 天记下的数（取最接近第 7 天那次）。
+  发完当天填的和一个月后填的放一起比中位数，比的是填表时间不是内容。
 
 ### 选题池与排期
 
@@ -909,7 +915,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 
 ## API
 
-下表由 `server/index.js` 的路由表整理（共 104 条）。处理函数在 `server/routes/` 对应文件里；
+下表由 `server/index.js` 的路由表整理（共 106 条）。处理函数在 `server/routes/` 对应文件里；
 除注册、登录、`/api/me`、`/api/meta`、`/api/pricing`、`/api/prompt-docs`（只读）、后台的登录与初始化、支付回调外都要登录；其余 `/api/admin/*` 和提示词编辑要管理员会话。
 
 | 方法 | 路径 | 处理函数 | 文件 |
@@ -1012,6 +1018,8 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | GET | `/api/pay/order/:no` | `handleOrderStatus` | billing.js |
 | POST | `/api/pay/notify/:channel` | `handlePayNotify` | billing.js |
 | POST | `/api/drafts/:id/metrics` | `handleMetricsSave` | insights.js |
+| GET | `/api/drafts/:id/metrics` | `handleMetricsHistory` | insights.js |
+| DELETE | `/api/drafts/:id/metrics/:mid` | `handleMetricsDelete` | insights.js |
 | GET | `/api/insights` | `handleReview2` | insights.js |
 | GET | `/api/drafts` | `handleList` | drafts.js |
 | GET | `/api/drafts/:id` | `handleGet` | drafts.js |

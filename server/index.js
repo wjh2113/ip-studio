@@ -132,6 +132,8 @@ const ROUTES = [
   ['GET', /^\/api\/pay\/order\/(?<no>\w+)$/, R.handleOrderStatus],
   ['POST', /^\/api\/pay\/notify\/(?<channel>\w+)$/, R.handlePayNotify],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/metrics$/, R.handleMetricsSave],
+  ['GET', /^\/api\/drafts\/(?<id>\d+)\/metrics$/, R.handleMetricsHistory],
+  ['DELETE', /^\/api\/drafts\/(?<id>\d+)\/metrics\/(?<mid>\d+)$/, R.handleMetricsDelete],
   ['GET', /^\/api\/insights$/, R.handleReview2],
   ['GET', /^\/api\/drafts$/, R.handleList],
   ['GET', /^\/api\/drafts\/(?<id>\d+)$/, R.handleGet],

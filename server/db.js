@@ -801,6 +801,7 @@ export const Drafts = {
   remove(id, userId) {
     return withTx(() => {
       Revisions.removeFor(id, userId);
+      Metrics.removeFor(id, userId);
       return db.prepare('DELETE FROM drafts WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;
     });
   },
@@ -866,6 +867,54 @@ const parseJson = (raw, fallback) => {
 };
 
 /* 口播留档。draft_id 只是当时的稿子，不设外键，删稿不会带走录音和总评。 */
+/* ---------- draft_metrics：发布数据快照，一次回填一行 ---------- */
+export const METRIC_FIELDS = ['views', 'likes', 'comments', 'shares', 'follows'];
+
+const hydrateMetric = (r) => (r ? {
+  id: r.id,
+  draftId: r.draft_id,
+  platform: r.platform,
+  capturedOn: r.captured_on,
+  ...Object.fromEntries(METRIC_FIELDS.map((k) => [k, r[k]])),
+  note: r.note,
+} : null);
+
+export const Metrics = {
+  /* 同一篇、同一平台、同一天再填，改那一行而不是再加一行 */
+  put(draftId, userId, { platform = '', capturedOn, values = {}, note = '' }) {
+    const at = now();
+    const cols = METRIC_FIELDS.map((k) => (Number.isFinite(values[k]) ? values[k] : null));
+    db.prepare(`INSERT INTO draft_metrics
+      (draft_id, user_id, platform, captured_on, ${METRIC_FIELDS.join(', ')}, note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ${METRIC_FIELDS.map(() => '?').join(', ')}, ?, ?, ?)
+      ON CONFLICT(draft_id, platform, captured_on) DO UPDATE SET
+        ${METRIC_FIELDS.map((k) => `${k} = excluded.${k}`).join(', ')}, note = excluded.note, updated_at = excluded.updated_at`)
+      .run(draftId, userId, platform, capturedOn, ...cols, note, at, at);
+  },
+  list(draftId, userId) {
+    return db.prepare(`SELECT * FROM draft_metrics WHERE draft_id = ? AND user_id = ?
+      ORDER BY captured_on DESC, id DESC`).all(draftId, userId).map(hydrateMetric);
+  },
+  /* 复盘用：一批稿子的全部快照，按稿子分组，时间从早到晚 */
+  forDrafts(userId, draftIds) {
+    const out = new Map();
+    if (!draftIds.length) return out;
+    const rows = db.prepare(`SELECT * FROM draft_metrics WHERE user_id = ? AND draft_id IN (${draftIds.map(() => '?').join(',')})
+      ORDER BY captured_on, id`).all(userId, ...draftIds);
+    for (const r of rows) {
+      if (!out.has(r.draft_id)) out.set(r.draft_id, []);
+      out.get(r.draft_id).push(hydrateMetric(r));
+    }
+    return out;
+  },
+  remove(id, draftId, userId) {
+    return db.prepare('DELETE FROM draft_metrics WHERE id = ? AND draft_id = ? AND user_id = ?').run(id, draftId, userId).changes > 0;
+  },
+  removeFor(draftId, userId) {
+    db.prepare('DELETE FROM draft_metrics WHERE draft_id = ? AND user_id = ?').run(draftId, userId);
+  },
+};
+
 /* ---------- jobs：长任务队列（出图、口播转写与评测） ---------- */
 const hydrateJob = (r) => (r ? {
   id: r.id,
