@@ -8,7 +8,7 @@
 flowchart LR
   subgraph 浏览器
     A[public/app.js 入口] --> C[public/js/core.js<br/>el · state · api · 小工具]
-    A --> F[public/js/*.js<br/>16 个功能模块]
+    A --> F[public/js/*.js<br/>17 个功能模块]
     F --> C
   end
   subgraph Node 服务

@@ -218,7 +218,7 @@ el.accountNav.addEventListener('click', (e) => {
   if (b && !b.disabled) showAccountTab(b.dataset.tab);
 });
 
-function openPersonaModal(persona) {
+export function openPersonaModal(persona) {
   // 同一个账号来回开关记住停在哪个板块；换了账号就回到基本设定，
   // 否则打开另一个号直接落在「语气样本」上会以为走错地方了
   if (state.editingId !== (persona?.id ?? null)) state.accountTab = 'basic';
@@ -227,6 +227,7 @@ function openPersonaModal(persona) {
   el.personaError.textContent = '';
   el.personaSaveHint.textContent = persona ? '' : '先填名称并保存，才能设置素材库和语气样本';
   el.personaDeleteBtn.classList.toggle('hidden', !persona);
+  document.getElementById('quickTip')?.classList.toggle('hidden', Boolean(persona));
   const f = el.personaForm;
   f.reset();
   if (persona) {
@@ -283,6 +284,8 @@ el.personaForm.addEventListener('submit', async (e) => {
         resetBrief();
         loadHistory();
         toast('账号已创建，之后的创作都会带上这份设定');
+        // 快速建号带来的旧文章在这之后存成语气样本（quickstart.js 听这个）
+        window.dispatchEvent(new CustomEvent('cw-persona-created', { detail: persona }));
         return;
       }
 

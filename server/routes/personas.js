@@ -1,9 +1,12 @@
 /* 路由 · personas：账号设定、内容栏目、语气样本与语气档案。从原 routes.js 原样拆出。 */
 import { Drafts, Personas, Samples, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateText } from '../llm.js';
-import { DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, digestUser, GENDERS, PLATFORMS, SECTION_PRESETS, TONES } from '../prompts.js';
-import { json, requireUser, sys } from './common.js';
+import { generateJSON, generateText } from '../llm.js';
+import {
+  DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, digestUser, GENDERS, PLATFORMS, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
+  quickstartUser, SECTION_PRESETS, TONES,
+} from '../prompts.js';
+import { json, requireUser, sys, withRetry } from './common.js';
 
 /* ---------------- 账号设定 ---------------- */
 
@@ -52,6 +55,72 @@ export async function handlePersonaDelete(req, res, body, params) {
   const user = requireUser(req);
   if (!Personas.remove(Number(params.id), user.id)) throw new HttpError(404, '账号不存在');
   json(res, 200, { ok: true });
+}
+
+/* ---------------- 快速建号 ----------------
+   新手贴一段自我介绍（可以再贴几篇旧文章，用单独一行 --- 隔开），模型把账号设定填出来。
+   **不直接保存**：结果填进设定表单给他改；保存之后旧文章再批量存成语气样本（见 handleSampleBatch）。 */
+
+export const QUICK_LIMITS = { intro: 3000, posts: 5, post: 20000, sampleMin: 100 };
+
+/* 旧文章按单独一行的 --- 切开；没有分隔就当一篇。标题取第一行 */
+export function splitPosts(raw) {
+  return String(raw || '').split(/\n\s*-{3,}\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.replace(/\s/g, '').length >= QUICK_LIMITS.sampleMin)
+    .slice(0, QUICK_LIMITS.posts)
+    .map((p) => ({
+      title: p.split('\n')[0].replace(/^#+\s*/, '').trim().slice(0, 40),
+      content: p.slice(0, QUICK_LIMITS.post),
+    }));
+}
+
+/* 模型填的设定再过一遍：选项类只收选项里的，年龄里的数字必须在介绍原文里出现过 */
+export function cleanQuickFields(out, intro) {
+  const text = (v, max) => String(v ?? '').trim().slice(0, max);
+  const age = text(out?.creator_age, 20);
+  const digits = age.match(/\d+/g) || [];
+  return {
+    name: text(out?.name, 40) || '我的账号',
+    platform: PLATFORMS[out?.platform] ? out.platform : '',
+    tone: TONES[out?.tone] ? out.tone : '',
+    content_focus: text(out?.content_focus, 500),
+    audience: text(out?.audience, 500),
+    problem: text(out?.problem, 500),
+    notes: text(out?.notes, 800),
+    creator_age: digits.length && digits.every((d) => intro.includes(d)) ? age : '',
+    creator_gender: GENDERS.includes(out?.creator_gender) ? out.creator_gender : '',
+    creator_industry: text(out?.creator_industry, 60),
+    creator_role: text(out?.creator_role, 60),
+    creator_traits: text(out?.creator_traits, 300),
+  };
+}
+
+export async function handleQuickstart(req, res, body) {
+  const user = requireUser(req);
+  const intro = String(body?.intro || '').trim();
+  if (intro.replace(/\s/g, '').length < 20) throw new HttpError(400, '自我介绍再多写几句吧，至少 20 字：你是谁、写什么、写给谁');
+  if (intro.length > QUICK_LIMITS.intro) throw new HttpError(400, `自我介绍请控制在 ${QUICK_LIMITS.intro} 字以内`);
+  const posts = splitPosts(body?.posts);
+
+  const out = await withRetry(() => generateJSON({
+    meta: { feature: '快速建号', userId: user.id },
+    system: sys('quickstart', QUICKSTART_SYSTEM),
+    user: quickstartUser(intro, posts.map((p) => p.content)),
+    schema: QUICKSTART_SCHEMA,
+    mock: () => ({
+      name: '', platform: PLATFORMS[body?.platform] ? body.platform : '', tone: '',
+      content_focus: `演示模式：这里会从介绍里归纳「写什么」——${intro.slice(0, 30)}`,
+      audience: '演示模式：这里会归纳「写给谁」', problem: '演示模式：这里会归纳「解决什么问题」', notes: '',
+      creator_age: '', creator_gender: '', creator_industry: '', creator_role: '', creator_traits: '',
+    }),
+  }), '没能从介绍里整理出设定，请再试一次');
+
+  const fields = cleanQuickFields(out, intro);
+  // 用户在引导里选了平台就以他选的为准
+  if (PLATFORMS[body?.platform]) fields.platform = body.platform;
+  const empty = Object.entries(fields).filter(([, v]) => !v).map(([k]) => k);
+  json(res, 200, { fields, samples: posts, empty });
 }
 
 /* ---------------- 内容栏目 ---------------- */
@@ -172,6 +241,28 @@ export async function handleSampleCreate(req, res, body, params) {
     samples: Samples.list(persona.id, user.id),
     digest,
   });
+}
+
+/* 批量加样本（快速建号时的几篇旧文章）：全部存完只蒸馏一次语气档案，不是每篇一次 */
+export async function handleSampleBatch(req, res, body, params) {
+  const user = requireUser(req);
+  const persona = Personas.byId(Number(params.id), user.id);
+  if (!persona) throw new HttpError(404, '账号不存在');
+  const list = (Array.isArray(body?.samples) ? body.samples : []).slice(0, QUICK_LIMITS.posts);
+  const room = 30 - Samples.list(persona.id, user.id, { limit: 100 }).length;
+  let added = 0;
+  let skipped = 0;
+  for (const s of list) {
+    const content = String(s?.content ?? '').trim();
+    if (added >= room || content.replace(/\s/g, '').length < QUICK_LIMITS.sampleMin || content.length > QUICK_LIMITS.post) {
+      skipped += 1;
+      continue;
+    }
+    Samples.create(user.id, persona.id, { draftId: null, title: String(s?.title ?? '').trim().slice(0, 120), content });
+    added += 1;
+  }
+  const digest = added ? await rebuildDigest(persona, user.id) : persona.style_digest;
+  json(res, 200, { added, skipped, samples: Samples.list(persona.id, user.id), digest });
 }
 
 export async function handleSampleDelete(req, res, body, params) {

@@ -707,6 +707,15 @@ eval 里人打的分和真实使用有距离。管理后台「内容质量」看
 
 6 段里只有 2 段标了动作，重读词全部可在原文定位。
 
+## 快速建号
+
+新手面对十几个设定项最容易放弃。引导卡上默认的按钮是「贴一段自我介绍，帮我填」（新建账号弹窗顶上也有入口）：
+
+- 贴一段自我介绍，可以再贴 1～5 篇以前写的文章（篇与篇之间单独一行 `---`）；
+- 模型（`快速建号`，quality 档）把账号设定填好放进表单，**不直接保存**，填出来的项有高亮，作者改完再点保存；
+- 只填看得出来的：平台、调性、性别只收选项里的；年龄里的数字必须在介绍原文里出现过，不然丢掉；
+- 保存之后旧文章批量存成语气样本（`POST /api/personas/:id/samples/batch`），语气档案只蒸馏一次；少于 100 字的不存。
+
 ## 框架库（写法框架）
 
 素材库管**写什么**（作者的真实经历和数据），框架库管**怎么写**（段落顺序、每段干什么、各占多少篇幅）。两者分开存、分开拼进提示词——混在一起，模型会把范文里的事实当成作者的经历。
@@ -930,7 +939,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 
 ## API
 
-下表由 `server/index.js` 的路由表整理（共 106 条）。处理函数在 `server/routes/` 对应文件里；
+下表由 `server/index.js` 的路由表整理（共 108 条）。处理函数在 `server/routes/` 对应文件里；
 除注册、登录、`/api/me`、`/api/meta`、`/api/pricing`、`/api/prompt-docs`（只读）、后台的登录与初始化、支付回调外都要登录；其余 `/api/admin/*` 和提示词编辑要管理员会话。
 
 | 方法 | 路径 | 处理函数 | 文件 |
@@ -942,6 +951,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | GET | `/api/meta` | `handleMeta` | auth.js |
 | GET | `/api/personas` | `handlePersonaList` | personas.js |
 | POST | `/api/personas` | `handlePersonaCreate` | personas.js |
+| POST | `/api/personas/quickstart` | `handleQuickstart` | personas.js |
 | PUT | `/api/personas/:id` | `handlePersonaUpdate` | personas.js |
 | DELETE | `/api/personas/:id` | `handlePersonaDelete` | personas.js |
 | GET | `/api/personas/:id/sections` | `handleSectionList` | personas.js |
@@ -950,6 +960,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | DELETE | `/api/personas/:id/sections/:sectionId` | `handleSectionDelete` | personas.js |
 | GET | `/api/personas/:id/samples` | `handleSampleList` | personas.js |
 | POST | `/api/personas/:id/samples` | `handleSampleCreate` | personas.js |
+| POST | `/api/personas/:id/samples/batch` | `handleSampleBatch` | personas.js |
 | DELETE | `/api/personas/:id/samples/:sampleId` | `handleSampleDelete` | personas.js |
 | POST | `/api/personas/:id/digest` | `handleDigestRebuild` | personas.js |
 | GET | `/api/admin/session` | `handleAdminSession` | admin.js |

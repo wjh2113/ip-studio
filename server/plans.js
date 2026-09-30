@@ -22,7 +22,7 @@ export const COST = {
 const TEXT_FEATURES = new Set([
   '选题方向', '选题方向·换一批', '成稿', '成稿检查', '题材推荐', '语气档案',
   '划词改写', '编辑器续写', '语音改稿', '热点比对', '原文概要', '口播提示', '口播总评',
-  '多平台适配', '图文配图方案', '标题候选', '范文拆解',
+  '多平台适配', '图文配图方案', '标题候选', '范文拆解', '快速建号',
 ]);
 
 export const costOf = (feature) => (TEXT_FEATURES.has(feature) ? COST.文案 : COST[feature] || null);

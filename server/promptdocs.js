@@ -16,10 +16,11 @@ import {
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
   VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM,
-  TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM,
+  TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
 } from './prompts.js';
 
 export const STAGES = [
+  { key: 'setup', label: '建号', blurb: '第一次来：把账号设定先填出来' },
   { key: 'pick', label: '选题', blurb: '从"今天写什么"到"写哪个角度"' },
   { key: 'write', label: '成稿', blurb: '把角度变成能直接发的正文' },
   { key: 'polish', label: '打磨', blurb: '出稿之后的自检与风格沉淀' },
@@ -358,5 +359,25 @@ export const PROMPT_DOCS = () => [
       '篇幅占比在代码里重新归一化，不信模型给的合计',
     ],
     system: EXTRACT_SYSTEM, schema: EXTRACT_SCHEMA,
+  },
+  {
+    key: 'quickstart', name: '快速建号', stage: 'setup', mode: '结构化输出',
+    where: '新账号引导「贴一段自我介绍」',
+    positioning: '新手面对十几个设定项最容易放弃。先让他说一段话，我们把表填出来，他只需要改。',
+    value: [
+      '用户：一分钟就有一份能用的账号设定；贴了旧文章的，语气样本和语气档案也一起建好。',
+      '产品：设定越完整，后面每一步的输出越贴这个号——把最难的第一步变成「检查」而不是「填写」。',
+    ],
+    logic: [
+      '输入：自我介绍（包在 <自我介绍> 标签里）+ 最多 5 篇旧文章（每篇截前 3000 字，只用来归纳写什么、写给谁）。',
+      '输出：账号设定的各项；看不出来的留空。',
+      '结果不直接保存：填进账号设定表单给作者改，保存后旧文章批量存成语气样本，语气档案只蒸馏一次。',
+    ],
+    guards: [
+      '平台、调性、性别只能从选项里选，代码再校验一遍',
+      '年龄里的数字必须在介绍原文里出现过，否则丢掉——不让模型替人编年龄',
+      '旧文章少于 100 字的不当样本',
+    ],
+    system: QUICKSTART_SYSTEM, schema: QUICKSTART_SCHEMA,
   },
 ];

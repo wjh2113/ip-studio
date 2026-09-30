@@ -1811,3 +1811,8 @@ pre, code, .tts-out { font-family: var(--font-mono); }
 .metrics-snap.on { color: var(--accent-ink); }
 .ins-trend { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .section-chip .n.up { background: #e6f4ea; color: #2f7d3b; }
+
+/* ---------- 快速建号 ---------- */
+.quick-tip { margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+.quick-tip a { color: var(--accent-ink); }
+.quick-filled { box-shadow: 0 0 0 2px var(--accent-soft, rgba(75, 57, 239, .15)); }
