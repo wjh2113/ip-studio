@@ -39,6 +39,7 @@ export const FEATURE_TIER = {
   成稿检查: 'fast',
   口播提示: 'fast',
   图文配图方案: 'fast',
+  标题候选: 'fast',
 };
 // 表里没有的功能：按调用方式给默认档；meta.channel === 'quality' 仍可单次指定
 const tierOf = (meta, fallback) => (meta.channel === 'quality' ? 'quality'

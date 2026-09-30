@@ -1766,3 +1766,11 @@ pre, code, .tts-out { font-family: var(--font-mono); }
   .fw-slot { flex-wrap: wrap; }
   .fw-slot .fw-role, .fw-slot .fw-guide { flex: 1 1 100%; }
 }
+
+/* ---------------- 标题候选 ---------------- */
+.title-list { display: grid; gap: 8px; }
+.title-row { display: flex; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.title-main { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.title-main b { font-size: 14.5px; }
+.title-main p { margin: 0; }
+.title-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }

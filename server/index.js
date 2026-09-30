@@ -95,6 +95,8 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus$/, R.handleIllus],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus\/(?<i>\d+)\/image$/, R.handleIllusImage],
   ['DELETE', /^\/api\/drafts\/(?<id>\d+)\/variants\/(?<platform>\w+)$/, R.handleVariantDelete],
+  ['POST', /^\/api\/drafts\/(?<id>\d+)\/titles$/, R.handleTitles],
+  ['PUT', /^\/api\/drafts\/(?<id>\d+)\/title$/, R.handleTitleApply],
   ['GET', /^\/api\/images$/, R.handleImageInfo],
   ['GET', /^\/api\/drafts\/(?<id>\d+)\/export\.docx$/, R.handleExportDocx],
   ['GET', /^\/api\/prompt-docs$/, R.handlePromptDocs],

@@ -697,6 +697,10 @@ export const Drafts = {
     });
   },
 
+  setTitle(id, userId, title) {
+    db.prepare('UPDATE drafts SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?').run(title, now(), id, userId);
+  },
+
   setCues(id, userId, cues) {
     db.prepare('UPDATE drafts SET cues_json = ?, updated_at = ? WHERE id = ? AND user_id = ?')
       .run(JSON.stringify(cues), now(), id, userId);

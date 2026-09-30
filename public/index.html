@@ -218,6 +218,7 @@
             <div class="menu hidden" id="confirmMenu">
               <div class="menu-head">这稿定了，接下来</div>
               <button type="button" data-act="cues">生成口播提示<em>切段、标语气，配合提词器照着念</em></button>
+              <button type="button" data-act="titles">起标题<em>按不同写法出 6 个候选，挑一个替换</em></button>
               <button type="button" data-act="multi">出多平台版本<em>事实不变，按各平台重排结构和篇幅</em></button>
               <button type="button" data-act="illus">配图<em>正文写 &lt;此处放图片&gt; 就插在那里；没写则自动排位。出图要点「全部出图」</em></button>
               <button type="button" data-act="learn">喂给账号学习<em>作为语气样本，影响以后的成稿</em></button>
@@ -468,6 +469,22 @@
           <button class="btn ghost small" type="button" id="sectionCancelBtn">取消</button>
           <button class="btn primary small" type="button" id="sectionSaveBtn">保存栏目</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 标题候选 -->
+<div class="modal-mask hidden" id="titleModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>标题候选<span class="modal-sub" id="titleSub"></span></h2>
+      <button class="icon-btn" id="titleClose" title="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="title-list" id="titleList"></div>
+      <div class="section-form-foot">
+        <button class="btn ghost small" type="button" id="titleAgain">换一批</button>
       </div>
     </div>
   </div>

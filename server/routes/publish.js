@@ -1,4 +1,4 @@
-/* 路由 · publish：多平台版本、图文配图、Word 导出。从原 routes.js 原样拆出。 */
+/* 路由 · publish：多平台版本、图文配图、Word 导出、标题候选。从原 routes.js 原样拆出。 */
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import { DATA_DIR, Drafts, Personas, Usage } from '../db.js';
@@ -8,7 +8,11 @@ import { buildDocx } from '../docx.js';
 import { IMAGE_MARK, markAts } from '../../public/place.js';
 import { reserve, settle } from '../quota.js';
 import { generate, imageInfo } from '../images.js';
-import { ADAPT_SYSTEM, adaptUser, DEFAULT_PLATFORM, ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser, PLATFORMS } from '../prompts.js';
+import {
+  ADAPT_SYSTEM, adaptUser, DEFAULT_PLATFORM, ILLUS_SCHEMA, ILLUS_SYSTEM, illusUser, PLATFORMS,
+  TITLE_LIMITS, TITLE_TYPES, TITLES_SCHEMA, TITLES_SYSTEM, titlesUser,
+} from '../prompts.js';
+import { scanLexicon } from '../lexicon.js';
 import { describe, json, requireUser, sys, withRetry } from './common.js';
 
 /* ==================================================================
@@ -275,4 +279,70 @@ export async function handleIllusImage(req, res, body, params) {
   const next = { ...store, items: store.items.map((it, i) => (i === idx ? { ...it, image } : it)) };
   Drafts.setIllus(draft.id, user.id, { ...(draft.illus || {}), [verKey(v)]: next });
   json(res, 200, { version: v, index: idx, image });
+}
+
+/* ==================================================================
+ * 标题候选：定稿后按不同写法出一批，作者挑一个替换
+ * ================================================================== */
+
+const titleLen = (t) => [...String(t)].length;   // 按字符算，emoji 算一个
+
+export function cleanTitles(data, { current = '', limit = null } = {}) {
+  const seen = new Set([String(current).trim()]);
+  return (Array.isArray(data?.titles) ? data.titles : [])
+    .map((t) => ({
+      text: String(t?.text || '').replace(/^#+\s*/, '').trim(),
+      type: TITLE_TYPES.includes(t?.type) ? t.type : '',
+      why: String(t?.why || '').trim(),
+    }))
+    .filter((t) => t.text && !seen.has(t.text) && seen.add(t.text))
+    .map((t) => {
+      const chars = titleLen(t.text);
+      const risk = scanLexicon(t.text).map((h) => h.quote);
+      return { ...t, chars, over: Boolean(limit && chars > limit), risk };
+    })
+    .slice(0, 8);
+}
+
+export async function handleTitles(req, res, body, params) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const text = String(draft.content || '').trim();
+  if (!text) throw new HttpError(400, '还没有正文');
+  if (text.length > 12000) throw new HttpError(400, '正文过长');
+  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const limit = TITLE_LIMITS[draft.platform] || null;
+
+  const titles = await withRetry(async () => {
+    const out = await generateJSON({
+      meta: { feature: '标题候选', userId: user.id },
+      system: sys('titles', TITLES_SYSTEM),
+      user: titlesUser(draft, persona, text),
+      schema: TITLES_SCHEMA,
+      mock: () => ({ titles: TITLE_TYPES.map((type, i) => ({ text: `演示模式：${type}标题 ${i + 1}`, type, why: '配置模型密钥后生效' })) }),
+    });
+    const list = cleanTitles(out, { current: draft.title, limit });
+    if (list.length < 3) throw new HttpError(502, '没拿到足够的标题');
+    return list;
+  }, '起标题失败，请再试一次');
+
+  json(res, 200, { titles, limit });
+}
+
+/* 采用一个标题：草稿标题 + 正文第一行的 # 标题一起换，按手动保存留一版历史 */
+export async function handleTitleApply(req, res, body, params) {
+  const user = requireUser(req);
+  const draft = Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const title = String(body?.title || '').replace(/[\r\n]+/g, ' ').replace(/^#+\s*/, '').trim().slice(0, 100);
+  if (!title) throw new HttpError(400, '标题不能为空');
+  const content = String(draft.content || '');
+  const lines = content.split('\n');
+  const first = lines.findIndex((l) => l.trim());
+  if (first >= 0 && /^#\s/.test(lines[first])) lines[first] = `# ${title}`;
+  else lines.unshift(`# ${title}`, '');
+  Drafts.saveContent(draft.id, user.id, lines.join('\n'), { snapshot: true });
+  Drafts.setTitle(draft.id, user.id, title);
+  json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
 }

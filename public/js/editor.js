@@ -6,6 +6,7 @@ import { currentLabel, downloadAs, updateActionLabels } from './export.js';
 import { loadDraftSpeaks, renderCues } from './speak.js';
 import { illOf, renderIllusBar, renderMultiBar, renderVersionTabs, showVersion, ver, withIllus } from './versions.js';
 import { openMetrics } from './insights.js';
+import { openTitles } from './titles.js';
 
 /* ==================================================================
  * 成稿编辑器：阅读/编辑双模式、划词改 AI、/ 唤起续写
@@ -448,7 +449,7 @@ function syncConfirmMenu() {
   const onVariant = Boolean(ver.current);
   const has = (a) => el.confirmMenu.querySelector(`[data-act="${a}"]`);
   // 口播、学习、多平台都针对原文；配图是按版本来的
-  for (const a of ['cues', 'multi', 'learn', 'review']) {
+  for (const a of ['cues', 'multi', 'learn', 'review', 'titles']) {
     const b = has(a);
     b.disabled = onVariant;
     b.title = onVariant ? '这几项都针对原文，先切回原文版本' : '';
@@ -467,6 +468,7 @@ el.confirmMenu.addEventListener('click', async (e) => {
   if (act === 'learn') { el.learnBtn.click(); return; }
   if (act === 'review') { el.reviewBtn.click(); return; }
   if (act === 'metrics') { openMetrics(); return; }
+  if (act === 'titles') { openTitles(); return; }
   if (act === 'archive') await archiveCurrent();
 });
 

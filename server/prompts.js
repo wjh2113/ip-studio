@@ -1146,3 +1146,55 @@ ${list.map((m) => `【${m.kind}】${m.title}\n${m.body}`).join('\n\n')}
 - **用不上的不要硬塞**——为了用素材而跑题，比不用素材更糟。
 - 同样**不要编造它们之外的个人经历、时间、数字、职位或人物关系**。`;
 };
+
+/* ==================================================================
+ * 标题候选：成稿后单独出一批标题，按类型分开，作者挑一个
+ * 标题对打开率的影响常常大于正文；随方向一起出的那一个只是起点。
+ * ================================================================== */
+
+export const TITLE_TYPES = ['数字型', '悬念型', '身份型', '反常识型', '痛点型', '结果型'];
+
+/* 各平台标题字数上限（按字符数算，emoji 算一个）。没有明确上限的平台不写 */
+export const TITLE_LIMITS = { xiaohongshu: 20, gongzhonghao: 64, bilibili: 80 };
+
+export const TITLES_SCHEMA = {
+  type: 'object',
+  properties: {
+    titles: {
+      type: 'array', minItems: 4, maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '可以直接用的标题' },
+          type: { type: 'string', enum: TITLE_TYPES, description: '这个标题用的是哪种写法' },
+          why: { type: 'string', description: '一句话：它抓的是读者的哪个点' },
+        },
+        required: ['text', 'type', 'why'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['titles'],
+  additionalProperties: false,
+};
+
+export const TITLES_SYSTEM =
+`你是一位擅长起标题的自媒体编辑。给一篇已经写好的正文起 6 个候选标题。
+要求：
+1. 6 个标题尽量覆盖不同写法：数字型、悬念型、身份型、反常识型、痛点型、结果型，同一种写法最多两个。
+2. 只能用正文里已经有的信息：数字、经历、结论都要在正文里找得到，不许为了抓眼编一个正文没有的数字或承诺。
+3. 符合目标平台的语感和字数上限；给了账号设定的，要像这个账号会发的标题。
+4. 不用「震惊」「必看」「99% 的人不知道」这类标题党套话，也不用广告法禁止的绝对化用语（最、第一、唯一……）。
+5. 全部使用简体中文。`;
+
+export const titlesUser = (draft, persona, text) => {
+  const p = platformSpec(draft.platform);
+  const limit = TITLE_LIMITS[draft.platform];
+  return [
+    personaBlock(persona),
+    `发布平台：${p.label}${limit ? `（标题不超过 ${limit} 字）` : ''}`,
+    `现在的标题：${draft.title || '（无）'}`,
+    '\n—— 正文 ——',
+    text,
+  ].filter(Boolean).join('\n');
+};

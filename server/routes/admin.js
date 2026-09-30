@@ -8,7 +8,9 @@ import { payInfo } from '../pay.js';
 import { conf, save as saveSetting, status as settingsStatus } from '../settings.js';
 import { hasKey } from '../secrets.js';
 import { mockContent, mockTopics } from '../mock.js';
-import { ADAPT_SYSTEM, ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, CONTENT_SYSTEM, contentUser, CUES_SCHEMA, CUES_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, ILLUS_SCHEMA, ILLUS_SYSTEM, PLATFORMS, REVIEW_SCHEMA, REVIEW_SYSTEM, SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM, topicsUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM } from '../prompts.js';
+import {
+  ADAPT_SYSTEM, ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, CONTENT_SYSTEM, CUES_SCHEMA, CUES_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, ILLUS_SCHEMA, ILLUS_SYSTEM, PLATFORMS, REVIEW_SCHEMA, REVIEW_SYSTEM, SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TITLES_SCHEMA, TITLES_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, contentUser, topicsUser,
+} from '../prompts.js';
 import { json, requireAdmin, sys } from './common.js';
 
 /* ---- 管理员登录 ---- */
@@ -152,6 +154,8 @@ const PROMPT_CATALOG = () => [
     system: sys('digest', DIGEST_SYSTEM) },
   { key: 'cues', label: '口播提示', where: '成稿后切段并标语气/重读/停顿/表情/动作',
     system: sys('cues', CUES_SYSTEM), schema: CUES_SCHEMA },
+  { key: 'titles', label: '标题候选', where: '成稿「确认 → 起标题」：按不同写法出 6 个',
+    system: sys('titles', TITLES_SYSTEM), schema: TITLES_SCHEMA },
   { key: 'speak-review', label: '口播总评', where: '口播页上传录音后。走 quality-chat，不走 fast-chat',
     system: sys('speak-review', SPEAK_REVIEW_SYSTEM), schema: SPEAK_REVIEW_SCHEMA },
   { key: 'adapt', label: '多平台适配', where: '成稿后出其他平台版本',

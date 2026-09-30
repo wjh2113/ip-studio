@@ -16,6 +16,7 @@ import {
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
   VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM,
+  TITLES_SCHEMA, TITLES_SYSTEM,
 } from './prompts.js';
 
 export const STAGES = [
@@ -315,5 +316,25 @@ export const PROMPT_DOCS = () => [
       '插图位置在**纯文本上**算好再分段渲染——在渲染后的 HTML 里找插入点不可靠，markdown 会改结构。阅读、复制、Word 用的是同一套切分',
     ],
     system: ILLUS_SYSTEM, schema: ILLUS_SCHEMA,
+  },
+  {
+    key: 'titles', name: '标题候选', stage: 'publish', mode: '结构化输出',
+    where: '成稿工具栏「确认 → 起标题」',
+    positioning: '标题对打开率的影响常常比正文大。随方向一起出的那个标题只是起点，定稿后再按不同写法出一批挑。',
+    value: [
+      '用户：一次看到数字型、悬念型、身份型、反常识型、痛点型、结果型几种写法，挑一个直接替换。',
+      '产品：标题和正文一致——只用正文里有的信息，不为抓眼编数字。',
+    ],
+    logic: [
+      '输入：定稿正文 + 平台（带字数上限）+ 账号设定 + 现在的标题。',
+      '6 个候选尽量覆盖不同写法，同一种最多两个。',
+      '选中后同时替换草稿标题和正文第一行的 # 标题，按手动保存留一版历史。',
+    ],
+    guards: [
+      '**超过平台字数上限的在代码里标出来**（小红书 20、公众号 64、B 站 80），不靠模型自觉',
+      '和现在标题一样的、重复的候选丢掉',
+      '标题也会过本地违禁词库，命中的标出来',
+    ],
+    system: TITLES_SYSTEM, schema: TITLES_SCHEMA,
   },
 ];
