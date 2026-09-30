@@ -1302,6 +1302,7 @@ export async function handleVoiceEdit(req, res, file, params) {
       filename: `voice.${file.ext}`,
       mime: file.mime,
       userId: user.id,
+      script: content,
     });
     transcript = String(tr.text || '').trim();
   } catch (err) {

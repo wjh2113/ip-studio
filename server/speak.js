@@ -17,6 +17,17 @@ const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP';
 const VISION_CAPABILITY = process.env.LLM_CAPABILITY_VISION || 'vision';
 const WEIGHT = { 完整: 25, 发音: 25, 节奏: 20, 表达: 20, 出镜: 10 };
 
+/* 口播评测按稿子语种传给网关。假名走 ja，拉丁字母明显多于汉字走 en，其余默认 zh。 */
+export function scriptLanguage(script) {
+  const s = String(script || '');
+  const kana = (s.match(/[\u3040-\u30ff]/g) || []).length;
+  const han = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+  const latin = (s.match(/[A-Za-z]/g) || []).length;
+  if (kana >= 2) return 'ja';
+  if (latin >= 12 && latin > han * 2) return 'en';
+  return 'zh';
+}
+
 const APPEARANCE_SYSTEM = `你在看出镜口播的画面。用户给出这一遍录像里按时间抽出的几帧，以及当时口播提示里对表情和动作的要求。
 只评看镜头、表情、手势是否过满或对不上提示。不要评读音，不要评稿子写得好不好。
 只输出一个 JSON 对象，不要解释。格式：{"score":0到100的整数或null,"note":"一句具体的话"}。
@@ -57,13 +68,14 @@ export async function removeTakeFile(userId, file) {
   await rm(resolvePath(DATA_DIR, 'speaks', String(userId), file), { force: true });
 }
 
-export async function transcribeAudio(buffer, { filename, mime, userId }) {
+export async function transcribeAudio(buffer, { filename, mime, userId, language, script } = {}) {
   if (!GATEWAY_KEY || PROVIDER === 'mock') {
     return { text: '演示模式：这里会是这一遍录音的转写。' };
   }
+  const lang = language || scriptLanguage(script);
   const { res, data } = await postAudio('/api/ai/transcribe', buffer, {
     filename, mime, userId,
-    fields: { capability: 'speech', language: 'zh' },
+    fields: { capability: 'speech', language: lang },
   });
   if (!res.ok) throw new Error(gatewayError(data, `转写失败 ${res.status}`));
   const text = String(data?.text || '').trim();
@@ -71,15 +83,16 @@ export async function transcribeAudio(buffer, { filename, mime, userId }) {
   return { text };
 }
 
-export async function pronounceAudio(buffer, { filename, mime, userId, script }) {
+export async function pronounceAudio(buffer, { filename, mime, userId, script, language } = {}) {
   const text = String(script || '').trim();
   if (!text) return null;
   if (!GATEWAY_KEY || PROVIDER === 'mock') {
     return { score: 78, note: '演示模式发音评测', issues: [], transcript: '演示模式转写' };
   }
+  const lang = language || scriptLanguage(text);
   const { res, data } = await postAudio('/api/ai/pronounce', buffer, {
     filename, mime, userId,
-    fields: { capability: 'pronunciation', language: 'zh', text },
+    fields: { capability: 'pronunciation', language: lang, text },
   });
   if (!res.ok) throw new Error(gatewayError(data, `发音评测失败 ${res.status}`));
   const score = Number(data?.score);
@@ -264,6 +277,7 @@ export async function runSpeakPipeline(row, userId, buffer) {
       filename: row.file || 'take.webm',
       mime: row.mime,
       userId,
+      script: row.script,
     });
     transcript = tr.text;
     let review = await reviewTake({
