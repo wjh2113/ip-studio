@@ -45,7 +45,7 @@ test('微信下单：请求带 v3 签名头', async () => {
   } finally { globalThis.fetch = realFetch; }
 });
 
-test('微信回调：AES-GCM 解密成功；密文被改则拒绝', () => {
+test('微信回调：AES-GCM 解密成功；密文被改则拒绝', async () => {
   process.env.PAY_PROVIDER = 'wechat';
   const nonce = 'abcdefghijkl'; const aad = 'transaction';
   const plain = JSON.stringify({ out_trade_no: 'N2', transaction_id: 'T2', trade_state: 'SUCCESS', amount: { total: 4900 } });
@@ -60,7 +60,7 @@ test('微信回调：AES-GCM 解密成功；密文被改则拒绝', () => {
   assert.equal(pay.verifyNotify('wechat', { headers: {}, rawBody: body(bad.toString('base64')) }), null);
 });
 
-test('支付宝回调：RSA2 验签；金额被改则拒绝', () => {
+test('支付宝回调：RSA2 验签；金额被改则拒绝', async () => {
   process.env.PAY_PROVIDER = 'alipay';
   const p = { out_trade_no: 'N3', trade_no: 'T3', total_amount: '49.00', trade_status: 'TRADE_SUCCESS', app_id: '2021000' };
   const base = Object.keys(p).sort().map((k) => `${k}=${p[k]}`).join('&');

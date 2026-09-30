@@ -31,13 +31,13 @@ async function saveImage(userId, draftId, index, out) {
 }
 
 export async function handleImageInfo(req, res) {
-  requireUser(req);
+  await requireUser(req);
   json(res, 200, { image: imageInfo() });
 }
 
 export async function handleExportDocx(req, res, body, params, url) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const v = String(url?.searchParams.get('version') || '');
   const { text } = versionText(draft, v);
@@ -75,8 +75,8 @@ export async function handleExportDocx(req, res, body, params, url) {
  * ================================================================== */
 
 export async function handleVariant(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const text = String(draft.content || '').trim();
@@ -88,7 +88,7 @@ export async function handleVariant(req, res, body, params) {
   const from = PLATFORMS[draft.platform] ? draft.platform : DEFAULT_PLATFORM;
   if (to === from) throw new HttpError(400, '这就是原文的平台，不用再改一遍');
 
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
 
   const out = await withRetry(async () => {
     const t = await generateText({
@@ -112,17 +112,17 @@ export async function handleVariant(req, res, body, params) {
     from,
     at: new Date().toISOString(),
   };
-  Drafts.setVariants(draft.id, user.id, variants);
+  await Drafts.setVariants(draft.id, user.id, variants);
   json(res, 200, { platform: to, variant: variants[to] });
 }
 
 export async function handleVariantDelete(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const variants = { ...(draft.variants || {}) };
   delete variants[String(params.platform)];
-  Drafts.setVariants(draft.id, user.id, variants);
+  await Drafts.setVariants(draft.id, user.id, variants);
   json(res, 200, { ok: true });
 }
 
@@ -147,8 +147,8 @@ function versionText(draft, v) {
 }
 
 export async function handleIllus(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const v = String(body?.version || '');
@@ -156,7 +156,7 @@ export async function handleIllus(req, res, body, params) {
   const { text, platform } = versionText(draft, v);
   if (!text.trim()) throw new HttpError(400, '这一版还没有正文');
 
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
 
   const marks = markAts(text).slice(0, 8);
   const data = await withRetry(async () => {
@@ -181,7 +181,7 @@ export async function handleIllus(req, res, body, params) {
 
   const store = { ...(draft.illus || {}) };
   const before = store[verKey(v)];
-  const keepImage = (it) => {
+  const keepImage = async (it) => {
     const old = before?.placed === 'mark'
       ? before.items?.find((o) => o.i === it.i && o.prompt === it.prompt)
       : before?.items?.find((o) => o.prompt === it.prompt);
@@ -237,14 +237,14 @@ export async function handleIllus(req, res, body, params) {
     items: kept,
     at: new Date().toISOString(),
   };
-  Drafts.setIllus(draft.id, user.id, store);
+  await Drafts.setIllus(draft.id, user.id, store);
   json(res, 200, { version: v, illus: store[verKey(v)], image: imageInfo() });
 }
 
 /* 出一张图：请求只登记，出图在任务队列里做（几十秒，刷新页面也不丢） */
 export async function handleIllusImage(req, res, body, params, url) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const v = String(body?.version || '');
@@ -253,9 +253,9 @@ export async function handleIllusImage(req, res, body, params, url) {
   if (!item) throw new HttpError(400, '这个配图位不存在');
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
   // 额度不够当场告诉，别等排到了才失败
-  assertQuota(user.id, '图文配图', 1);
+  await assertQuota(user.id, '图文配图', 1);
 
-  const job = enqueue(user.id, 'image', {
+  const job = await enqueue(user.id, 'image', {
     ref: `image:${draft.id}:${verKey(v)}:${idx}`,
     label: `配图第 ${idx + 1} 张 · ${draft.title || draft.subject || '未命名'}`,
     payload: { draftId: draft.id, version: v, index: idx },
@@ -268,7 +268,7 @@ defineJob('image', {
   label: '配图',
   async run({ userId, payload }, ctx) {
     const { draftId, version: v, index: idx } = payload;
-    const draft = Drafts.byId(draftId, userId);
+    const draft = await Drafts.byId(draftId, userId);
     if (!draft) throw new HttpError(404, '稿子已经不在了');
     const store = draft.illus?.[verKey(v)];
     const item = store?.items?.[idx];
@@ -276,7 +276,7 @@ defineJob('image', {
 
     const info = imageInfo();
     // 出图按张计费：先预扣一张，失败由队列自动退回
-    ctx.hold('图文配图', 1);
+    await ctx.hold('图文配图', 1);
     const prompt = store.look ? `${item.prompt}。整体风格：${store.look}` : item.prompt;
     const started = Date.now();
     let out;
@@ -284,26 +284,26 @@ defineJob('image', {
       // 文章插图用横图，竖图在正文里会把一屏占满
       out = await generate({ prompt, ratio: 'landscape' });
     } catch (err) {
-      Usage.record({
+      await Usage.record({
         userId, feature: '图文配图', provider: info.provider, model: info.model,
         ok: false, ms: Date.now() - started, error: String(err?.message || err),
       });
       throw new HttpError(502, `出图失败：${describe(err)}`);
     }
-    Usage.record({
+    await Usage.record({
       userId, feature: '图文配图', provider: info.provider, model: info.model,
       ok: true, ms: Date.now() - started, units: 1, unit: '张',
     });
-    ctx.settle(1);
+    await ctx.settle(1);
 
     const file = await saveImage(userId, draftId, `${verKey(v)}-${idx}`, out);
     const image = { file, mime: out.mime, bytes: out.buffer.length, at: new Date().toISOString() };
     // 出图要几十秒，这期间别的图可能已经写回去了：落库前重新读一遍，只改自己这一张
-    const fresh = Drafts.byId(draftId, userId);
+    const fresh = await Drafts.byId(draftId, userId);
     const now = fresh?.illus?.[verKey(v)];
     if (now?.items?.[idx]) {
       const next = { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, image } : it)) };
-      Drafts.setIllus(draftId, userId, { ...(fresh.illus || {}), [verKey(v)]: next });
+      await Drafts.setIllus(draftId, userId, { ...(fresh.illus || {}), [verKey(v)]: next });
     }
     return { version: v, index: idx, image, draftId };
   },
@@ -333,13 +333,13 @@ export function cleanTitles(data, { current = '', limit = null } = {}) {
 }
 
 export async function handleTitles(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const text = String(draft.content || '').trim();
   if (!text) throw new HttpError(400, '还没有正文');
   if (text.length > 12000) throw new HttpError(400, '正文过长');
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const limit = TITLE_LIMITS[draft.platform] || null;
 
   const titles = await withRetry(async () => {
@@ -360,8 +360,8 @@ export async function handleTitles(req, res, body, params) {
 
 /* 采用一个标题：草稿标题 + 正文第一行的 # 标题一起换，按手动保存留一版历史 */
 export async function handleTitleApply(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const title = String(body?.title || '').replace(/[\r\n]+/g, ' ').replace(/^#+\s*/, '').trim().slice(0, 100);
   if (!title) throw new HttpError(400, '标题不能为空');
@@ -370,7 +370,7 @@ export async function handleTitleApply(req, res, body, params) {
   const first = lines.findIndex((l) => l.trim());
   if (first >= 0 && /^#\s/.test(lines[first])) lines[first] = `# ${title}`;
   else lines.unshift(`# ${title}`, '');
-  Drafts.saveContent(draft.id, user.id, lines.join('\n'), { snapshot: true });
-  Drafts.setTitle(draft.id, user.id, title);
-  json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
+  await Drafts.saveContent(draft.id, user.id, lines.join('\n'), { snapshot: true });
+  await Drafts.setTitle(draft.id, user.id, title);
+  json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
 }

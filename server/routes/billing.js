@@ -11,11 +11,11 @@ import { describe, json, requireUser } from './common.js';
  * ================================================================== */
 
 export async function handlePlanInfo(req, res) {
-  const user = requireUser(req);
-  const q = snapshot(user.id);
+  const user = await requireUser(req);
+  const q = await snapshot(user.id);
 
   // 本周期花在哪了。折算成点数——用户理解的是点，不是 token 和字符
-  const rows = Usage.myUsage(user.id, q.period).map((r) => {
+  const rows = (await Usage.myUsage(user.id, q.period)).map((r) => {
     const units = r.unit === 'token' ? r.tokens : r.units;
     return {
       feature: r.feature,
@@ -42,19 +42,19 @@ export async function handlePlanInfo(req, res) {
  * **这里还没有接支付**——现在是直接改状态。上线前必须换成"下单 → 支付回调 → 再改状态"，
  * 否则任何人都能把自己改成 Max。留成独立接口就是为了到时候只换这一处的实现。 */
 export async function handlePlanChange(req, res, body) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   if (process.env.ALLOW_SELF_UPGRADE !== '1') {
     throw new HttpError(403, '还没接支付，暂时不能自助改套餐');
   }
   if (body?.pack) {
     const pack = PACKS[body.pack];
     if (!pack) throw new HttpError(400, '没有这个加购包');
-    Quota.addPack(user.id, pack.credits);
+    await Quota.addPack(user.id, pack.credits);
   } else {
     if (!PLANS[body?.plan]) throw new HttpError(400, '没有这个套餐');
-    Quota.setPlan(user.id, body.plan);
+    await Quota.setPlan(user.id, body.plan);
   }
-  json(res, 200, { quota: snapshot(user.id) });
+  json(res, 200, { quota: await snapshot(user.id) });
 }
 
 /* ==================================================================
@@ -70,12 +70,12 @@ export async function handlePlanChange(req, res, body) {
  * ================================================================== */
 
 export async function handlePayInfo(req, res) {
-  const user = requireUser(req);
-  json(res, 200, { pay: payInfo(), orders: Orders.listByUser(user.id, 10) });
+  const user = await requireUser(req);
+  json(res, 200, { pay: payInfo(), orders: await Orders.listByUser(user.id, 10) });
 }
 
 export async function handleOrderCreate(req, res, body) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const channel = ['wechat', 'alipay'].includes(body?.channel) ? body.channel : 'mock';
 
   // 价格一律从服务端的表里查——信任前端传来的金额，等于一分钱买 Max
@@ -86,13 +86,13 @@ export async function handleOrderCreate(req, res, body) {
 
   const no = newTradeNo();
   const amount = Math.round(item.price * 100);      // 分。用整数，浮点算钱迟早出事
-  Orders.create({ no, userId: user.id, kind, sku: item.key, amount, channel: payInfo().provider === 'mock' ? 'mock' : channel });
+  await Orders.create({ no, userId: user.id, kind, sku: item.key, amount, channel: payInfo().provider === 'mock' ? 'mock' : channel });
 
   let pay;
   try {
     pay = await createPayment({ channel, no, amount, subject: `文案工坊 · ${item.label}` });
   } catch (err) {
-    Orders.close(no);
+    await Orders.close(no);
     throw new HttpError(502, `下单失败：${describe(err)}`);
   }
   json(res, 200, { no, amount, label: item.label, ...pay });
@@ -107,7 +107,7 @@ export async function handlePayNotify(req, res, body, params, url) {
   // 验签不过 = 伪造，直接丢。不回 200，免得对方以为收下了
   if (!hit) { res.writeHead(400).end('bad sign'); return; }
 
-  const order = Orders.byNo(hit.no);
+  const order = await Orders.byNo(hit.no);
   // 金额不符也当伪造——回调里的数字不可信，必须和自己落的库比
   if (!order || (hit.amount != null && Number(hit.amount) !== order.amount)) {
     res.writeHead(400).end('mismatch');
@@ -115,7 +115,7 @@ export async function handlePayNotify(req, res, body, params, url) {
   }
 
   // markPaid 只在 pending 时命中；重复推送第二次就走不进发货
-  if (Orders.markPaid(hit.no, hit.tradeNo, hit.raw)) grant(order);
+  if (await Orders.markPaid(hit.no, hit.tradeNo, hit.raw)) await grant(order);
 
   // 两家都认这种"收到了别再推了"的响应
   if (channel === 'alipay') { res.writeHead(200).end('success'); return; }
@@ -123,32 +123,32 @@ export async function handlePayNotify(req, res, body, params, url) {
 }
 
 /* 发货：按订单类型开通。单独一个函数，因为它必须只被 markPaid 成功后调用。 */
-function grant(order) {
+async function grant(order) {
   if (order.kind === 'pack') {
     const pack = PACKS[order.sku];
-    if (pack) Quota.addPack(order.user_id, pack.credits);
+    if (pack) await Quota.addPack(order.user_id, pack.credits);
   } else if (PLANS[order.sku]) {
-    Quota.setPlan(order.user_id, order.sku);
+    await Quota.setPlan(order.user_id, order.sku);
   }
-  Orders.markGranted(order.out_trade_no);
+  await Orders.markGranted(order.out_trade_no);
 }
 
 /* 前端轮询订单状态。回调可能丢，所以这里也是补偿的入口。 */
 export async function handleOrderStatus(req, res, body, params) {
-  const user = requireUser(req);
-  const order = Orders.byNo(String(params.no));
+  const user = await requireUser(req);
+  const order = await Orders.byNo(String(params.no));
   if (!order || order.user_id !== user.id) throw new HttpError(404, '订单不存在');
 
   // 还没收到回调时主动查一次——不能只等推送
   if (order.status === 'pending') {
     try {
       const q = await queryOrder(order.channel, order.out_trade_no);
-      if (q?.paid && Orders.markPaid(order.out_trade_no, q.tradeNo || '', 'query')) {
-        grant(order);
+      if (q?.paid && await Orders.markPaid(order.out_trade_no, q.tradeNo || '', 'query')) {
+        await grant(order);
       }
     } catch { /* 查单失败不影响返回当前状态 */ }
   }
-  json(res, 200, { order: Orders.byNo(order.out_trade_no), quota: snapshot(user.id) });
+  json(res, 200, { order: await Orders.byNo(order.out_trade_no), quota: await snapshot(user.id) });
 }
 
 function readRawBody(req) {

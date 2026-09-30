@@ -17,9 +17,9 @@ import { json, requireUser } from './common.js';
  * 刻意**不做向量检索**：素材是几十到几百条的量级，标题/标签/正文的字面重合
  * 已经够用，而且结果可解释——用户能看懂"为什么是这几条"。
  * 上限 6 条：再多会挤占正文该占的上下文，模型也开始硬塞。 */
-export function recallMaterials(userId, personaId, text, limit = 6) {
+export async function recallMaterials(userId, personaId, text, limit = 6) {
   if (!personaId) return [];
-  const all = Materials.list(userId, personaId);
+  const all = await Materials.list(userId, personaId);
   if (!all.length) return [];
 
   // 中文没有空格分词，按 2 字滑窗取词——够粗但对"AI组织变革"这类词组够用
@@ -44,10 +44,10 @@ export function recallMaterials(userId, personaId, text, limit = 6) {
 }
 
 export async function handleMaterialList(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const personaId = params.id ? Number(params.id) : null;
-  if (personaId && !Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
-  json(res, 200, { materials: Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
+  if (personaId && !await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
+  json(res, 200, { materials: await Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
 }
 
 const cleanMaterial = (b) => ({
@@ -58,27 +58,27 @@ const cleanMaterial = (b) => ({
 });
 
 export async function handleMaterialCreate(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const personaId = Number(params.id);
-  if (!Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
+  if (!await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
   const m = cleanMaterial(body);
   if (!m.title) throw new HttpError(400, '给这条素材起个标题');
   if (!m.body) throw new HttpError(400, '素材内容不能为空——空的素材帮不上写作');
-  json(res, 200, { material: Materials.create(user.id, personaId, m) });
+  json(res, 200, { material: await Materials.create(user.id, personaId, m) });
 }
 
 export async function handleMaterialUpdate(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const m = cleanMaterial(body);
   if (!m.title || !m.body) throw new HttpError(400, '标题和内容都不能为空');
-  const out = Materials.update(Number(params.mid), user.id, m);
+  const out = await Materials.update(Number(params.mid), user.id, m);
   if (!out) throw new HttpError(404, '素材不存在');
   json(res, 200, { material: out });
 }
 
 export async function handleMaterialDelete(req, res, body, params) {
-  const user = requireUser(req);
-  if (!Materials.remove(Number(params.mid), user.id)) throw new HttpError(404, '素材不存在');
+  const user = await requireUser(req);
+  if (!await Materials.remove(Number(params.mid), user.id)) throw new HttpError(404, '素材不存在');
   json(res, 200, { ok: true });
 }
 
@@ -91,20 +91,20 @@ export async function handleMaterialDelete(req, res, body, params) {
  * ================================================================== */
 
 export async function handlePoolList(req, res, body, params, url) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const raw = url?.searchParams.get('persona');
   const personaId = raw ? Number(raw) : null;
-  json(res, 200, { pool: Pool.list(user.id, personaId) });
+  json(res, 200, { pool: await Pool.list(user.id, personaId) });
 }
 
 export async function handlePoolCreate(req, res, body) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const subject = String(body?.subject || '').trim().slice(0, 200);
   if (!subject) throw new HttpError(400, '题材不能为空');
   const personaId = body?.persona_id ? Number(body.persona_id) : null;
-  if (personaId && !Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
+  if (personaId && !await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
   json(res, 200, {
-    item: Pool.create(user.id, personaId, {
+    item: await Pool.create(user.id, personaId, {
       subject,
       note: String(body?.note || '').trim().slice(0, 500),
       source: String(body?.source || '手动').slice(0, 20),
@@ -117,19 +117,19 @@ export async function handlePoolCreate(req, res, body) {
 const cleanDate = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '');
 
 export async function handlePoolUpdate(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const patch = {};
   if (body?.subject !== undefined) patch.subject = String(body.subject).trim().slice(0, 200);
   if (body?.note !== undefined) patch.note = String(body.note).trim().slice(0, 500);
   if (body?.plan_date !== undefined) patch.plan_date = cleanDate(body.plan_date);
   if (body?.status !== undefined) patch.status = ['idea', 'planned', 'done'].includes(body.status) ? body.status : 'idea';
-  const out = Pool.update(Number(params.pid), user.id, patch);
+  const out = await Pool.update(Number(params.pid), user.id, patch);
   if (!out) throw new HttpError(404, '这条不存在');
   json(res, 200, { item: out });
 }
 
 export async function handlePoolDelete(req, res, body, params) {
-  const user = requireUser(req);
-  if (!Pool.remove(Number(params.pid), user.id)) throw new HttpError(404, '这条不存在');
+  const user = await requireUser(req);
+  if (!await Pool.remove(Number(params.pid), user.id)) throw new HttpError(404, '这条不存在');
   json(res, 200, { ok: true });
 }

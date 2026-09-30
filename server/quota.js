@@ -8,6 +8,7 @@
  * 调完拿真实用量扣。预估偏小不会超支太多——最多超一次调用的量。
  */
 
+import { withTx } from './client.js';
 import { Quota } from './db.js';
 import { PLANS, creditsFor, periodOf, planOf } from './plans.js';
 
@@ -25,9 +26,9 @@ export class QuotaError extends Error {
   }
 }
 
-export function snapshot(userId) {
+export async function snapshot(userId) {
   const period = periodOf();
-  const st = Quota.state(userId, period);
+  const st = await Quota.state(userId, period);
   if (!st) return null;
   const plan = planOf(st.plan);
   return {
@@ -45,8 +46,8 @@ export function snapshot(userId) {
 
 /* 调用前：这个功能这个套餐能不能用、额度够不够。
    不够就抛 QuotaError，由路由层转成 402。 */
-export function assertQuota(userId, feature, units) {
-  const s = snapshot(userId);
+export async function assertQuota(userId, feature, units) {
+  const s = await snapshot(userId);
   if (!s) throw new QuotaError('账号状态异常', {});
 
   const need = creditsFor(feature, units ?? GUESS[feature] ?? GUESS.文案) || 0;
@@ -67,27 +68,29 @@ export function assertQuota(userId, feature, units) {
 }
 
 /* 预扣：检查够不够，并立刻先扣掉预估的点数。
-   必须和检查在同一个同步片段里完成——中间不能有 await，否则并发请求会一起通过检查。 */
-export function reserve(userId, feature, units) {
-  const { fromPlan } = assertQuota(userId, feature, units);
-  if (fromPlan > 0) Quota.consume(userId, fromPlan, 0);
-  return { held: fromPlan };
+   检查和扣减锁在同一行用户记录上，并发请求要等前一个提交后才能再判。 */
+export async function reserve(userId, feature, units) {
+  return withTx(async () => {
+    const { fromPlan } = await assertQuota(userId, feature, units);
+    if (fromPlan > 0) await Quota.consume(userId, fromPlan, 0);
+    return { held: fromPlan };
+  });
 }
 
 /* 结算：按真实用量多退少补。actualUnits 为 0（失败）时整笔退回预扣。 */
-export function settle(userId, feature, held, actualUnits) {
+export async function settle(userId, feature, held, actualUnits) {
   const actual = creditsFor(feature, actualUnits) || 0;
   const diff = actual - (held || 0);
-  if (diff > 0) Quota.consume(userId, diff, 0);
-  else if (diff < 0) Quota.refund(userId, -diff);
+  if (diff > 0) await Quota.consume(userId, diff, 0);
+  else if (diff < 0) await Quota.refund(userId, -diff);
   return actual;
 }
 
 /* 调用后：按真实用量扣。预估和实际的差在这里抹平 */
-export function consume(userId, feature, units) {
+export async function consume(userId, feature, units) {
   const credits = creditsFor(feature, units);
   if (!credits) return 0;
-  Quota.consume(userId, credits, 0);
+  await Quota.consume(userId, credits, 0);
   return credits;
 }
 

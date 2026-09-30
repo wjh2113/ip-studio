@@ -315,9 +315,9 @@ export async function runSpeakPipeline(row, userId, buffer) {
       userId, script: row.script, cues: row.cues, transcript, pronunciation: null,
     });
     review = keepChecked(review, row.review);
-    return Speaks.finish(row.id, userId, { transcript, review, status: 'ready', error: '' });
+    return await Speaks.finish(row.id, userId, { transcript, review, status: 'ready', error: '' });
   } catch (err) {
-    return Speaks.finish(row.id, userId, {
+    return await Speaks.finish(row.id, userId, {
       transcript,
       review: null,
       status: 'failed',

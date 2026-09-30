@@ -34,9 +34,9 @@ function normalizeForm(body = {}, persona = null) {
 }
 
 /* 取出当前用户的账号；personaId 为空表示不绑定账号 */
-function resolvePersona(userId, personaId) {
+async function resolvePersona(userId, personaId) {
   if (personaId === undefined || personaId === null || personaId === '') return null;
-  const persona = Personas.byId(Number(personaId), userId);
+  const persona = await Personas.byId(Number(personaId), userId);
   if (!persona) throw new HttpError(404, '账号不存在');
   return persona;
 }
@@ -56,9 +56,9 @@ function normalizeInputs(section, raw) {
 }
 
 /* 栏目必须属于这个账号，否则不认 */
-function resolveSection(userId, personaId, sectionId) {
+async function resolveSection(userId, personaId, sectionId) {
   if (!sectionId) return null;
-  const section = Sections.byId(Number(sectionId), userId);
+  const section = await Sections.byId(Number(sectionId), userId);
   if (!section || section.persona_id !== personaId) throw new HttpError(404, '栏目不存在');
   return {
     id: section.id, name: section.name, purpose: section.purpose,
@@ -67,10 +67,10 @@ function resolveSection(userId, personaId, sectionId) {
 }
 
 /* 用掉的推荐从缓存里划掉，下次不会再出现 */
-function consumeIdea(persona, userId, subject) {
-  const ideas = Personas.ideas(persona.id, userId) || [];
+async function consumeIdea(persona, userId, subject) {
+  const ideas = await Personas.ideas(persona.id, userId) || [];
   const left = ideas.filter((i) => i.subject.trim() !== subject.trim());
-  if (left.length !== ideas.length) Personas.setIdeas(persona.id, userId, left);
+  if (left.length !== ideas.length) await Personas.setIdeas(persona.id, userId, left);
 }
 
 /* 前端传回来的热点原样信任不得，逐字段收一遍 */
@@ -93,47 +93,47 @@ function normalizeHotspot(h) {
 /* ---------------- 第一步：三个话题方向 ---------------- */
 
 export async function handleTopics(req, res, body) {
-  const user = requireUser(req);
-  const persona = resolvePersona(user.id, body?.persona_id);
-  const section = persona ? resolveSection(user.id, persona.id, body?.section_id) : null;
+  const user = await requireUser(req);
+  const persona = await resolvePersona(user.id, body?.persona_id);
+  const section = persona ? await resolveSection(user.id, persona.id, body?.section_id) : null;
   const inputs = normalizeInputs(section, body?.inputs);
   const form = normalizeForm(body, persona);
   // 写法框架：不传或 'none' = 不套框架（和以前一样）；传 key 就把框架快照存进草稿
-  const fw = resolveFramework(user.id, body?.framework);
+  const fw = await resolveFramework(user.id, body?.framework);
   const framework = frameworkSnapshot(fw);
-  const draft = Drafts.create(user.id, form, persona, normalizeHotspot(body?.hotspot), section, inputs, framework);
+  const draft = await Drafts.create(user.id, form, persona, normalizeHotspot(body?.hotspot), section, inputs, framework);
 
   let topics;
   try {
     const ctx = { ...form, hotspot: normalizeHotspot(body?.hotspot), section, inputs, framework };
-    topics = await generateTopics(ctx, persona, [], styleSamples(persona, user.id),
-      { feature: '选题方向', userId: user.id }, perfFor(user.id, persona));
+    topics = await generateTopics(ctx, persona, [], await styleSamples(persona, user.id),
+      { feature: '选题方向', userId: user.id }, await perfFor(user.id, persona));
   } catch (err) {
-    Drafts.remove(draft.id, user.id);   // 失败就别在历史里留一条空记录
+    await Drafts.remove(draft.id, user.id);   // 失败就别在历史里留一条空记录
     throw err;
   }
 
-  if (persona) consumeIdea(persona, user.id, form.subject);
-  if (fw && !fw.builtin) Frameworks.markUsed(fw.id, user.id);
-  Drafts.setTopics(draft.id, user.id, topics, persona);
-  json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
+  if (persona) await consumeIdea(persona, user.id, form.subject);
+  if (fw && !fw.builtin) await Frameworks.markUsed(fw.id, user.id);
+  await Drafts.setTopics(draft.id, user.id, topics, persona);
+  json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
 }
 
 export async function handleRetopics(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   // 换一批 = 重新开始：若账号还在，用它最新的设定；账号已删则沿用创作时的快照
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  const topics = await generateTopics(draft, persona, draft.topics, styleSamples(persona, user.id),
-    { feature: '选题方向·换一批', userId: user.id }, perfFor(user.id, persona));
-  Drafts.setTopics(draft.id, user.id, topics, persona);
-  json(res, 200, { draft: Drafts.byId(draft.id, user.id) });
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const topics = await generateTopics(draft, persona, draft.topics, await styleSamples(persona, user.id),
+    { feature: '选题方向·换一批', userId: user.id }, await perfFor(user.id, persona));
+  await Drafts.setTopics(draft.id, user.id, topics, persona);
+  json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
 }
 
 /* 这个号过往的发布数据，拼进选题提示词；样本不够时是空串，提示词和以前一样 */
-const perfFor = (userId, persona) => performanceBlock(performanceOf(userId, persona?.id ?? null), 'topics');
+const perfFor = async (userId, persona) => performanceBlock(await performanceOf(userId, persona?.id ?? null), 'topics');
 
 async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}, perf = '') {
   const extra = avoid.length
@@ -142,7 +142,7 @@ async function generateTopics(form, persona = null, avoid = [], samples = [], me
 
   // 偶发的格式跑偏重试一次就能好，不必让用户自己点重来
   const topics = await withRetry(async (attempt) => {
-    const v = pickVariant('topics', sys('topics', TOPICS_SYSTEM));
+    const v = await pickVariant('topics', sys('topics', TOPICS_SYSTEM));
     const data = await generateJSON({
       meta: { ...meta, variant: v.name },
       system: v.system,
@@ -182,8 +182,8 @@ async function generateTopics(form, persona = null, avoid = [], samples = [], me
 /* ---------------- 第二步：流式生成完整文案 ---------------- */
 
 export async function handleContent(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const index = Number(body?.index);
@@ -191,10 +191,10 @@ export async function handleContent(req, res, body, params) {
   if (!topic) throw new HttpError(400, '请选择一个话题方向');
 
   // 按题材召回素材库里相关的几条——素材是"唯一可信的事实来源"那条规则的弹药
-  const recalled = recallMaterials(user.id, draft.persona_id,
+  const recalled = await recallMaterials(user.id, draft.persona_id,
     `${draft.subject} ${topic.title} ${topic.angle} ${(topic.outline || []).join(' ')}`);
-  if (recalled.length) Materials.markUsed(recalled.map((m) => m.id), user.id);
-  const contentVariant = pickVariant('content', sys('content', CONTENT_SYSTEM));
+  if (recalled.length) await Materials.markUsed(recalled.map((m) => m.id), user.id);
+  const contentVariant = await pickVariant('content', sys('content', CONTENT_SYSTEM));
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -203,13 +203,13 @@ export async function handleContent(req, res, body, params) {
     'X-Accel-Buffering': 'no',
   });
 
-  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const send = async (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
   // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
 
   send('start', { title: topic.title });
-  Drafts.setContent(draft.id, user.id, {
+  await Drafts.setContent(draft.id, user.id, {
     chosen: index, title: topic.title, content: '', status: 'writing',
   });
 
@@ -217,19 +217,19 @@ export async function handleContent(req, res, body, params) {
     const content = await streamText({
       meta: { feature: '成稿', userId: user.id, variant: contentVariant.name },
       system: contentVariant.system,
-      user: contentUser(draft, topic, draft.persona, styleSamples(draft.persona, user.id), recalled),
+      user: contentUser(draft, topic, draft.persona, await styleSamples(draft.persona, user.id), recalled),
       onDelta: (text) => send('delta', { text }),
       mock: () => mockContent(draft, topic),
       signal: controller.signal,
     });
-    Drafts.setContent(draft.id, user.id, {
+    await Drafts.setContent(draft.id, user.id, {
       chosen: index, title: topic.title, content, status: 'done',
     });
-    Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
-    send('done', { draft: Drafts.byId(draft.id, user.id) });
+    await Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
+    send('done', { draft: await Drafts.byId(draft.id, user.id) });
   } catch (err) {
     // 失败或中途关页面：别让草稿停在 writing + 空正文，退回到选方向这一步（上一版正文在历史里）
-    Drafts.setContent(draft.id, user.id, { chosen: null, title: '', content: '', status: 'topics' });
+    await Drafts.setContent(draft.id, user.id, { chosen: null, title: '', content: '', status: 'topics' });
     if (!controller.signal.aborted) send('error', { message: describe(err) });
   } finally {
     res.end();
@@ -239,30 +239,30 @@ export async function handleContent(req, res, body, params) {
 /* ---------------- 编辑器：手工保存 ---------------- */
 
 export async function handleSaveContent(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const content = String(body?.content ?? '');
   if (content.length > 60000) throw new HttpError(400, '正文过长');
   // snapshot = 手动保存或离开编辑；自动保存不带，历史版本按时间间隔留
-  const saved = Drafts.saveContent(Number(params.id), user.id, content, { snapshot: Boolean(body?.snapshot) });
+  const saved = await Drafts.saveContent(Number(params.id), user.id, content, { snapshot: Boolean(body?.snapshot) });
   if (!saved) throw new HttpError(404, '记录不存在');
   json(res, 200, {
-    draft: Drafts.byId(Number(params.id), user.id),
+    draft: await Drafts.byId(Number(params.id), user.id),
     kept: { cuesDropped: saved.cuesDropped, illusDropped: saved.illusDropped },
   });
 }
 
 /* 正文历史：打开列表时把当前正文补成第一版（已有则不重复），之后每次保存再追加。 */
 export async function handleRevisionList(req, res, _body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  if (draft.content) Revisions.keep(draft.id, user.id, draft.content);
-  json(res, 200, { revisions: Revisions.list(draft.id, user.id) });
+  if (draft.content) await Revisions.keep(draft.id, user.id, draft.content);
+  json(res, 200, { revisions: await Revisions.list(draft.id, user.id) });
 }
 
 export async function handleRevisionGet(req, res, _body, params) {
-  const user = requireUser(req);
-  const revision = Revisions.byId(Number(params.rid), Number(params.id), user.id);
+  const user = await requireUser(req);
+  const revision = await Revisions.byId(Number(params.rid), Number(params.id), user.id);
   if (!revision) throw new HttpError(404, '这一版不存在');
   json(res, 200, { revision });
 }
@@ -270,7 +270,7 @@ export async function handleRevisionGet(req, res, _body, params) {
 /* ---------------- 历史 ---------------- */
 
 export async function handleList(req, res, body, params, url) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   // persona_id 不传 = 全部；'none' = 未绑定账号的；数字 = 该账号下的
   const raw = url?.searchParams.get('persona_id');
   const scope = raw === null || raw === '' ? {}
@@ -278,40 +278,40 @@ export async function handleList(req, res, body, params, url) {
   const archived = url?.searchParams.get('archived') === '1';
 
   json(res, 200, {
-    drafts: Drafts.list(user.id, { ...scope, archived }),
-    counts: Drafts.counts(user.id, scope.personaId),
+    drafts: await Drafts.list(user.id, { ...scope, archived }),
+    counts: await Drafts.counts(user.id, scope.personaId),
   });
 }
 
 /* ---------------- 归档 ---------------- */
 
 export async function handleArchive(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const archived = body?.archived !== false;
-  if (!Drafts.setArchived(Number(params.id), user.id, archived)) throw new HttpError(404, '记录不存在');
-  json(res, 200, { draft: Drafts.byId(Number(params.id), user.id) });
+  if (!await Drafts.setArchived(Number(params.id), user.id, archived)) throw new HttpError(404, '记录不存在');
+  json(res, 200, { draft: await Drafts.byId(Number(params.id), user.id) });
 }
 
 /* 把当前范围内所有「已完成」的一次性收起来 */
 export async function handleArchiveDone(req, res, body) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const raw = body?.persona_id;
   const personaId = raw === undefined || raw === '' || raw === null
     ? undefined
     : (raw === 'none' ? null : Number(raw));
-  const n = Drafts.archiveDone(user.id, personaId);
-  json(res, 200, { archived: n, counts: Drafts.counts(user.id, personaId) });
+  const n = await Drafts.archiveDone(user.id, personaId);
+  json(res, 200, { archived: n, counts: await Drafts.counts(user.id, personaId) });
 }
 
 export async function handleGet(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   json(res, 200, { draft });
 }
 
 export async function handleDelete(req, res, body, params) {
-  const user = requireUser(req);
-  if (!Drafts.remove(Number(params.id), user.id)) throw new HttpError(404, '记录不存在');
+  const user = await requireUser(req);
+  if (!await Drafts.remove(Number(params.id), user.id)) throw new HttpError(404, '记录不存在');
   json(res, 200, { ok: true });
 }

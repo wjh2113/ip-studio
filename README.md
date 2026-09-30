@@ -737,7 +737,7 @@ eval 里人打的分和真实使用有距离。管理后台「内容质量」看
 出图、口播转写与文字总评、语音测评、视频测评要几十秒到几分钟。以前挂在一个请求上，刷新页面、手机锁屏、nginx 超时，结果就丢了，点数却可能已经扣了。现在这几样都进后台任务队列：
 
 - **请求只登记**：接口带 `async: true`（上传录音用 `?async=1`）时立刻回 `202` 和任务，前端每 1.5 秒轮询一次 `/api/jobs`；不带的老调用方式照旧等结果，只是活也在队列里跑，请求断了照样做完。
-- **执行在 Redis + BullMQ**（worker 仍在服务进程里，不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱。任务状态记在 SQLite，服务启动时按「排队中」重新投进 Redis。
+- **执行在 Redis + BullMQ**（worker 仍在服务进程里，不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱。任务状态记在 PostgreSQL，服务启动时按「排队中」重新投进 Redis。
 - **点数**：任务里预扣、做完按实际结算；失败整笔退回。预扣的点数记在 `jobs.held` 上，服务重启时在跑的任务先退回预扣再重新排队，跑满两次还没成就记失败，可以在任务中心重试。
 - **任务中心**：顶栏「任务」按钮，有在跑的会显示数量。列表里能取消排队中的、重试失败的、「去看看」跳到对应的稿子或口播记录。刷新页面后还在跑的任务会接着盯，做完弹提示。
 - 代码在 `server/jobs.js`（队列本身）、`server/routes/jobs.js`（任务中心接口）；任务类型在各业务路由里用 `defineJob` 登记（`publish.js` 的 image，`speak.js` 的 speak / pronounce / appearance）。
@@ -919,8 +919,10 @@ server/
   routes.js       API 处理函数的聚合导出
   routes/         按业务域拆开的处理函数（common / auth / prompts / admin / personas / hotspots /
                   drafts / review / speak / editor / publish / materials / insights / billing）
-  db.js           node:sqlite 数据访问
-  migrations.js   表结构：按编号的迁移（改表只在这里加）
+  db.js           Drizzle 数据访问
+  schema.js       表结构定义（和 migrations 一起改）
+  client.js       PostgreSQL 连接池、事务
+  migrations.js   表结构：按编号的迁移（改表只在这里追加）
   llm.js          模型接入：四种通道、按功能分档、超时、额度预扣与结算、并发上限
   prompts.js      平台规范、调性、各功能 system 提示词与 user 拼装、JSON Schema
   promptrev.js    提示词线上版本；promptdocs.js 说明书内容；abtest.js A/B 与 eval 打分
@@ -1055,7 +1057,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 
 ## 第一版的边界
 
-- 会话存在 SQLite，密码用 scrypt。生产已加 HTTPS Cookie、IP 限流、后台环境变量初始化；注册仍开放但有频控，可用 `REGISTER_CODE` 加邀请码。
+- 会话存在 PostgreSQL，密码用 scrypt。生产已加 HTTPS Cookie、IP 限流、后台环境变量初始化；注册仍开放但有频控，可用 `REGISTER_CODE` 加邀请码。
 - 管理后台能看用量与成本、改支付配置、管理提示词 A/B 变体和 eval；但没有改密码、封号、调额度这类用户管理操作，也不能在后台增删管理员（第一个之后要加人得直接写库）。
 - 用量按调用和 token / 张数记，成本看板按 `pricing.js` 的单价**估算**金额；真实账单以服务商控制台为准。
 - 未做协作、团队空间、定时发布与平台直发。
@@ -1080,18 +1082,18 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 bash scripts/deploy-jdcloud.sh
 ```
 
-会 rsync 代码、`npm install`、写 nginx、pm2 拉起。不覆盖线上 `.env` 和 `data/`。第一次部署会生成 `SECRET_KEY`、管理员密码，并从现有业务复制 LLM 网关 Key。
+会 rsync 代码、`npm install`、写 nginx、pm2 拉起。不覆盖线上 `.env` 和 `data/`。第一次部署会安装 PostgreSQL（还没有 `DATABASE_URL` 时建库 `ip_studio`）、生成 `SECRET_KEY`、管理员密码，并从现有业务复制 LLM 网关 Key。若 `data/app.db` 还在且新库没有用户，会把 SQLite 里的数据导入一次。
 
 DNS：在阿里云给 `ip.aidigitcloud.cn` 加一条 **A** 记录指向 `111.228.6.222`（证书已是 `*.aidigitcloud.cn`）。
 
 ### 备份
 
 部署脚本会装一条 crontab：每天 03:17 跑 [scripts/backup.sh](scripts/backup.sh)，
-用 `VACUUM INTO` 拿数据库的一致性快照（服务不停），再把 `data/images`、`data/speaks` 打包，
+用 `pg_dump` 拿数据库的一致性快照（服务不停），再把 `data/images`、`data/speaks` 打包，
 放在 `/opt/ip-studio-backups/<时间戳>/`，保留 14 天，日志在同目录的 `backup.log`。
 这只是本机备份，**磁盘坏了一样会丢**；要异地，在脚本末尾加一行同步到对象存储。
 
-恢复：停服务 → 把某天的 `app.db` 拷回 `data/app.db`，`tar -xzf images.tar.gz -C data/` → 起服务。
+恢复：停服务 → `pg_restore --clean --if-exists --dbname="$DATABASE_URL" app.dump`，`tar -xzf images.tar.gz -C data/` → 起服务。
 
 ### 上线前的几道闸
 

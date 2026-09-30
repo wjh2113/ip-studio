@@ -5,7 +5,7 @@
 ## 基本
 
 - 注释、界面文案、README 用中文；git 提交信息用英文。
-- 后端运行时依赖：`fastify`、`bullmq`、`@anthropic-ai/sdk`。任务队列要本机 Redis（`REDIS_URL`）。前端是 Vue 3 + Pinia，构建依赖放在 devDependencies（`vue`、`pinia`、`vite`）。再加别的依赖之前先问。
+- 后端运行时依赖：`fastify`、`bullmq`、`drizzle-orm`、`pg`、`@anthropic-ai/sdk`。数据库是 PostgreSQL（`DATABASE_URL`），任务队列要本机 Redis（`REDIS_URL`）。前端是 Vue 3 + Pinia，构建依赖放在 devDependencies（`vue`、`pinia`、`vite`）。再加别的依赖之前先问。
 - 改完跑 `npm test`，不通过不提交。测试用临时数据库和演示模式，不读 `.env`。
 - 不要读取、打印或提交 `.env` 和 `data/`。
 
@@ -13,7 +13,7 @@
 
 - 新接口：`server/index.js` 的 `ROUTES` 加一行，处理函数写在 `server/routes/<业务域>.js` 并 `export`。`server/routes.js` 用 `export *` 聚合，不用改。
 - 共用的小工具放 `server/routes/common.js`；`common.js` 不能 import 其他业务域。
-- 表结构只能通过 `server/migrations.js` 末尾追加编号迁移来改，不要改已有迁移，不要在 `db.js` 里写建表或 `ALTER`。
+- 表结构只能通过 `server/migrations.js` 末尾追加编号迁移来改，并同步 `server/schema.js`。不要改已有迁移，不要在 `db.js` 里写建表或 `ALTER`。
 - 模型调用只走 `llm.js` 的 `generateJSON` / `generateText` / `streamText`，`meta` 里带 `feature` 和 `userId`（计费和统计靠它们）。
 - 新增一个模型功能时同时：
   1. 在 `llm.js` 的 `FEATURE_TIER` 里定档（quality / fast）；

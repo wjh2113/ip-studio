@@ -23,21 +23,29 @@ export const FIELDS = [
 ];
 
 const BY_KEY = Object.fromEntries(FIELDS.map((f) => [f.key, f]));
+let cache = new Map();
 
-/* 取一个配置。env 有就用 env，否则读库（secret 的解密）。 */
+async function loadSettings() {
+  cache = new Map((await Settings.all()).map((r) => [r.k, r]));
+}
+
+export const warmSettings = loadSettings;
+
+/* 取一个配置。env 有就用 env，否则读启动时和每次保存后的缓存（secret 的解密）。 */
 export function conf(key) {
   const fromEnv = process.env[key];
   if (fromEnv) return fromEnv;
-  const row = Settings.get(key);
+  const row = cache.get(key);
   if (!row) return '';
   return row.secret ? decrypt(row.v) : row.v;
 }
 
 /* 给后台看的状态。**不回原文**，只回来源和预览。 */
-export function status() {
+export async function status() {
+  await loadSettings();
   return FIELDS.map((f) => {
     const env = Boolean(process.env[f.key]);
-    const row = env ? null : Settings.get(f.key);
+    const row = env ? null : cache.get(f.key);
     const val = env ? process.env[f.key] : (row ? (row.secret ? decrypt(row.v) : row.v) : '');
     return {
       ...f,
@@ -51,11 +59,12 @@ export function status() {
   });
 }
 
-export function save(key, value, by) {
+export async function save(key, value, by) {
   const f = BY_KEY[key];
   if (!f) throw new Error('不认识这个配置项');
   if (process.env[key]) throw new Error(`${f.label} 由环境变量提供，请在服务器上改`);
   const v = String(value ?? '');
-  if (!v) { Settings.remove(key); return; }
-  Settings.set(key, f.secret ? encrypt(v) : v, f.secret, by);
+  if (!v) { await Settings.remove(key); cache.delete(key); return; }
+  await Settings.set(key, f.secret ? encrypt(v) : v, f.secret, by);
+  await loadSettings();
 }

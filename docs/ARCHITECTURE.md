@@ -25,7 +25,7 @@ flowchart LR
     D --> M[migrations.js<br/>编号迁移]
   end
   C -- fetch /api --> I
-  D --> DB[(data/app.db<br/>SQLite)]
+  D --> DB[(PostgreSQL<br/>Drizzle)]
   S --> FS[(data/images<br/>data/speaks)]
   L --> GW[LLM 网关 / Claude / OpenAI 兼容]
   S --> EXT[出图 · 发音与出镜评测 · 榜单 · 微信/支付宝]
@@ -37,8 +37,8 @@ flowchart LR
 |---|---|---|
 | 前端 | Vue 3 组件（`web/src/components`）+ Pinia + `public/js` | Vite 构建进 `public/`。交互仍在 `public/js`，和组件读写同一份 Pinia state。样式是 `public/styles.css` |
 | 后端 | Node.js ≥ 22.5（ESM），Fastify | 路由仍是原来的处理函数；请求在读 body 前交给它们，上传和流式输出不经过框架解析 |
-| 队列 | Redis + BullMQ | 任务状态在 SQLite。`REDIS_URL` 默认 `redis://127.0.0.1:6379` |
-| 数据库 | SQLite，Node 内置 `node:sqlite`，WAL 模式 | 表结构在 `server/migrations.js` |
+| 队列 | Redis + BullMQ | 任务状态在 PostgreSQL。`REDIS_URL` 默认 `redis://127.0.0.1:6379` |
+| 数据库 | PostgreSQL + Drizzle | `DATABASE_URL`，默认 `postgres://127.0.0.1:5432/ip_studio`。表在 `server/schema.js`，变更只在 `server/migrations.js` 末尾追加 |
 | 部署 | nginx 反代 + pm2 + rsync | `scripts/deploy-jdcloud.sh`，每日备份 `scripts/backup.sh` |
 | 测试 | Node 内置 `node:test` | `npm test`：先跑 `scripts/check.js` 再跑 `tests/*.test.js` |
 
@@ -114,7 +114,7 @@ flowchart LR
 | 套餐、点数、单价 | `server/plans.js`、`server/pricing.js` |
 | 新接口 | `server/index.js` 的 `ROUTES` 加一行 + 对应 `server/routes/<域>.js` 里 export 处理函数 |
 | 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `jobs.js` 的 `startJob` / `waitJob` |
-| 表结构 | `server/migrations.js` 末尾加一个编号迁移 |
+| 表结构 | `server/schema.js` 改字段，并在 `server/migrations.js` 末尾加一个编号迁移 |
 | 页面结构 / 样式 | `web/src/App.vue` / `public/styles.css`（开头是设计令牌）。改完 `npm run build:web` |
 | 页面行为 | `public/js/<模块>.js` |
 
@@ -122,6 +122,8 @@ flowchart LR
 
 ```bash
 npm install
+# 本机要有 PostgreSQL，并建好库：createdb ip_studio
+# 不设 DATABASE_URL 时默认连 postgres://127.0.0.1:5432/ip_studio
 LLM_PROVIDER=mock IMAGE_PROVIDER=mock npm run dev   # 演示模式，不花钱，改完自动重启
-npm test                                            # 检查 + 单测
+npm test                                            # 检查 + 单测（用临时 schema，不读 .env）
 ```

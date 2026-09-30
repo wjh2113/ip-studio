@@ -13,14 +13,14 @@ import { JOB_WAIT_MS, json, requireUser, sys, wantsAsync, withRetry } from './co
 /* ---------------- 口播提示 ---------------- */
 
 export async function handleCues(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const text = String(draft.content || '').trim();
   if (!text) throw new HttpError(400, '还没有正文');
   if (text.length > 12000) throw new HttpError(400, '正文过长，请分段生成');
 
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
 
   const data = await withRetry(async () => {
     const out = await generateJSON({
@@ -67,7 +67,7 @@ export async function handleCues(req, res, body, params) {
     dropped: data.cues.length - cues.length,
     at: new Date().toISOString(),
   };
-  Drafts.setCues(draft.id, user.id, payload);
+  await Drafts.setCues(draft.id, user.id, payload);
   json(res, 200, { cues: payload });
 }
 
@@ -92,29 +92,29 @@ function presentSpeak(row, userId, detail = false) {
 }
 
 export async function handleSpeakList(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const draftId = params?.id ? Number(params.id) : 0;
-  const rows = draftId ? Speaks.listByDraft(draftId, user.id) : Speaks.list(user.id);
+  const rows = draftId ? await Speaks.listByDraft(draftId, user.id) : await Speaks.list(user.id);
   json(res, 200, { speaks: rows.map((r) => presentSpeak(r, user.id, Boolean(draftId))) });
 }
 
 export async function handleSpeakGet(req, res, body, params) {
-  const user = requireUser(req);
-  const row = Speaks.byId(Number(params.sid), user.id);
+  const user = await requireUser(req);
+  const row = await Speaks.byId(Number(params.sid), user.id);
   if (!row) throw new HttpError(404, '这条口播记录不存在');
   json(res, 200, { speak: presentSpeak(row, user.id, true) });
 }
 
 /* 上传一遍录音：文件当场落盘、建记录，转写和文字总评进任务队列 */
 export async function handleSpeakCreate(req, res, file, params, url) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   if (!draft.cues?.cues?.length) throw new HttpError(400, '先生成口播提示，再上传录音');
   const text = String(draft.content || '').trim();
   if (!text) throw new HttpError(400, '还没有正文');
 
-  const row = Speaks.create({
+  const row = await Speaks.create({
     userId: user.id,
     draftId: draft.id,
     title: draft.title || draft.subject || '未命名',
@@ -124,19 +124,19 @@ export async function handleSpeakCreate(req, res, file, params, url) {
     bytes: file.buffer.length,
   });
   const filename = await saveTakeFile(user.id, row.id, file.ext, file.buffer);
-  Speaks.setFile(row.id, user.id, filename, file.buffer.length);
+  await Speaks.setFile(row.id, user.id, filename, file.buffer.length);
   await replySpeakJob(req, res, user.id, enqueueTake(user.id, row.id, row.title), row.id, url);
 }
 
 export async function handleSpeakRetry(req, res, body, params, url) {
-  const user = requireUser(req);
-  const row = Speaks.byId(Number(params.sid), user.id);
+  const user = await requireUser(req);
+  const row = await Speaks.byId(Number(params.sid), user.id);
   if (!row) throw new HttpError(404, '这条口播记录不存在');
   if (!row.file) throw new HttpError(400, '这条记录没有录音文件');
   await replySpeakJob(req, res, user.id, enqueueTake(user.id, row.id, row.title), row.id, url, body);
 }
 
-const enqueueTake = (userId, speakId, title) => enqueue(userId, 'speak', {
+const enqueueTake = async (userId, speakId, title) => await enqueue(userId, 'speak', {
   ref: `speak:${speakId}`,
   label: `口播转写与总评 · ${title || '未命名'}`,
   payload: { speakId },
@@ -145,12 +145,12 @@ const enqueueTake = (userId, speakId, title) => enqueue(userId, 'speak', {
 /* 口播的几种任务回的都是这条口播记录：异步时带上任务，同步时等做完（失败也照常回记录，和以前一样） */
 async function replySpeakJob(req, res, userId, job, speakId, url, body = null) {
   if (wantsAsync(body, url)) {
-    json(res, 202, { job: presentJob(job), speak: presentSpeak(Speaks.byId(speakId, userId), userId, true) });
+    json(res, 202, { job: presentJob(job), speak: presentSpeak(await Speaks.byId(speakId, userId), userId, true) });
     return;
   }
   const done = await waitFor(job.id, JOB_WAIT_MS);
   if (done?.status === 'failed' && done.kind !== 'speak') throw new HttpError(done.result?.code || 502, done.error);
-  json(res, 200, { speak: presentSpeak(Speaks.byId(speakId, userId), userId, true) });
+  json(res, 200, { speak: presentSpeak(await Speaks.byId(speakId, userId), userId, true) });
 }
 
 const takeBuffer = (userId, row) => readFile(resolvePath(DATA_DIR, 'speaks', String(userId), row.file));
@@ -158,13 +158,13 @@ const takeBuffer = (userId, row) => readFile(resolvePath(DATA_DIR, 'speaks', Str
 /* 转写 + 文字总评。失败时记录标成 failed（录音留着，可重试），任务也记失败 */
 defineJob('speak', {
   label: '口播转写与总评',
-  onEnqueue: ({ userId, payload }) => Speaks.setStatus(payload.speakId, userId, 'running'),
-  onFail: ({ userId, payload }, message) => {
-    const row = Speaks.byId(payload.speakId, userId);
-    if (row?.status === 'running') Speaks.setStatus(row.id, userId, 'failed', message);
+  onEnqueue: async ({ userId, payload }) => await Speaks.setStatus(payload.speakId, userId, 'running'),
+  onFail: async ({ userId, payload }, message) => {
+    const row = await Speaks.byId(payload.speakId, userId);
+    if (row?.status === 'running') await Speaks.setStatus(row.id, userId, 'failed', message);
   },
   async run({ userId, payload }) {
-    const row = Speaks.byId(payload.speakId, userId);
+    const row = await Speaks.byId(payload.speakId, userId);
     if (!row) throw new HttpError(404, '这条口播记录已经删了');
     if (!row.file) throw new HttpError(400, '这条记录没有录音文件');
     const done = await runSpeakPipeline(row, userId, await takeBuffer(userId, row));
@@ -188,10 +188,10 @@ function usageUnits(usage) {
 
 /* 语音测评：上传时不做，点这个才走网关发音评测，并写回「发音」分。 */
 export async function handleSpeakPronounce(req, res, body, params, url) {
-  const user = requireUser(req);
-  const row = readyTake(Speaks.byId(Number(params.sid), user.id));
-  assertQuota(user.id, '文案');
-  const job = enqueue(user.id, 'pronounce', {
+  const user = await requireUser(req);
+  const row = readyTake(await Speaks.byId(Number(params.sid), user.id));
+  await assertQuota(user.id, '文案');
+  const job = await enqueue(user.id, 'pronounce', {
     ref: `pronounce:${row.id}`,
     label: `语音测评 · ${row.title || '未命名'}`,
     payload: { speakId: row.id },
@@ -202,8 +202,8 @@ export async function handleSpeakPronounce(req, res, body, params, url) {
 defineJob('pronounce', {
   label: '语音测评',
   async run({ userId, payload }, ctx) {
-    const row = readyTake(Speaks.byId(payload.speakId, userId));
-    ctx.hold('文案');
+    const row = readyTake(await Speaks.byId(payload.speakId, userId));
+    await ctx.hold('文案');
     const pronunciation = await pronounceAudio(await takeBuffer(userId, row), {
       filename: row.file,
       mime: row.mime,
@@ -211,25 +211,25 @@ defineJob('pronounce', {
       script: row.script,
     });
     if (!pronunciation) throw new HttpError(400, '没有稿子，评不了发音');
-    ctx.settle(usageUnits(pronunciation.usage));
+    await ctx.settle(usageUnits(pronunciation.usage));
     // 评测期间文字总评可能被重跑过：以库里最新的为准再写分
-    const now = readyTake(Speaks.byId(row.id, userId));
+    const now = readyTake(await Speaks.byId(row.id, userId));
     const review = {
       ...applyDim(now.review, '发音', pronunciation.score, pronunciation.note || '按网关发音评测'),
       checks: { ...(now.review.checks || {}), voice: true },
     };
-    Speaks.finish(row.id, userId, { transcript: now.transcript, review, status: 'ready', error: '' });
+    await Speaks.finish(row.id, userId, { transcript: now.transcript, review, status: 'ready', error: '' });
     return { speakId: row.id, score: pronunciation.score };
   },
 });
 
 /* 视频测评：整段视频交给网关 appearance，由网关抽帧。 */
 export async function handleSpeakAppearance(req, res, body, params, url) {
-  const user = requireUser(req);
-  const row = readyTake(Speaks.byId(Number(params.sid), user.id));
+  const user = await requireUser(req);
+  const row = readyTake(await Speaks.byId(Number(params.sid), user.id));
   if (isAudioOnly(row.mime, row.file)) throw new HttpError(400, '这一遍只有声音、没有画面，做不了出镜评测');
-  assertQuota(user.id, '文案');
-  const job = enqueue(user.id, 'appearance', {
+  await assertQuota(user.id, '文案');
+  const job = await enqueue(user.id, 'appearance', {
     ref: `appearance:${row.id}`,
     label: `视频测评 · ${row.title || '未命名'}`,
     payload: { speakId: row.id },
@@ -240,8 +240,8 @@ export async function handleSpeakAppearance(req, res, body, params, url) {
 defineJob('appearance', {
   label: '视频测评',
   async run({ userId, payload }, ctx) {
-    const row = readyTake(Speaks.byId(payload.speakId, userId));
-    ctx.hold('文案');
+    const row = readyTake(await Speaks.byId(payload.speakId, userId));
+    await ctx.hold('文案');
     const look = await scoreAppearance({
       userId,
       cues: row.cues,
@@ -250,20 +250,20 @@ defineJob('appearance', {
       mime: row.mime,
       script: row.script,
     });
-    ctx.settle(usageUnits(look?.usage));
-    const now = readyTake(Speaks.byId(row.id, userId));
+    await ctx.settle(usageUnits(look?.usage));
+    const now = readyTake(await Speaks.byId(row.id, userId));
     const review = {
       ...applyDim(now.review, '出镜', look.score, look.note),
       checks: { ...(now.review.checks || {}), video: true },
     };
-    Speaks.finish(row.id, userId, { transcript: now.transcript, review, status: 'ready', error: '' });
+    await Speaks.finish(row.id, userId, { transcript: now.transcript, review, status: 'ready', error: '' });
     return { speakId: row.id, score: look.score };
   },
 });
 
 export async function handleSpeakDelete(req, res, body, params) {
-  const user = requireUser(req);
-  const row = Speaks.remove(Number(params.sid), user.id);
+  const user = await requireUser(req);
+  const row = await Speaks.remove(Number(params.sid), user.id);
   if (!row) throw new HttpError(404, '这条口播记录不存在');
   await removeTakeFile(user.id, row.file);
   json(res, 200, { ok: true });

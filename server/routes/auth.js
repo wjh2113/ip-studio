@@ -18,8 +18,8 @@ export async function handleRegister(req, res, body) {
   const { username, password } = body || {};
   const bad = validateCredentials(username, password);
   if (bad) throw new HttpError(400, bad);
-  const user = register(username.trim(), password);
-  json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(startSession(user)) });
+  const user = await register(username.trim(), password);
+  json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(await startSession(user)) });
 }
 
 export async function handleLogin(req, res, body) {
@@ -27,15 +27,15 @@ export async function handleLogin(req, res, body) {
   if (accessGateOn()) {
     if (!password) throw new HttpError(400, '请输入访问密码');
     if (!checkAccessPassword(password)) throw new HttpError(401, '密码错误');
-    const user = Users.byName(accessUsername());
+    const user = await Users.byName(accessUsername());
     if (!user) throw new HttpError(500, '访问账号未初始化');
-    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(startSession(user)) });
+    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(await startSession(user)) });
     return;
   }
   const { username } = body || {};
   if (!username || !password) throw new HttpError(400, '请输入用户名和密码');
-  const user = login(String(username).trim(), password);
-  json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(startSession(user)) });
+  const user = await login(String(username).trim(), password);
+  json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(await startSession(user)) });
 }
 
 export async function handleLogout(req, res) {
@@ -43,7 +43,7 @@ export async function handleLogout(req, res) {
 }
 
 export async function handleMe(req, res) {
-  const user = currentUser(req);
+  const user = await currentUser(req);
   json(res, 200, { user: user ? publicUser(user) : null });
 }
 

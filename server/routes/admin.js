@@ -17,8 +17,8 @@ import { json, requireAdmin, sys } from './common.js';
 /* ---- 管理员登录 ---- */
 
 export async function handleAdminSession(req, res) {
-  const admin = currentAdmin(req);
-  const needs = adminSetupNeeded();
+  const admin = await currentAdmin(req);
+  const needs = await adminSetupNeeded();
   json(res, 200, {
     admin: admin ? publicAdmin(admin) : null,
     needsSetup: needs && setupHttpEnabled(),
@@ -29,7 +29,7 @@ export async function handleAdminSession(req, res) {
 
 /* 首次设置：只在一个管理员都没有的时候开放 */
 export async function handleAdminSetup(req, res, body) {
-  if (!adminSetupNeeded()) throw new HttpError(403, '管理员已存在，无法再次初始化');
+  if (!await adminSetupNeeded()) throw new HttpError(403, '管理员已存在，无法再次初始化');
   if (!setupHttpEnabled()) {
     throw new HttpError(403, '公网已关闭首次设置，请用服务器环境变量初始化管理员');
   }
@@ -43,9 +43,9 @@ export async function handleAdminSetup(req, res, body) {
   const bad = validateCredentials(username, password);
   if (bad) throw new HttpError(400, bad);
 
-  const admin = createAdmin(String(username).trim(), String(password));
+  const admin = await createAdmin(String(username).trim(), String(password));
   json(res, 200, { admin: publicAdmin(admin) },
-    { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
+    { 'Set-Cookie': adminCookie(await startAdminSession(admin)) });
 }
 
 export async function handleAdminLogin(req, res, body) {
@@ -55,16 +55,16 @@ export async function handleAdminLogin(req, res, body) {
   if (accessGateOn() && !String(body?.username || '').trim()) {
     if (!password) throw new HttpError(400, '请输入管理员密码');
     const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
-    const admin = adminLogin(name, password);
+    const admin = await adminLogin(name, password);
     json(res, 200, { admin: publicAdmin(admin) },
-      { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
+      { 'Set-Cookie': adminCookie(await startAdminSession(admin)) });
     return;
   }
   const { username } = body || {};
   if (!username || !password) throw new HttpError(400, '请输入用户名和密码');
-  const admin = adminLogin(String(username).trim(), password);
+  const admin = await adminLogin(String(username).trim(), password);
   json(res, 200, { admin: publicAdmin(admin) },
-    { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
+    { 'Set-Cookie': adminCookie(await startAdminSession(admin)) });
 }
 
 export async function handleAdminLogout(req, res) {
@@ -72,23 +72,23 @@ export async function handleAdminLogout(req, res) {
 }
 
 export async function handleAdminOverview(req, res, body, params, url) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const days = Math.min(90, Math.max(1, Number(url?.searchParams.get('days')) || 7));
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
-  const usageByUser = new Map(Usage.byUser(since).map((u) => [u.user_id, u]));
-  const users = Users.overview().map((u) => ({
+  const usageByUser = new Map((await Usage.byUser(since)).map((u) => [u.user_id, u]));
+  const users = (await Users.overview()).map((u) => ({
     ...u,
     calls: usageByUser.get(u.id)?.calls || 0,
     tokens: usageByUser.get(u.id)?.tokens || 0,
     last_call_at: usageByUser.get(u.id)?.last_at || null,
   }));
 
-  const totals = Usage.totals(since);
+  const totals = await Usage.totals(since);
   json(res, 200, {
     days,
     llm: providerInfo(),
-    admins: Admins.list(),
+    admins: await Admins.list(),
     users,
     totals: {
       calls: totals.calls || 0,
@@ -97,23 +97,23 @@ export async function handleAdminOverview(req, res, body, params, url) {
       outputTokens: totals.output_tokens || 0,
       avgMs: Math.round(totals.avg_ms || 0),
     },
-    byFeature: Usage.byFeature(since),
-    byDay: Usage.byDay(since),
-    errors: Usage.recentErrors(15),
-    cost: costReport(since),
-    quality: qualityReport(since),
+    byFeature: await Usage.byFeature(since),
+    byDay: await Usage.byDay(since),
+    errors: await Usage.recentErrors(15),
+    cost: await costReport(since),
+    quality: await qualityReport(since),
   });
 }
 
 /* 线上质量指标：作者把初稿改掉了多少、检查提的建议改了多少。按成稿提示词的 A/B 变体分开看——
    变体 B 的稿子作者改得少、建议照着改得多，比 eval 里人打的分更接近真实效果。 */
-export function qualityReport(since) {
+export async function qualityReport(since) {
   const groups = new Map();
   const bucket = (key) => {
     if (!groups.has(key)) groups.set(key, { variant: key, drafts: 0, ratios: [], issues: 0, changed: 0, applied: 0 });
     return groups.get(key);
   };
-  for (const r of Drafts.qualityRows(since)) {
+  for (const r of await Drafts.qualityRows(since)) {
     let review = null;
     try { review = JSON.parse(r.review_json); } catch { /* 脏数据当没检查过 */ }
     const a = adoption(review?.issues, r.content);
@@ -146,8 +146,8 @@ export function qualityReport(since) {
 
 /* 成本估算。**只是估算**——单价会调、有阶梯、有免费额度，
    所以每一行都标出用了哪个单价、是不是精确匹配到型号，算不出来的如实写"未计价"。 */
-function costReport(since) {
-  const rows = Usage.byModel(since).map((r) => {
+async function costReport(since) {
+  const rows = (await Usage.byModel(since)).map((r) => {
     const c = costOf(r);
     const p = priceOf(r.model);
     return {
@@ -206,7 +206,7 @@ const PROMPT_CATALOG = () => [
 ];
 
 export async function handleAdminPrompts(req, res) {
-  requireAdmin(req);
+  await requireAdmin(req);
   json(res, 200, {
     prompts: PROMPT_CATALOG(),
     note: '这些是各功能发给模型的 system 提示词。账号设定、个人人设、语气档案、栏目、平台规范等是逐次拼进 user 消息的，不在这里。',
@@ -232,11 +232,11 @@ export const AB_FEATURES = [
 ];
 
 export async function handlePromptVariantList(req, res, body, params, url) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const feature = url?.searchParams.get('feature') || '';
   json(res, 200, {
     features: AB_FEATURES.map((f) => ({ key: f.key, label: f.label, builtin: f.builtin() })),
-    variants: Variants.list(feature),
+    variants: await Variants.list(feature),
   });
 }
 
@@ -250,41 +250,41 @@ const cleanVariant = (b) => ({
 });
 
 export async function handlePromptVariantSave(req, res, body, params) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const v = cleanVariant(body);
   if (!v.feature) throw new HttpError(400, '不认识这个功能');
   if (!v.name) throw new HttpError(400, '给变体起个名字');
   if (v.system.length < 40) throw new HttpError(400, '提示词太短了，确认粘完整了吗');
   json(res, 200, {
-    variant: params.vid ? Variants.update(Number(params.vid), v) : Variants.create(v),
+    variant: params.vid ? await Variants.update(Number(params.vid), v) : await Variants.create(v),
   });
 }
 
 export async function handlePromptVariantDelete(req, res, body, params) {
-  requireAdmin(req);
-  if (!Variants.remove(Number(params.vid))) throw new HttpError(404, '变体不存在');
+  await requireAdmin(req);
+  if (!await Variants.remove(Number(params.vid))) throw new HttpError(404, '变体不存在');
   json(res, 200, { ok: true });
 }
 
 /* ---------------- eval 用例 ---------------- */
 
 export async function handleEvalCases(req, res, body, params, url) {
-  requireAdmin(req);
-  json(res, 200, { cases: Evals.cases(url?.searchParams.get('feature') || '') });
+  await requireAdmin(req);
+  json(res, 200, { cases: await Evals.cases(url?.searchParams.get('feature') || '') });
 }
 
 export async function handleEvalCaseAdd(req, res, body) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const feature = AB_FEATURES.some((f) => f.key === body?.feature) ? body.feature : '';
   if (!feature) throw new HttpError(400, '不认识这个功能');
   const title = String(body?.title || '').trim().slice(0, 80);
   if (!title) throw new HttpError(400, '给用例起个名字');
-  json(res, 200, { case: Evals.addCase({ feature, title, input: body?.input || {} }) });
+  json(res, 200, { case: await Evals.addCase({ feature, title, input: body?.input || {} }) });
 }
 
 export async function handleEvalCaseDelete(req, res, body, params) {
-  requireAdmin(req);
-  if (!Evals.removeCase(Number(params.cid))) throw new HttpError(404, '用例不存在');
+  await requireAdmin(req);
+  if (!await Evals.removeCase(Number(params.cid))) throw new HttpError(404, '用例不存在');
   json(res, 200, { ok: true });
 }
 
@@ -293,11 +293,11 @@ export async function handleEvalCaseDelete(req, res, body, params) {
 /* 每个用例 × 每个变体（含内置）跑一次。
    串行跑——并发一上来，模型侧限流和本地日志都变难看，而 eval 本来就不赶时间。 */
 export async function handleEvalRun(req, res, body) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const feature = AB_FEATURES.find((f) => f.key === body?.feature);
   if (!feature) throw new HttpError(400, '不认识这个功能');
 
-  const cases = Evals.cases(feature.key);
+  const cases = await Evals.cases(feature.key);
   if (!cases.length) throw new HttpError(400, '这个功能还没有用例');
 
   const pool = [
@@ -319,13 +319,13 @@ export async function handleEvalRun(req, res, body) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const { output, scores } = await runOne(feature, v, input);
-        Evals.addRun({
+        await Evals.addRun({
           batch, caseId: c.id, variantId: v.id, variantName: v.name,
           output, scores, ms: Date.now() - started,
         });
         done += 1;
       } catch (err) {
-        Evals.addRun({
+        await Evals.addRun({
           batch, caseId: c.id, variantId: v.id, variantName: v.name,
           ms: Date.now() - started, error: String(err?.message || err).slice(0, 300),
         });
@@ -377,16 +377,16 @@ async function runOne(feature, variant, input) {
 /* ---------------- 结果与盲测 ---------------- */
 
 export async function handleEvalBatches(req, res) {
-  requireAdmin(req);
-  json(res, 200, { batches: Evals.batches() });
+  await requireAdmin(req);
+  json(res, 200, { batches: await Evals.batches() });
 }
 
 export async function handleEvalResult(req, res, body, params) {
-  requireAdmin(req);
-  const runs = Evals.runs(String(params.batch));
+  await requireAdmin(req);
+  const runs = await Evals.runs(String(params.batch));
   if (!runs.length) throw new HttpError(404, '没有这一批');
 
-  const votes = Evals.votes(String(params.batch));
+  const votes = await Evals.votes(String(params.batch));
   const tally = new Map();
   for (const v of votes) {
     if (!v.winner) continue;
@@ -405,8 +405,8 @@ export async function handleEvalResult(req, res, body, params) {
 }
 
 export async function handleEvalVote(req, res, body, params) {
-  requireAdmin(req);
-  Evals.vote({
+  await requireAdmin(req);
+  await Evals.vote({
     batch: String(params.batch),
     caseId: Number(body?.case_id) || 0,
     leftId: Number(body?.left) || 0,
@@ -426,7 +426,7 @@ export async function handleEvalVote(req, res, body, params) {
  * ================================================================== */
 
 export async function handleSettingsList(req, res) {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   json(res, 200, {
     fields: settingsStatus(),
     encrypted: hasKey(),
@@ -437,7 +437,7 @@ export async function handleSettingsList(req, res) {
 }
 
 export async function handleSettingsSave(req, res, body) {
-  const admin = requireAdmin(req);
+  const admin = await requireAdmin(req);
   const key = String(body?.key || '');
   try {
     saveSetting(key, body?.value, admin.username);
@@ -449,7 +449,7 @@ export async function handleSettingsSave(req, res, body) {
 
 /* 连通性自检。填完不试一下，第一次真实支付才发现配错，那时候是用户在等着付钱。 */
 export async function handleSettingsCheck(req, res) {
-  requireAdmin(req);
+  await requireAdmin(req);
   const info = payInfo();
   const checks = [];
 

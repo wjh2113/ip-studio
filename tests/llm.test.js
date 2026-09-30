@@ -48,14 +48,14 @@ test('流式调用按时超时', async () => {
 
 test('流式中途断开：按已收到的字数扣点', async () => {
   mode = 'partial';
-  const u = Users.create('stream-user', 'x:y');
+  const u = await Users.create('stream-user', 'x:y');
   let got = '';
   await assert.rejects(llm.streamText({
     system: 's'.repeat(1000), user: 'u', onDelta: (t) => { got += t; }, mock: () => '',
     meta: { feature: '成稿', userId: u.id },
   }));
   assert.equal(got.length, 200);
-  assert.ok(snapshot(u.id).used > 0, '中断的调用也要扣点');
+  assert.ok((await snapshot(u.id)).used > 0, '中断的调用也要扣点');
 });
 
 test('按功能分档：结构化的选题走 fast 模型，语气档案走主模型', async () => {
@@ -70,18 +70,21 @@ test('按功能分档：结构化的选题走 fast 模型，语气档案走主�
 
 test('额度预扣后按实际结算：2000 token = 1 点', async () => {
   mode = 'ok';
-  const u = Users.create('settle-user', 'x:y');
+  const u = await Users.create('settle-user', 'x:y');
   await llm.generateJSON({ system: 's', user: 'u', schema: {}, mock: () => ({}), meta: { feature: '选题方向', userId: u.id } });
-  assert.equal(snapshot(u.id).used, 1);
+  assert.equal((await snapshot(u.id)).used, 1);
 });
 
 test('同一用户同时最多 3 个生成；失败的调用退回预扣', async () => {
   mode = 'hang';
-  const u = Users.create('busy-user', 'x:y');
-  const call = () => llm.generateText({ system: 's', user: 'u', mock: () => '', meta: { feature: '语气档案', userId: u.id } });
+  const u = await Users.create('busy-user', 'x:y');
+  const call = async () => llm.generateText({ system: 's', user: 'u', mock: () => '', meta: { feature: '语气档案', userId: u.id } });
   const running = [call(), call(), call()];
-  assert.equal(snapshot(u.id).used, 15);                       // 3 × 预扣 5 点
+  for (let i = 0; i < 50 && (await snapshot(u.id)).used !== 15; i += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal((await snapshot(u.id)).used, 15);                       // 3 × 预扣 5 点
   await assert.rejects(call(), (e) => e.status === 429);
   await Promise.allSettled(running);                            // 都超时失败
-  assert.equal(snapshot(u.id).used, 0);                         // 全部退回
+  assert.equal((await snapshot(u.id)).used, 0);                         // 全部退回
 });

@@ -10,8 +10,8 @@ import { copyOverlap } from '../frameworks.js';
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */
 
 export async function handleReview(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
   const text = String(body?.content ?? draft.content ?? '').trim();
@@ -19,11 +19,11 @@ export async function handleReview(req, res, body, params) {
   if (text.length > 20000) throw new HttpError(400, '正文过长，请分段检查');
 
   // 检查要看到账号设定、平台规范、语气档案和借势的热点，才谈得上"符合度"
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  const review = await reviewText(draft, text, persona, styleSamples(persona, user.id),
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const review = await reviewText(draft, text, persona, await styleSamples(persona, user.id),
     { feature: '成稿检查', userId: user.id });
   // 记下这次的替换建议，线上指标看作者后来改没改
-  Drafts.setReview(draft.id, user.id, review.issues);
+  await Drafts.setReview(draft.id, user.id, review.issues);
   json(res, 200, { review });
 }
 
@@ -46,9 +46,9 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
 
 /* 防洗稿：用的是从范文拆出来的框架时，查成稿和范文连续 8 字以上相同的片段。
    确定性检查，不经过模型；3 处以上或累计 30 字以上报高，其余报中。 */
-export function withCopyCheck(review, draft, text, userId) {
+export async function withCopyCheck(review, draft, text, userId) {
   const m = String(draft?.framework?.key || '').match(/^u:(\d+)$/);
-  const source = m && userId ? Frameworks.sourceOf(Number(m[1]), userId) : '';
+  const source = m && userId ? await Frameworks.sourceOf(Number(m[1]), userId) : '';
   if (!source) return review;
   const hits = copyOverlap(text, source);
   if (!hits.length) return review;

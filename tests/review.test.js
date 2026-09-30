@@ -5,7 +5,7 @@ import { cleanReview } from '../server/routes.js';
 
 const text = '今天我们聊聊备菜。备菜可以节省时间。这是最好的方法。';
 
-test('issues：quote 对不上原文的丢掉并计数，重复的只留一条', () => {
+test('issues：quote 对不上原文的丢掉并计数，重复的只留一条', async () => {
   const r = cleanReview({
     issues: [
       { quote: '备菜可以节省时间', fix: '备菜能省时间', type: '重复啰嗦', why: 'x' },
@@ -19,7 +19,7 @@ test('issues：quote 对不上原文的丢掉并计数，重复的只留一条',
   assert.equal(r.dropped, 3);
 });
 
-test('flags：丢掉「低」和「先承认符合再转折」的凑数项，保留「不符合……但」', () => {
+test('flags：丢掉「低」和「先承认符合再转折」的凑数项，保留「不符合……但」', async () => {
   const r = cleanReview({
     issues: [],
     flags: [
@@ -35,6 +35,6 @@ test('flags：丢掉「低」和「先承认符合再转折」的凑数项，保
   assert.equal(r.risk, '高');
 });
 
-test('verdict 缺失时按有无问题推断', () => {
+test('verdict 缺失时按有无问题推断', async () => {
   assert.equal(cleanReview({ issues: [], flags: [] }, text).verdict, 'ok');
 });

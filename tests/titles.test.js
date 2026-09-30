@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { cleanTitles } from '../server/routes/publish.js';
 import { titlesUser, TITLE_LIMITS } from '../server/prompts.js';
 
-test('标题候选：去掉和现在一样的与重复的、去掉 # 前缀、按字符计数并标出超限和违禁词', () => {
+test('标题候选：去掉和现在一样的与重复的、去掉 # 前缀、按字符计数并标出超限和违禁词', async () => {
   const out = cleanTitles({ titles: [
     { text: '现在的标题', type: '数字型', why: 'x' },
     { text: '# 周末备菜 3 步走', type: '数字型', why: 'a' },
@@ -18,7 +18,7 @@ test('标题候选：去掉和现在一样的与重复的、去掉 # 前缀、�
   assert.equal(out[2].type, '');
 });
 
-test('标题提示词带平台字数上限', () => {
+test('标题提示词带平台字数上限', async () => {
   assert.equal(TITLE_LIMITS.xiaohongshu, 20);
   assert.match(titlesUser({ platform: 'xiaohongshu', title: 't' }, null, '正文'), /不超过 20 字/);
 });

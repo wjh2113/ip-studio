@@ -1,6 +1,6 @@
 /* 长任务队列：出图、口播转写与文字总评、语音测评、视频测评。
  *
- * 登记写在 SQLite（任务中心和重启恢复都看这张表）。真正执行交给 BullMQ，
+ * 登记写在 PostgreSQL（任务中心和重启恢复都看这张表）。真正执行交给 BullMQ，
  * 队列在 Redis 里，进程重启后由 startQueue() 按表里的「排队中」重新投递。
  * 全局并发是 Worker 的 concurrency，每人并发超了就把这条延后，不占住名额。
  *
@@ -79,20 +79,20 @@ async function add(job) {
 }
 
 /* 登记一件事。同一个 ref（同一张图、同一遍口播的同一种评测）还没做完，就返回那一条，不重复建 */
-export function enqueue(userId, kind, { ref = '', label = '', payload = {} } = {}) {
+export async function enqueue(userId, kind, { ref = '', label = '', payload = {} } = {}) {
   const def = KINDS.get(kind);
   if (!def) throw new Error(`未知的任务类型：${kind}`);
-  const dup = Jobs.activeByRef(userId, ref);
+  const dup = await Jobs.activeByRef(userId, ref);
   if (dup) return dup;
-  const job = Jobs.create({ userId, kind, ref, label: label || def.label || kind, payload });
-  def.onEnqueue?.(job);
-  Jobs.prune(userId);
+  const job = await Jobs.create({ userId, kind, ref, label: label || def.label || kind, payload });
+  await def.onEnqueue?.(job);
+  await Jobs.prune(userId);
   void add(job).catch((err) => console.error('[jobs] 入队失败', err.message));
   return job;
 }
 
 /* 重试一条已经失败或取消的任务：按原样再登记一条 */
-export function retry(job) {
+export async function retry(job) {
   return enqueue(job.userId, job.kind, { ref: job.ref, label: job.label, payload: job.payload });
 }
 
@@ -103,17 +103,17 @@ export async function forgetQueued(id) {
 }
 
 async function processBull(bullJob, token) {
-  const row = Jobs.byId(bullJob.data.id);
+  const row = await Jobs.byId(bullJob.data.id);
   if (!row || row.status !== 'queued') return;
-  /* 检查和占名额都在第一次 await 之前，并发进来的任务不会一起挤过每人上限。 */
+  /* 占名额发生在下一次 await 之前，并发进来的任务不会一起挤过每人上限。 */
   if ((perUser.get(row.userId) || 0) >= LIMIT_USER()) {
     await bullJob.moveToDelayed(Date.now() + 40, token);
     throw new DelayedError();
   }
-  if (!Jobs.claim(row.id)) return;
   perUser.set(row.userId, (perUser.get(row.userId) || 0) + 1);
   try {
-    await run(Jobs.byId(row.id));
+    if (!await Jobs.claim(row.id)) return;
+    await run(await Jobs.byId(row.id));
   } finally {
     perUser.set(row.userId, Math.max(0, (perUser.get(row.userId) || 1) - 1));
   }
@@ -124,17 +124,17 @@ async function run(job) {
 
   let hold = null;
   const ctx = {
-    hold(feature, units) {
-      const { held } = reserve(job.userId, feature, units);
+    async hold(feature, units) {
+      const { held } = await reserve(job.userId, feature, units);
       hold = { feature, held };
-      Jobs.setHeld(job.id, held, feature);
+      await Jobs.setHeld(job.id, held, feature);
       return held;
     },
-    settle(actualUnits) {
+    async settle(actualUnits) {
       if (!hold) return 0;
-      const out = settle(job.userId, hold.feature, hold.held, actualUnits);
+      const out = await settle(job.userId, hold.feature, hold.held, actualUnits);
       hold = null;
-      Jobs.setHeld(job.id, 0, '');
+      await Jobs.setHeld(job.id, 0, '');
       return out;
     },
   };
@@ -144,13 +144,13 @@ async function run(job) {
   try {
     if (!def) throw new Error(`未知的任务类型：${job.kind}`);
     const result = await def.run(job, ctx);
-    done = Jobs.finish(job.id, { status: 'done', result: result ?? null });
+    done = await Jobs.finish(job.id, { status: 'done', result: result ?? null });
   } catch (err) {
-    if (hold) ctx.settle(0);
+    if (hold) await ctx.settle(0);
     const message = String(err?.message || err || '任务失败');
     const code = Number(err?.status) || 502;
     try { def?.onFail?.(job, message); } catch (e) { console.warn('[jobs] onFail', e.message); }
-    done = Jobs.finish(job.id, { status: 'failed', error: message, result: { code } });
+    done = await Jobs.finish(job.id, { status: 'failed', error: message, result: { code } });
   } finally {
     running -= 1;
   }
@@ -161,14 +161,14 @@ async function run(job) {
 }
 
 /* 等一条任务做完，最多等 ms 毫秒；到点还没好就返回当时的状态 */
-export function waitFor(id, ms = 0) {
-  const job = Jobs.byId(id);
-  if (!job || !ACTIVE.has(job.status) || ms <= 0) return Promise.resolve(job);
+export async function waitFor(id, ms = 0) {
+  const job = await Jobs.byId(id);
+  if (!job || !ACTIVE.has(job.status) || ms <= 0) return job;
   return new Promise((resolve) => {
     const fn = (done) => { clearTimeout(timer); resolve(done); };
     const timer = setTimeout(() => {
       waiters.set(id, (waiters.get(id) || []).filter((f) => f !== fn));
-      resolve(Jobs.byId(id));
+      void Jobs.byId(id).then(resolve);
     }, ms);
     waiters.set(id, [...(waiters.get(id) || []), fn]);
   });
@@ -176,28 +176,28 @@ export function waitFor(id, ms = 0) {
 
 /* 服务启动时调一次：上次没跑完的，退回预扣、重新排队；已经跑过 MAX_ATTEMPTS 次的记为失败。
  * 表改完以后由 startQueue() 把「排队中」投进 Redis。测试里没有单独的启动步骤，这里直接投。 */
-export function recoverJobs() {
-  for (const job of Jobs.running()) {
-    if (job.held > 0) Quota.refund(job.userId, job.held);
+export async function recoverJobs() {
+  for (const job of await Jobs.running()) {
+    if (job.held > 0) await Quota.refund(job.userId, job.held);
     if (job.attempts >= MAX_ATTEMPTS || !KINDS.has(job.kind)) {
       const message = '服务重启，任务中断了。可以在任务中心重试';
       try { KINDS.get(job.kind)?.onFail?.(job, message); } catch { /* 收尾失败不影响恢复 */ }
-      Jobs.finish(job.id, { status: 'failed', error: message, result: { code: 503 } });
+      await Jobs.finish(job.id, { status: 'failed', error: message, result: { code: 503 } });
     } else {
-      Jobs.requeue(job.id);
+      await Jobs.requeue(job.id);
     }
   }
   if (process.env.NODE_ENV === 'test') {
-    for (const job of Jobs.queued()) void add(job).catch((err) => console.error('[jobs]', err.message));
+    for (const job of await Jobs.queued()) await add(job);
   }
 }
 
-/* 清空 Redis 里上次进程留下的条目，再按数据库里的排队记录投递。SQLite 仍是任务状态的来源。 */
+/* 清空 Redis 里上次进程留下的条目，再按数据库里的排队记录投递。任务状态以 PostgreSQL 为准。 */
 export async function startQueue() {
   ensureQueue();
   await queue.obliterate({ force: true });
   ensureWorker();
-  for (const job of Jobs.queued()) await add(job);
+  for (const job of await Jobs.queued()) await add(job);
 }
 
 export async function stopQueue() {

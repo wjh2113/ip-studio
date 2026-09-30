@@ -9,18 +9,18 @@ import { describe, json, requireUser, styleSamples, sys, withRetry } from './com
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
 
 export async function handleAssist(req, res, body, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
-  const clip = (v, n) => String(v ?? '').slice(0, n);
+  const clip = async (v, n) => String(v ?? '').slice(0, n);
   const selection = clip(body?.selection, 4000);
   const before = clip(body?.before, 1500);
   const after = clip(body?.after, 1500);
 
   // 账号还在就用最新设定，否则退回创作时的快照
-  const persona = (draft.persona_id && Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  const samples = styleSamples(persona, user.id);
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const samples = await styleSamples(persona, user.id);
 
   let instruction;
   let user_prompt;
@@ -74,8 +74,8 @@ const mockAssist = (body, selection) => {
 
 /* 语音改稿：转写是修改要求。只套用能在正文里对上的 find，对不上的丢掉。 */
 export async function handleVoiceEdit(req, res, file, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const content = String(draft.content || '');
   if (!content.trim()) throw new HttpError(400, '还没有正文');

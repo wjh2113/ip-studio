@@ -14,8 +14,8 @@ import { Variants } from './db.js';
 import { PLATFORMS } from './prompts.js';
 
 /* 按权重挑一个生效变体；没有生效变体就用代码里内置的那份 */
-export function pickVariant(feature, builtin) {
-  const list = Variants.active(feature);
+export async function pickVariant(feature, builtin) {
+  const list = await Variants.active(feature);
   if (!list.length) return { system: builtin, name: '内置', id: null };
 
   // 内置那份也参与分流，否则一开 A/B 就等于全量换新提示词

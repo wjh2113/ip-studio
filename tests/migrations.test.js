@@ -1,29 +1,43 @@
-import { TEST_DIR } from './setup.js';
+import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS, runMigrations } from '../server/migrations.js';
+import { createIsolated } from '../server/client.js';
 
 const latest = MIGRATIONS.at(-1).version;
 
-test('新库跑到最新版本，再跑一次什么都不做', () => {
-  const db = new DatabaseSync(join(TEST_DIR, 'm1.db'));
-  assert.equal(runMigrations(db), latest);
-  const tables = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get().n;
-  assert.ok(tables >= 20);
-  assert.equal(runMigrations(db), latest);
+async function tableCount(pool, name) {
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM information_schema.tables
+     WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
+     ${name ? 'AND table_name = $1' : ''}`,
+    name ? [name] : [],
+  );
+  return r.rows[0].n;
+}
+
+test('新库跑到最新版本，再跑一次什么都不做', async () => {
+  const iso = await createIsolated(`mig1${process.pid}`);
+  try {
+    assert.equal(await runMigrations(iso), latest);
+    assert.ok(await tableCount(iso.pool) >= 20);
+    assert.equal(await runMigrations(iso), latest);
+  } finally {
+    await iso.close();
+  }
 });
 
-test('迁移失败整体回滚，版本号不变', () => {
-  const db = new DatabaseSync(join(TEST_DIR, 'm2.db'));
-  runMigrations(db);
-  MIGRATIONS.push({ version: latest + 1, name: '故意失败', up: (d) => { d.exec('CREATE TABLE half_done (id INTEGER)'); throw new Error('boom'); } });
+test('迁移失败整体回滚，版本号不变', async () => {
+  const iso = await createIsolated(`mig2${process.pid}`);
   try {
-    assert.throws(() => runMigrations(db), /故意失败/);
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, latest);
-    assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name = 'half_done'").get().n, 0);
+    await runMigrations(iso);
+    MIGRATIONS.push({ version: latest + 1, name: '故意失败', up: async (d) => { await d.exec('CREATE TABLE half_done (id integer)'); throw new Error('boom'); } });
+    await assert.rejects(() => runMigrations(iso), /故意失败/);
+    const ver = await iso.pool.query('SELECT COALESCE(MAX(version), 0)::int AS v FROM schema_migrations');
+    assert.equal(ver.rows[0].v, latest);
+    assert.equal(await tableCount(iso.pool, 'half_done'), 0);
   } finally {
     MIGRATIONS.pop();
+    await iso.close();
   }
 });

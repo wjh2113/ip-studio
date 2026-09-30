@@ -11,21 +11,21 @@ import { json, requireUser, sys, withRetry } from './common.js';
 
 /* 只拿榜单，不做分析——用于展示原始榜单和源状态 */
 export async function handleBoards(req, res, body, params, url) {
-  requireUser(req);
+  await requireUser(req);
   const boards = await fetchBoards({ force: url?.searchParams.get('force') === '1' });
   json(res, 200, boards);
 }
 
 export async function handleHotspotRead(req, res, body, params) {
-  const user = requireUser(req);
-  const saved = Personas.hotspots(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const saved = await Personas.hotspots(Number(params.id), user.id);
   if (saved === undefined) throw new HttpError(404, '账号不存在');
   json(res, 200, { hotspots: saved });
 }
 
 export async function handleHotspotAnalyze(req, res, body, params) {
-  const user = requireUser(req);
-  const persona = Personas.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const persona = await Personas.byId(Number(params.id), user.id);
   if (!persona) throw new HttpError(404, '账号不存在');
 
   // 手动粘贴的榜单优先，其次抓全网
@@ -56,7 +56,7 @@ export async function handleHotspotAnalyze(req, res, body, params) {
     screenedSample: blocked.slice(0, 6).map((b) => ({ title: b.title, risk: b.risk })),
     ...matches,
   };
-  Personas.setHotspots(persona.id, user.id, payload);
+  await Personas.setHotspots(persona.id, user.id, payload);
   json(res, 200, { hotspots: payload });
 }
 
@@ -136,18 +136,18 @@ const mockHotspots = (persona, items) => ({
 
 /* 缓存里的先给出来，页面打开不必等模型 */
 export async function handleSubjectList(req, res, body, params) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const id = Number(params.id);
-  const ideas = Personas.ideas(id, user.id);
+  const ideas = await Personas.ideas(id, user.id);
   if (ideas === null) throw new HttpError(404, '账号不存在');
-  json(res, 200, { ideas: mergeHotIdeas(id, user.id, ideas) });
+  json(res, 200, { ideas: await mergeHotIdeas(id, user.id, ideas) });
 }
 
 /* 匹配度高的热点直接顶进推荐题材前排——用户不必先去热点板块翻一遍 */
 const HOT_IDEA_MAX = 2;
 
-function mergeHotIdeas(personaId, userId, ideas) {
-  const saved = Personas.hotspots(personaId, userId);
+async function mergeHotIdeas(personaId, userId, ideas) {
+  const saved = await Personas.hotspots(personaId, userId);
   const fresh = saved?.matches?.length
     && Date.now() - new Date(saved.at).getTime() < 24 * 3600 * 1000;
   if (!fresh) return ideas.map((i) => ({ ...i, kind: 'idea' }));
@@ -177,17 +177,17 @@ function mergeHotIdeas(personaId, userId, ideas) {
 }
 
 export async function handleSubjectGenerate(req, res, body, params) {
-  const user = requireUser(req);
-  const persona = Personas.byId(Number(params.id), user.id);
+  const user = await requireUser(req);
+  const persona = await Personas.byId(Number(params.id), user.id);
   if (!persona) throw new HttpError(404, '账号不存在');
   const ideas = await generateIdeas(persona, user.id);
-  json(res, 200, { ideas: mergeHotIdeas(persona.id, user.id, ideas) });
+  json(res, 200, { ideas: await mergeHotIdeas(persona.id, user.id, ideas) });
 }
 
 async function generateIdeas(persona, userId) {
-  const used = Drafts.usedSubjects(userId, persona.id);
+  const used = await Drafts.usedSubjects(userId, persona.id);
   // 当前挂着的推荐也算"提过的"，换一批才不会换汤不换药
-  const pending = (Personas.ideas(persona.id, userId) || []).map((i) => ({ subject: i.subject, title: '' }));
+  const pending = (await Personas.ideas(persona.id, userId) || []).map((i) => ({ subject: i.subject, title: '' }));
 
   const seen = new Set([...used, ...pending].map((u) => u.subject.trim()));
 
@@ -195,7 +195,7 @@ async function generateIdeas(persona, userId) {
     const data = await generateJSON({
       meta: { feature: '题材推荐', userId },
       system: sys('subjects', SUBJECTS_SYSTEM),
-      user: subjectsUser(persona, [...used, ...pending], performanceBlock(performanceOf(userId, persona.id), 'subjects')),
+      user: subjectsUser(persona, [...used, ...pending], performanceBlock(await performanceOf(userId, persona.id), 'subjects')),
       schema: SUBJECTS_SCHEMA,
       mock: () => mockIdeas(persona, used.length),
     });
@@ -210,7 +210,7 @@ async function generateIdeas(persona, userId) {
     return list;
   }, '没能想出新题材，稍后再试试');
 
-  Personas.setIdeas(persona.id, userId, ideas);
+  await Personas.setIdeas(persona.id, userId, ideas);
   return ideas;
 }
 

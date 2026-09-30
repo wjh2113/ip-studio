@@ -31,8 +31,8 @@ function groupBy(items, key, overall) {
   return out;
 }
 
-export function performanceOf(userId, personaId) {
-  const items = Drafts.withMetrics(userId, personaId ?? undefined).map((r) => {
+export async function performanceOf(userId, personaId) {
+  const items = (await Drafts.withMetrics(userId, personaId ?? undefined)).map((r) => {
     const topics = parse(r.topics_json, []);
     const chosen = topics.find?.((t) => t?.chosen) || topics[0] || null;
     return {

@@ -21,8 +21,8 @@ export const json = (res, status, body, headers = {}) => {
   res.end(payload);
 };
 
-export const requireUser = (req) => {
-  const user = currentUser(req);
+export const requireUser = async (req) => {
+  const user = await currentUser(req);
   if (!user) throw new HttpError(401, '请先登录');
   return user;
 };
@@ -30,15 +30,15 @@ export const requireUser = (req) => {
 export const sys = (key, builtin) => liveSystem(key, builtin);
 
 /* 语气锚点：档案已经蒸馏过，这里只取最近两篇原文做语感参考 */
-export const styleSamples = (persona, userId) =>
+export const styleSamples = async (persona, userId) =>
   (persona?.id && persona.style_digest)
-    ? Samples.list(persona.id, userId, { withContent: true, limit: 2 })
+    ? await Samples.list(persona.id, userId, { withContent: true, limit: 2 })
     : [];
 
 /* ---------------- 管理后台 ---------------- */
 
-export function requireAdmin(req) {
-  const admin = currentAdmin(req);
+export async function requireAdmin(req) {
+  const admin = await currentAdmin(req);
   if (!admin) throw new HttpError(401, '请先用管理员账号登录');
   return admin;
 }

@@ -15,12 +15,16 @@ OUT="${BACKUP_DIR}/${STAMP}"
 
 mkdir -p "${OUT}"
 
-# VACUUM INTO 在服务运行中也能拿到一致的快照（WAL 模式下直接 cp 可能拿到半截）
-node --no-warnings -e "
-const { DatabaseSync } = require('node:sqlite');
-const db = new DatabaseSync(process.argv[1], { readOnly: true });
-db.exec(\"VACUUM INTO '\" + process.argv[2].replace(/'/g, \"''\") + \"'\");
-" "${DATA_DIR}/app.db" "${OUT}/app.db"
+# 连接串只从环境或 .env 读取，不打印
+if [[ -z "${DATABASE_URL:-}" && -f "${APP_DIR}/.env" ]]; then
+  DATABASE_URL="$(grep -E '^DATABASE_URL=' "${APP_DIR}/.env" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+fi
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "backup failed: DATABASE_URL is empty" >&2
+  exit 1
+fi
+
+pg_dump --dbname="${DATABASE_URL}" --format=custom --file="${OUT}/app.dump"
 
 for d in images speaks; do
   if [[ -d "${DATA_DIR}/${d}" ]]; then

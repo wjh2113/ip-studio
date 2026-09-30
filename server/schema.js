@@ -1,0 +1,325 @@
+/* 表结构（Drizzle）。列名沿用原来的蛇形，读出来的字段和以前的 SQLite 行一致。
+ * 改表请在 migrations.js 末尾追加编号迁移，并在这里同步字段。 */
+import { doublePrecision, index, integer, pgTable, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
+
+const id = () => integer('id').primaryKey().generatedAlwaysAsIdentity();
+
+export const users = pgTable('users', {
+  id: id(),
+  username: text('username').notNull().unique(),
+  pass_hash: text('pass_hash').notNull(),
+  created_at: text('created_at').notNull(),
+  plan: text('plan').notNull().default('free'),
+  period: text('period').notNull().default(''),
+  used: integer('used').notNull().default(0),
+  avatar_credits: integer('avatar_credits').notNull().default(0),
+});
+
+export const sessions = pgTable('sessions', {
+  token: text('token').primaryKey(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expires_at: bigint('expires_at', { mode: 'number' }).notNull(),
+}, (t) => [index('idx_sessions_user').on(t.user_id)]);
+
+export const admins = pgTable('admins', {
+  id: id(),
+  username: text('username').notNull().unique(),
+  pass_hash: text('pass_hash').notNull(),
+  created_at: text('created_at').notNull(),
+  last_login: text('last_login').notNull().default(''),
+});
+
+export const adminSessions = pgTable('admin_sessions', {
+  token: text('token').primaryKey(),
+  admin_id: integer('admin_id').notNull().references(() => admins.id, { onDelete: 'cascade' }),
+  expires_at: bigint('expires_at', { mode: 'number' }).notNull(),
+});
+
+export const personas = pgTable('personas', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  platform: text('platform').notNull(),
+  tone: text('tone').notNull(),
+  content_focus: text('content_focus').notNull().default(''),
+  audience: text('audience').notNull().default(''),
+  problem: text('problem').notNull().default(''),
+  notes: text('notes').notNull().default(''),
+  creator_age: text('creator_age').notNull().default(''),
+  creator_gender: text('creator_gender').notNull().default(''),
+  creator_industry: text('creator_industry').notNull().default(''),
+  creator_role: text('creator_role').notNull().default(''),
+  creator_traits: text('creator_traits').notNull().default(''),
+  style_digest: text('style_digest').notNull().default(''),
+  style_updated_at: text('style_updated_at').notNull().default(''),
+  subject_ideas: text('subject_ideas').notNull().default('[]'),
+  hotspot_json: text('hotspot_json').notNull().default('null'),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_personas_user').on(t.user_id, t.id)]);
+
+export const sections = pgTable('sections', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  purpose: text('purpose').notNull().default(''),
+  guide: text('guide').notNull().default(''),
+  fields_json: text('fields_json').notNull().default('[]'),
+  default_framework: text('default_framework').notNull().default(''),
+  sort: integer('sort').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_sections_persona').on(t.persona_id, t.sort, t.id)]);
+
+export const styleSamples = pgTable('style_samples', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+  draft_id: integer('draft_id'),
+  title: text('title').notNull().default(''),
+  content: text('content').notNull(),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_samples_persona').on(t.persona_id, t.id)]);
+
+export const drafts = pgTable('drafts', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  subject: text('subject').notNull(),
+  platform: text('platform').notNull(),
+  tone: text('tone').notNull(),
+  audience: text('audience').notNull().default(''),
+  keywords: text('keywords').notNull().default(''),
+  length: integer('length').notNull().default(800),
+  topics_json: text('topics_json').notNull().default('[]'),
+  chosen: integer('chosen'),
+  title: text('title').notNull().default(''),
+  content: text('content').notNull().default(''),
+  status: text('status').notNull().default('topics'),
+  persona_id: integer('persona_id').references(() => personas.id, { onDelete: 'set null' }),
+  persona_json: text('persona_json').notNull().default('null'),
+  hotspot_json: text('hotspot_json').notNull().default('null'),
+  section_id: integer('section_id').references(() => sections.id, { onDelete: 'set null' }),
+  section_json: text('section_json').notNull().default('null'),
+  inputs_json: text('inputs_json').notNull().default('null'),
+  archived_at: text('archived_at').notNull().default(''),
+  cues_json: text('cues_json').notNull().default('null'),
+  variants_json: text('variants_json').notNull().default('null'),
+  illus_json: text('illus_json').notNull().default('null'),
+  framework_json: text('framework_json').notNull().default('null'),
+  metrics_json: text('metrics_json').notNull().default('null'),
+  published_at: text('published_at').notNull().default(''),
+  generated: text('generated').notNull().default(''),
+  gen_variant: text('gen_variant').notNull().default(''),
+  edit_ratio: doublePrecision('edit_ratio'),
+  review_json: text('review_json').notNull().default('null'),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [
+  index('idx_drafts_user').on(t.user_id, t.id),
+  index('idx_drafts_persona').on(t.user_id, t.persona_id, t.id),
+]);
+
+export const speakTakes = pgTable('speak_takes', {
+  id: id(),
+  user_id: integer('user_id').notNull(),
+  draft_id: integer('draft_id'),
+  title: text('title').notNull().default(''),
+  script: text('script').notNull().default(''),
+  cues_json: text('cues_json').notNull().default('null'),
+  file: text('file').notNull().default(''),
+  mime: text('mime').notNull().default(''),
+  bytes: integer('bytes').notNull().default(0),
+  transcript: text('transcript').notNull().default(''),
+  review_json: text('review_json').notNull().default('null'),
+  status: text('status').notNull().default('running'),
+  error: text('error').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_speaks_user').on(t.user_id, t.id)]);
+
+export const materials = pgTable('materials', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('经历'),
+  title: text('title').notNull(),
+  body: text('body').notNull().default(''),
+  tags: text('tags').notNull().default(''),
+  used_count: integer('used_count').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_materials_persona').on(t.user_id, t.persona_id, t.id)]);
+
+export const topicPool = pgTable('topic_pool', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  subject: text('subject').notNull(),
+  note: text('note').notNull().default(''),
+  source: text('source').notNull().default('手动'),
+  plan_date: text('plan_date').notNull().default(''),
+  draft_id: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('idea'),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_pool_persona').on(t.user_id, t.persona_id, t.id)]);
+
+export const frameworks = pgTable('frameworks', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('structure'),
+  name: text('name').notNull(),
+  summary: text('summary').notNull().default(''),
+  platforms: text('platforms').notNull().default('[]'),
+  scenes: text('scenes').notNull().default('[]'),
+  slots_json: text('slots_json').notNull().default('[]'),
+  source_text: text('source_text').notNull().default(''),
+  from_key: text('from_key').notNull().default(''),
+  used_count: integer('used_count').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_frameworks_user').on(t.user_id, t.id)]);
+
+export const draftRevisions = pgTable('draft_revisions', {
+  id: id(),
+  draft_id: integer('draft_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  content: text('content').notNull(),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_draft_rev').on(t.draft_id, t.user_id, t.id)]);
+
+export const draftMetrics = pgTable('draft_metrics', {
+  id: id(),
+  draft_id: integer('draft_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  platform: text('platform').notNull().default(''),
+  captured_on: text('captured_on').notNull(),
+  views: integer('views'),
+  likes: integer('likes'),
+  comments: integer('comments'),
+  shares: integer('shares'),
+  follows: integer('follows'),
+  note: text('note').notNull().default(''),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_metrics_day').on(t.draft_id, t.platform, t.captured_on),
+  index('idx_metrics_user').on(t.user_id, t.draft_id),
+]);
+
+export const jobs = pgTable('jobs', {
+  id: id(),
+  user_id: integer('user_id').notNull(),
+  kind: text('kind').notNull(),
+  ref: text('ref').notNull().default(''),
+  label: text('label').notNull().default(''),
+  payload_json: text('payload_json').notNull().default('{}'),
+  status: text('status').notNull().default('queued'),
+  result_json: text('result_json').notNull().default('null'),
+  error: text('error').notNull().default(''),
+  held: doublePrecision('held').notNull().default(0),
+  hold_feature: text('hold_feature').notNull().default(''),
+  attempts: integer('attempts').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  started_at: text('started_at').notNull().default(''),
+  finished_at: text('finished_at').notNull().default(''),
+}, (t) => [
+  index('idx_jobs_user').on(t.user_id, t.id),
+  index('idx_jobs_status').on(t.status, t.id),
+]);
+
+export const orders = pgTable('orders', {
+  id: id(),
+  out_trade_no: text('out_trade_no').notNull().unique(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  sku: text('sku').notNull(),
+  amount: integer('amount').notNull(),
+  channel: text('channel').notNull(),
+  status: text('status').notNull().default('pending'),
+  trade_no: text('trade_no').notNull().default(''),
+  paid_at: text('paid_at').notNull().default(''),
+  granted_at: text('granted_at').notNull().default(''),
+  raw: text('raw').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_orders_user').on(t.user_id, t.id)]);
+
+export const settings = pgTable('settings', {
+  k: text('k').primaryKey(),
+  v: text('v').notNull().default(''),
+  secret: integer('secret').notNull().default(0),
+  updated_at: text('updated_at').notNull(),
+  updated_by: text('updated_by').notNull().default(''),
+});
+
+export const usageEvents = pgTable('usage_events', {
+  id: id(),
+  user_id: integer('user_id'),
+  feature: text('feature').notNull(),
+  provider: text('provider').notNull().default(''),
+  model: text('model').notNull().default(''),
+  variant: text('variant').notNull().default(''),
+  ok: integer('ok').notNull().default(1),
+  ms: integer('ms').notNull().default(0),
+  input_tokens: integer('input_tokens').notNull().default(0),
+  output_tokens: integer('output_tokens').notNull().default(0),
+  units: doublePrecision('units').notNull().default(0),
+  unit: text('unit').notNull().default(''),
+  error: text('error').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [
+  index('idx_usage_time').on(t.created_at),
+  index('idx_usage_user').on(t.user_id, t.created_at),
+]);
+
+export const promptVariants = pgTable('prompt_variants', {
+  id: id(),
+  feature: text('feature').notNull(),
+  name: text('name').notNull(),
+  system: text('system').notNull(),
+  weight: integer('weight').notNull().default(1),
+  active: integer('active').notNull().default(0),
+  note: text('note').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_variants_feature').on(t.feature, t.active)]);
+
+export const promptRevisions = pgTable('prompt_revisions', {
+  id: id(),
+  feature: text('feature').notNull(),
+  system: text('system').notNull(),
+  source: text('source').notNull(),
+  note: text('note').notNull().default(''),
+  active: integer('active').notNull().default(0),
+  user_id: integer('user_id').notNull().default(0),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_prompt_rev').on(t.feature, t.id)]);
+
+export const evalCases = pgTable('eval_cases', {
+  id: id(),
+  feature: text('feature').notNull(),
+  title: text('title').notNull(),
+  input_json: text('input_json').notNull().default('{}'),
+  created_at: text('created_at').notNull(),
+});
+
+export const evalRuns = pgTable('eval_runs', {
+  id: id(),
+  batch: text('batch').notNull(),
+  case_id: integer('case_id').notNull().references(() => evalCases.id, { onDelete: 'cascade' }),
+  variant_id: integer('variant_id'),
+  variant_name: text('variant_name').notNull().default('内置'),
+  output: text('output').notNull().default(''),
+  scores_json: text('scores_json').notNull().default('{}'),
+  ms: integer('ms').notNull().default(0),
+  error: text('error').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_runs_batch').on(t.batch, t.case_id)]);
+
+export const evalVotes = pgTable('eval_votes', {
+  id: id(),
+  batch: text('batch').notNull(),
+  case_id: integer('case_id').notNull(),
+  left_id: integer('left_id').notNull(),
+  right_id: integer('right_id').notNull(),
+  winner: integer('winner').notNull().default(0),
+  created_at: text('created_at').notNull(),
+});

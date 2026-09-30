@@ -14,19 +14,21 @@ const { DATA_DIR, Usage } = await import('./db.js');
 const { attachSecurity } = await import('./security.js');
 const { rateLimit } = await import('./limit.js');
 
-ensureBootstrapAdmin();
-ensureAccessUser();
-syncAdminPassword();
+await ensureBootstrapAdmin();
+await ensureAccessUser();
+await syncAdminPassword();
+const { warmSettings } = await import('./settings.js');
+await warmSettings();
 const { syncPromptBuiltins } = await import('./promptrev.js');
-syncPromptBuiltins();
+await syncPromptBuiltins();
 // 上次没跑完的长任务：退回预扣、重新排队，再投进 Redis / BullMQ
 const { recoverJobs, startQueue } = await import('./jobs.js');
-recoverJobs();
+await recoverJobs();
 await startQueue();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
-  try { Usage.record(e); } catch (err) { console.warn('[usage]', err.message); }
+  void Usage.record(e).catch((err) => console.warn('[usage]', err.message));
 });
 
 const PUBLIC_DIR = fromRoot('public');
@@ -214,7 +216,7 @@ async function dispatch(req, res) {
      没设门时仍按登录态分流落地页——本地演示还要那页。 */
   if (path === '/') {
     const { accessGateOn, currentUser } = await import('./auth.js');
-    await serveStatic((accessGateOn() || currentUser(req)) ? '/index.html' : '/landing.html', res);
+    await serveStatic((accessGateOn() || await currentUser(req)) ? '/index.html' : '/landing.html', res);
     return;
   }
 
@@ -303,7 +305,7 @@ const MEDIA_TYPES = {
 
 async function serveOwned(path, prefix, dir, req, res) {
   const { currentUser } = await import('./auth.js');
-  const user = currentUser(req);
+  const user = await currentUser(req);
   if (!user) { res.writeHead(401).end('Unauthorized'); return; }
 
   const rel = decodeURIComponent(path.slice(prefix.length));   // 查询串已被 URL 解析剥掉

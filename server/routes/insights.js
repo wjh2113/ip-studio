@@ -28,27 +28,27 @@ export function dayOf(publishedAt, capturedOn) {
 /* 这篇能回填哪些平台：主稿的平台 + 已生成的平台版本 */
 const platformsOf = (draft) => [...new Set([draft.platform, ...Object.keys(draft.variants || {})].filter(Boolean))];
 
-function mineDraft(req, params) {
-  const user = requireUser(req);
-  const draft = Drafts.byId(Number(params.id), user.id);
+async function mineDraft(req, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   return { user, draft };
 }
 
 /* drafts.metrics_json 是「最新一次」的缓存：列表和复盘筛选靠它，不用每次去翻快照表 */
-function syncLatest(draft, userId, publishedAt) {
-  const history = Metrics.list(draft.id, userId);
+async function syncLatest(draft, userId, publishedAt) {
+  const history = await Metrics.list(draft.id, userId);
   const last = history[0];
   const cache = last
     ? { ...Object.fromEntries(METRIC_FIELDS.filter((k) => last[k] != null).map((k) => [k, last[k]])), ...(last.note ? { note: last.note } : {}) }
     : null;
-  Drafts.setMetrics(draft.id, userId, cache, cache ? publishedAt : '');
+  await Drafts.setMetrics(draft.id, userId, cache, cache ? publishedAt : '');
   return { metrics: cache, published_at: cache ? publishedAt : '', history };
 }
 
 /* 回填一次：存一行快照。同一天同一平台再填就改那一行；这一天这个平台全部留空保存 = 删掉这一行 */
 export async function handleMetricsSave(req, res, body, params) {
-  const { user, draft } = mineDraft(req, params);
+  const { user, draft } = await mineDraft(req, params);
 
   const values = {};
   for (const k of METRIC_FIELDS) {
@@ -67,31 +67,31 @@ export async function handleMetricsSave(req, res, body, params) {
 
   const empty = !Object.keys(values).length && !note;
   if (empty) {
-    const hit = Metrics.list(draft.id, user.id).find((m) => m.platform === platform && m.capturedOn === capturedOn);
-    if (hit) Metrics.remove(hit.id, draft.id, user.id);
+    const hit = (await Metrics.list(draft.id, user.id)).find((m) => m.platform === platform && m.capturedOn === capturedOn);
+    if (hit) await Metrics.remove(hit.id, draft.id, user.id);
   } else {
-    Metrics.put(draft.id, user.id, { platform, capturedOn, values, note });
+    await Metrics.put(draft.id, user.id, { platform, capturedOn, values, note });
   }
-  json(res, 200, { ...syncLatest(draft, user.id, published), removed: empty });
+  json(res, 200, { ...(await syncLatest(draft, user.id, published)), removed: empty });
 }
 
 export async function handleMetricsHistory(req, res, body, params) {
-  const { user, draft } = mineDraft(req, params);
+  const { user, draft } = await mineDraft(req, params);
   json(res, 200, {
-    history: Metrics.list(draft.id, user.id),
+    history: await Metrics.list(draft.id, user.id),
     platforms: platformsOf(draft),
     published_at: draft.published_at || '',
   });
 }
 
 export async function handleMetricsDelete(req, res, body, params) {
-  const { user, draft } = mineDraft(req, params);
-  if (!Metrics.remove(Number(params.mid), draft.id, user.id)) throw new HttpError(404, '这条记录不存在');
-  json(res, 200, syncLatest(draft, user.id, draft.published_at || ''));
+  const { user, draft } = await mineDraft(req, params);
+  if (!await Metrics.remove(Number(params.mid), draft.id, user.id)) throw new HttpError(404, '这条记录不存在');
+  json(res, 200, await syncLatest(draft, user.id, draft.published_at || ''));
 }
 
 export async function handleMetricsMeta(req, res) {
-  requireUser(req);
+  await requireUser(req);
   json(res, 200, { fields: METRIC_FIELDS.map((k) => ({ key: k, label: METRIC_LABELS[k] })) });
 }
 
@@ -107,17 +107,17 @@ export function near7(trend) {
  * 用**中位数不用平均数**——自媒体数据长尾极重，一条爆款能把平均值拉到毫无参考价值。
  * 样本少于 3 条的维度不给结论，只报数量：两三条数据得出的"规律"是噪声。 */
 export async function handleReview2(req, res, body, params, url) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const raw = url?.searchParams.get('persona');
   const personaId = raw ? Number(raw) : undefined;
-  const rows = Drafts.withMetrics(user.id, personaId);
+  const rows = await Drafts.withMetrics(user.id, personaId);
 
   const sections = Object.fromEntries(
-    (personaId ? Sections.list(personaId, user.id) : []).map((s) => [s.id, s.name]),
+    (personaId ? await Sections.list(personaId, user.id) : []).map((s) => [s.id, s.name]),
   );
 
   // 每篇每个平台一条：数字取这个平台最近一次回填，另带整条走势和「发布后第 7 天」的数
-  const snaps = Metrics.forDrafts(user.id, rows.map((r) => r.id));
+  const snaps = await Metrics.forDrafts(user.id, rows.map((r) => r.id));
   const items = [];
   for (const r of rows) {
     let topics = [];

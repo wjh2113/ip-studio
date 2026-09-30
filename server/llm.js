@@ -112,9 +112,8 @@ export const setUsageSink = (fn) => { usageSink = fn; };
 /* 配额在这里统一拦，不在十几个调用点各写一遍——那样一定会漏一个。
    eval 跑批不占用户额度（它是后台行为，成本记在管理员头上）。
 
-   额度是「预扣 → 结算」：调用前在同一个同步片段里检查并先扣一笔预估（Node 单线程，
-   检查和预扣之间不会插进别的请求），调完按真实用量多退少补。原来是先查后扣，
-   几个请求同时发出时都能通过检查，一起透支。 */
+   额度是「预扣 → 结算」：调用前锁住该用户的额度行，检查并先扣一笔预估，
+   调完按真实用量多退少补。并发上限先占名额再去等数据库，避免两个请求一起挤进来。 */
 async function tracked(meta, run) {
   const started = Date.now();
   const model = modelFor(meta.tier);
@@ -127,8 +126,14 @@ async function tracked(meta, run) {
       err.status = 429;
       throw err;
     }
-    hold = reserve(meta.userId, '文案').held;   // 额度不够在这里抛 402
     inflight.set(meta.userId, n + 1);
+    try {
+      hold = (await reserve(meta.userId, '文案')).held;   // 额度不够在这里抛 402
+    } catch (err) {
+      if (n > 0) inflight.set(meta.userId, n);
+      else inflight.delete(meta.userId);
+      throw err;
+    }
   }
   try {
     const { value, usage } = await run();
@@ -138,7 +143,7 @@ async function tracked(meta, run) {
       inputTokens: usage?.input || 0, outputTokens: usage?.output || 0,
       units: tokens, unit: 'token',
     });
-    if (metered) settle(meta.userId, '文案', hold, tokens);
+    if (metered) await settle(meta.userId, '文案', hold, tokens);
     return value;
   } catch (err) {
     const partial = Number(err?.partialChars) || 0;
@@ -149,7 +154,7 @@ async function tracked(meta, run) {
       error: String(err?.message || err),
       ...(est ? { units: est, unit: 'token' } : {}),
     });
-    if (metered) settle(meta.userId, '文案', hold, est);   // 失败退回预扣，中断按估算收
+    if (metered) await settle(meta.userId, '文案', hold, est);   // 失败退回预扣，中断按估算收
     throw err;
   } finally {
     if (metered) {

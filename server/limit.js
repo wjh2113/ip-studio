@@ -1,5 +1,5 @@
 /* 进程内限流。托管密钥的公网站点没有这一层，注册和登录会被刷爆。
-   单机够用：这套部署就是一台 Node + SQLite。 */
+   单机够用：这套部署就是一台 Node + PostgreSQL。 */
 import { HttpError } from './auth.js';
 
 const buckets = new Map();

@@ -26,13 +26,13 @@ export function validateCredentials(username, password) {
   return null;
 }
 
-export function register(username, password) {
-  if (Users.byName(username)) throw new HttpError(409, '该用户名已被注册');
+export async function register(username, password) {
+  if (await Users.byName(username)) throw new HttpError(409, '该用户名已被注册');
   return Users.create(username, hashPassword(password));
 }
 
-export function login(username, password) {
-  const user = Users.byName(username);
+export async function login(username, password) {
+  const user = await Users.byName(username);
   if (!user || !verifyPassword(password, user.pass_hash)) {
     throw new HttpError(401, '用户名或密码错误');
   }
@@ -56,39 +56,39 @@ export function checkAccessPassword(password) {
   return sameSecret(String(password || ''), expected);
 }
 
-export function ensureAccessUser() {
+export async function ensureAccessUser() {
   const pw = accessPassword();
   if (!pw) return false;
   const name = accessUsername();
   const hash = hashPassword(pw);
-  const existing = Users.byName(name);
-  if (!existing) Users.create(name, hash);
-  else Users.setPassword(existing.id, hash);
+  const existing = await Users.byName(name);
+  if (!existing) await Users.create(name, hash);
+  else await Users.setPassword(existing.id, hash);
   return true;
 }
 
-export function syncAdminPassword() {
+export async function syncAdminPassword() {
   // 只认 ADMIN_PASSWORD；不再拿访问密码兜底，两者可以（也应该）不同
   const pw = String(process.env.ADMIN_PASSWORD || '');
   if (!pw) return false;
   const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
   const hash = hashPassword(pw);
-  const existing = Admins.byName(name);
+  const existing = await Admins.byName(name);
   if (!existing) {
     if (pw.length < 8) {
       console.warn('[admin] 访问密码少于 8 位，后台账号未同步');
       return false;
     }
-    createAdmin(name, pw);
+    await createAdmin(name, pw);
     return true;
   }
-  Admins.setPassword(existing.id, hash);
+  await Admins.setPassword(existing.id, hash);
   return true;
 }
 
-export function startSession(user) {
+export async function startSession(user) {
   const token = randomBytes(32).toString('hex');
-  Sessions.create(token, user.id, SESSION_TTL);
+  await Sessions.create(token, user.id, SESSION_TTL);
   return token;
 }
 
@@ -105,7 +105,7 @@ function readCookie(req, name) {
   return hit ? hit.slice(name.length + 1) : null;
 }
 
-export function currentUser(req) {
+export async function currentUser(req) {
   return Sessions.user(readCookie(req, COOKIE_NAME));
 }
 
@@ -122,25 +122,25 @@ export const publicUser = (u) => ({ id: u.id, username: u.username, created_at: 
 const ADMIN_COOKIE = 'cw_admin';
 const ADMIN_TTL = 1000 * 60 * 60 * 12;   // 后台会话短一些，12 小时
 
-export const adminSetupNeeded = () => Admins.count() === 0;
+export const adminSetupNeeded = async () => (await Admins.count()) === 0;
 
-export function createAdmin(username, password) {
-  if (Admins.byName(username)) throw new HttpError(409, '该管理员用户名已存在');
+export async function createAdmin(username, password) {
+  if (await Admins.byName(username)) throw new HttpError(409, '该管理员用户名已存在');
   return Admins.create(username, hashPassword(password));
 }
 
-export function adminLogin(username, password) {
-  const admin = Admins.byName(username);
+export async function adminLogin(username, password) {
+  const admin = await Admins.byName(username);
   if (!admin || !verifyPassword(password, admin.pass_hash)) {
     throw new HttpError(401, '管理员用户名或密码错误');
   }
-  Admins.touch(admin.id);
+  await Admins.touch(admin.id);
   return admin;
 }
 
-export function startAdminSession(admin) {
+export async function startAdminSession(admin) {
   const token = randomBytes(32).toString('hex');
-  AdminSessions.create(token, admin.id, ADMIN_TTL);
+  await AdminSessions.create(token, admin.id, ADMIN_TTL);
   return token;
 }
 
@@ -157,8 +157,8 @@ export function setupHttpEnabled() {
   return process.env.NODE_ENV !== 'production';
 }
 
-export function ensureBootstrapAdmin() {
-  if (!adminSetupNeeded()) return false;
+export async function ensureBootstrapAdmin() {
+  if (!await adminSetupNeeded()) return false;
   const username = String(process.env.ADMIN_USERNAME || '').trim();
   const password = String(process.env.ADMIN_PASSWORD || '');
   if (!username || !password) return false;
@@ -171,15 +171,15 @@ export function ensureBootstrapAdmin() {
     console.warn('[admin] 环境变量里的管理员账号不合规：', bad);
     return false;
   }
-  createAdmin(username, password);
+  await createAdmin(username, password);
   console.log(`[admin] 已从环境变量创建管理员「${username}」`);
   return true;
 }
 
-export function currentAdmin(req) {
+export async function currentAdmin(req) {
   return AdminSessions.admin(readCookie(req, ADMIN_COOKIE));
 }
 
 export const publicAdmin = (a) => ({ id: a.id, username: a.username, last_login: a.last_login });
 
-setInterval(() => { Sessions.sweep(); AdminSessions.sweep(); }, 1000 * 60 * 60).unref();
+setInterval(() => { void Sessions.sweep(); void AdminSessions.sweep(); }, 1000 * 60 * 60).unref();
