@@ -18,6 +18,10 @@ function startServer() {
   const env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
+    // pg 在连接串没写用户名时会用 USER；子进程环境必须带上，否则会报
+    // 「no PostgreSQL user name specified in startup packet」
+    USER: process.env.USER,
+    LOGNAME: process.env.LOGNAME,
     ENV_FILE: 'none',
     NODE_ENV: 'test',
     PORT: String(PORT),

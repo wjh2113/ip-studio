@@ -13,7 +13,8 @@ const defaults = {
   LLM_PROVIDER: 'mock',
   IMAGE_PROVIDER: 'mock',
   PAY_PROVIDER: 'mock',
-  DATABASE_URL: 'postgres://127.0.0.1:5432/postgres',
+  // 本机 Homebrew / 套接字登录常用当前系统用户；没写用户名时 pg 也会退回 USER
+  DATABASE_URL: `postgres://${encodeURIComponent(process.env.USER || 'postgres')}@127.0.0.1:5432/postgres`,
   DB_SCHEMA: `t${process.pid}_${Math.random().toString(36).slice(2, 8)}`,
 };
 for (const [k, v] of Object.entries(defaults)) process.env[k] ??= v;
