@@ -1272,7 +1272,7 @@ function setMode(mode) {
   if (state.streaming) return;
   if (state.mode === 'edit' && mode !== 'edit') {
     stopVoiceEdit();
-    flushSave();   // 离开编辑就落盘
+    flushSave(true);   // 离开编辑就落盘，并留一版历史
   }
   state.mode = mode;
   const editing = mode === 'edit';
@@ -1316,14 +1316,15 @@ function markDirty() {
   saveTimer = setTimeout(flushSave, 1200);
 }
 
-async function flushSave() {
+/* snapshot = true：手动保存或离开编辑，服务端一定留一版历史；自动保存不带，按时间间隔留 */
+async function flushSave(snapshot = false) {
   clearTimeout(saveTimer);
   if (!state.dirty || !state.draft) return;
   const content = state.draft.content;
   state.dirty = false;
   setSaveState('保存中…');
   try {
-    const { draft, kept } = await api(`/drafts/${state.draft.id}/content`, { method: 'PUT', body: { content } });
+    const { draft, kept } = await api(`/drafts/${state.draft.id}/content`, { method: 'PUT', body: { content, snapshot: snapshot === true } });
     const newer = Boolean(state.draft && state.draft.content !== content);
     state.draft = newer ? { ...draft, content: state.draft.content } : draft;
     if (state.mode === 'cue') renderCues(state.draft.cues);
@@ -1348,7 +1349,7 @@ async function flushSave() {
   }
 }
 
-el.saveBtn.addEventListener('click', flushSave);
+el.saveBtn.addEventListener('click', () => flushSave(true));
 window.addEventListener('beforeunload', (e) => {
   if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
 });

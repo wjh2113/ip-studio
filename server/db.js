@@ -641,10 +641,6 @@ export const Personas = {
     if (!row) return null;
     try { const v = JSON.parse(row.subject_ideas); return Array.isArray(v) ? v : []; } catch { return []; }
   },
-  setVoice(id, userId, voiceId) {
-    db.prepare('UPDATE personas SET voice_id = ?, voice_at = ? WHERE id = ? AND user_id = ?')
-      .run(voiceId, voiceId ? now() : '', id, userId);
-  },
   setHotspots(id, userId, payload) {
     db.prepare('UPDATE personas SET hotspot_json = ? WHERE id = ? AND user_id = ?')
       .run(JSON.stringify(payload), id, userId);
@@ -992,14 +988,17 @@ export const Drafts = {
   },
   /* 用户在编辑器里手工改写后的保存。写入前先把上一版正文留档。
      口播提示和原文配图按新正文留下还能对上的；多平台版本原样保留。 */
-  saveContent(id, userId, content) {
+  saveContent(id, userId, content, { snapshot = false } = {}) {
     const next = String(content ?? '');
     return withTx(() => {
       const row = db.prepare(
         'SELECT content, cues_json, illus_json FROM drafts WHERE id = ? AND user_id = ?',
       ).get(id, userId);
       if (!row) return null;
-      if (row.content && row.content !== next) Revisions.keep(id, userId, row.content);
+      // 自动保存（1.2 秒防抖）每次都留一整版会让库线性膨胀：只有手动保存/离开编辑，
+      // 或距上一版超过 REVISION_GAP 才留一版
+      const keepOpts = snapshot ? {} : { minGapMs: REVISION_GAP };
+      if (snapshot && row.content && row.content !== next) Revisions.keep(id, userId, row.content);
       const cues = rebindCues(next, parseJson(row.cues_json, null));
       const illus = rebindIllus(next, parseJson(row.illus_json, null));
       const ok = db.prepare(`UPDATE drafts SET content = ?, status = 'done',
@@ -1007,7 +1006,7 @@ export const Drafts = {
                          WHERE id = ? AND user_id = ?`)
         .run(next, JSON.stringify(cues.cues), JSON.stringify(illus.illus), now(), id, userId).changes > 0;
       if (!ok) return null;
-      Revisions.keep(id, userId, next);
+      Revisions.keep(id, userId, next, keepOpts);
       return { cuesDropped: cues.dropped, illusDropped: illus.dropped };
     });
   },
@@ -1123,17 +1122,26 @@ function withTx(fn) {
   }
 }
 
+/* 历史版本的两道闸：自动保存按时间间隔留版；每篇最多留 REVISION_MAX 版，超出删最旧的 */
+const REVISION_GAP = 10 * 60 * 1000;
+const REVISION_MAX = 50;
+
 export const Revisions = {
-  keep(draftId, userId, content) {
+  keep(draftId, userId, content, { minGapMs = 0 } = {}) {
     const text = String(content ?? '');
     if (!text) return null;
     const last = db.prepare(
-      'SELECT content FROM draft_revisions WHERE draft_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1',
+      'SELECT content, created_at FROM draft_revisions WHERE draft_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1',
     ).get(draftId, userId);
     if (last && last.content === text) return null;
+    if (last && minGapMs && Date.now() - Date.parse(last.created_at) < minGapMs) return null;
     const info = db.prepare(
       'INSERT INTO draft_revisions (draft_id, user_id, content, created_at) VALUES (?, ?, ?, ?)',
     ).run(draftId, userId, text, now());
+    db.prepare(`
+      DELETE FROM draft_revisions WHERE draft_id = ? AND user_id = ? AND id NOT IN (
+        SELECT id FROM draft_revisions WHERE draft_id = ? AND user_id = ? ORDER BY id DESC LIMIT ?
+      )`).run(draftId, userId, draftId, userId, REVISION_MAX);
     return Number(info.lastInsertRowid);
   },
   list(draftId, userId) {

@@ -111,6 +111,11 @@ else
 fi
 pm2 save
 
+# 每日备份（幂等：已装过就不重复加）
+sudo mkdir -p /opt/ip-studio-backups && sudo chown ubuntu:ubuntu /opt/ip-studio-backups
+CRON_LINE="17 3 * * * APP_DIR=\${REMOTE_DIR} bash \${REMOTE_DIR}/scripts/backup.sh >> /opt/ip-studio-backups/backup.log 2>&1"
+( { crontab -l 2>/dev/null | grep -v 'ip-studio.*/scripts/backup.sh'; } || true ; echo "\${CRON_LINE}" ) | crontab -
+
 sleep 2
 echo "==> Health"
 curl -fsS "http://127.0.0.1:\${PORT}/health"

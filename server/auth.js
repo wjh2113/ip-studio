@@ -68,7 +68,8 @@ export function ensureAccessUser() {
 }
 
 export function syncAdminPassword() {
-  const pw = String(process.env.ADMIN_PASSWORD || accessPassword() || '');
+  // 只认 ADMIN_PASSWORD；不再拿访问密码兜底，两者可以（也应该）不同
+  const pw = String(process.env.ADMIN_PASSWORD || '');
   if (!pw) return false;
   const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
   const hash = hashPassword(pw);

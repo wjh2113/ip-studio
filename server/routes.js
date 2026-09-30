@@ -246,11 +246,12 @@ export async function handleAdminSetup(req, res, body) {
 
 export async function handleAdminLogin(req, res, body) {
   const password = String(body?.password || '');
-  if (accessGateOn() && checkAccessPassword(password)) {
+  /* 有访问门时后台页只填密码：用户名取 ADMIN_USERNAME，但密码校验的是管理员自己的密码，
+     不再接受访问密码——知道访问密码不等于是管理员。 */
+  if (accessGateOn() && !String(body?.username || '').trim()) {
+    if (!password) throw new HttpError(400, '请输入管理员密码');
     const name = String(process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
-    const admin = Admins.byName(name);
-    if (!admin) throw new HttpError(401, '管理员账号未初始化');
-    Admins.touch(admin.id);
+    const admin = adminLogin(name, password);
     json(res, 200, { admin: publicAdmin(admin) },
       { 'Set-Cookie': adminCookie(startAdminSession(admin)) });
     return;
@@ -842,7 +843,8 @@ export async function handleContent(req, res, body, params) {
 
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
-  req.on('close', () => controller.abort());
+  // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
+  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
 
   send('start', { title: topic.title });
   Drafts.setContent(draft.id, user.id, {
@@ -863,6 +865,8 @@ export async function handleContent(req, res, body, params) {
     });
     send('done', { draft: Drafts.byId(draft.id, user.id) });
   } catch (err) {
+    // 失败或中途关页面：别让草稿停在 writing + 空正文，退回到选方向这一步（上一版正文在历史里）
+    Drafts.setContent(draft.id, user.id, { chosen: null, title: '', content: '', status: 'topics' });
     if (!controller.signal.aborted) send('error', { message: describe(err) });
   } finally {
     res.end();
@@ -875,7 +879,8 @@ export async function handleSaveContent(req, res, body, params) {
   const user = requireUser(req);
   const content = String(body?.content ?? '');
   if (content.length > 60000) throw new HttpError(400, '正文过长');
-  const saved = Drafts.saveContent(Number(params.id), user.id, content);
+  // snapshot = 手动保存或离开编辑；自动保存不带，历史版本按时间间隔留
+  const saved = Drafts.saveContent(Number(params.id), user.id, content, { snapshot: Boolean(body?.snapshot) });
   if (!saved) throw new HttpError(404, '记录不存在');
   json(res, 200, {
     draft: Drafts.byId(Number(params.id), user.id),
@@ -1259,7 +1264,8 @@ export async function handleAssist(req, res, body, params) {
   });
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
-  req.on('close', () => controller.abort());
+  // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
+  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
 
   try {
     const text = await streamText({
@@ -1485,6 +1491,7 @@ export function describe(err) {
   const raw = String(err?.message || err);
   if (/401|authentication|api key/i.test(raw)) return '模型密钥无效或未配置，请检查 .env';
   if (/429|rate/i.test(raw)) return '触发上游限流，请稍后再试';
+  if (err?.name === 'TimeoutError' || /timed? ?out|timeout/i.test(raw)) return '模型响应超时，请稍后再试';
   if (/ENOTFOUND|ECONNREFUSED|fetch failed/i.test(raw)) return `无法连接模型服务（${PROVIDER}），请检查网络或 BASE_URL`;
   return raw.slice(0, 300);
 }
@@ -1524,7 +1531,8 @@ export async function handlePromptDocs(req, res) {
     stages: STAGES,
     principle: PRINCIPLE,
     assembly: ASSEMBLY,
-    canEdit: Boolean(currentUser(req)),
+    // 提示词是全站共用的，只有管理员能改；普通用户只读
+    canEdit: Boolean(currentAdmin(req)),
     prompts: PROMPT_DOCS().map((p) => ({
       ...p,
       system: liveSystem(p.key, p.system),
@@ -1535,13 +1543,13 @@ export async function handlePromptDocs(req, res) {
 }
 
 export async function handlePromptSave(req, res, body, params) {
-  const user = requireUser(req);
-  const history = savePromptEdit(params.key, body?.system, user.id);
+  const admin = requireAdmin(req);
+  const history = savePromptEdit(params.key, body?.system, admin.id);
   json(res, 200, { history, system: history.find((h) => h.active)?.system || '' });
 }
 
 export async function handlePromptActivate(req, res, body, params) {
-  requireUser(req);
+  requireAdmin(req);
   const history = activateRevision(params.key, params.rid);
   json(res, 200, { history, system: history.find((h) => h.active)?.system || '' });
 }

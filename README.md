@@ -197,12 +197,44 @@ HTML 少一个闭合标签不会报错，只会静默变形，这类改动之后
 「复制口播稿」把整体基调、每段正文和标注导出成能直接照着念的纯文本；
 「提词器」全屏滚动播放，见下面的提词器一节。
 
-上传这一遍之后先转写、再做文字总评（完整 / 节奏 / 表达）。**语音测评**和**视频测评**是单独按钮，按稿子语种走网关：
+上传这一遍之后先转写、再做文字总评（完整 / 节奏 / 表达，走 quality-chat）。**语音测评**和**视频测评**是两个单独按钮，
+没点过的那一项分数保持 `null`，不让模型猜分，也**不用 quality-chat 打发音分或出镜分**。
 
-- 语音测评 → `POST /api/ai/pronounce`，对照稿子打发音分
-- 视频测评 → `POST /api/ai/appearance`，整段视频交给网关抽帧看出镜，浏览器不要截帧
+两条接口都走 LLM 网关（`LLM_GATEWAY_URL`，生产是 `https://aiapimgrapi.aidigitcloud.cn`），
+用现有租户 Key（`Authorization: Bearer …`），`tenantId=IP`，另带 `fallback=true`、`dataClass=internal`。
+代码里不写上游模型名，由网关按 capability 选。实现在 [server/speak.js](server/speak.js)。
 
-稿子语种：假名走日语 `ja`，拉丁字母明显多于汉字走英语 `en`，其余中文 `zh`。转写、发音、出镜都带这个 `language`，评语用对应语言。
+**语音测评** → `POST /api/ai/pronounce`
+
+| 字段 | 值 |
+|---|---|
+| `capability` | `pronunciation` |
+| `file` | 这一遍录音 |
+| `text` | 当时要念的稿子（稿子快照，**不是转写**） |
+| `language` | `zh` / `en` / `ja` |
+
+只采用返回的 `score`（0–100）写进「发音」项。
+
+**视频测评** → `POST /api/ai/appearance`
+
+| 字段 | 值 |
+|---|---|
+| `capability` | `appearance` |
+| `file` | 这一遍口播视频（mp4 / webm），**整段上传** |
+| `text` | 口播提示里和出镜有关的句子：出镜提醒、表情、动作（含看镜头）。**不是稿子，也不让模型改写** |
+| `language` | `zh` / `en` / `ja`，默认 `zh` |
+
+- **不要抽帧**：浏览器和业务侧都不抽帧、不截图，网关内部抽 4 帧再走 vision。
+- **纯音频没有画面**：网关回 400（「这是声音、没有画面，不要编一个出镜分」）。业务侧按录音的 mime 提前挡掉，
+  前端把音频记录的「视频测评」按钮置灰，演示模式也不编分。
+- **画面里没人时 `score` 为 `null`**，这是合法结果，照原样存，不补分；总分按权重时这一项不计入。
+- 返回的 `note` 由网关按 `language` 用中 / 英 / 日写，直接展示。
+
+网关回 400 / 413 / 415 / 422 时按 400 透给前端（材料不对，不是服务故障），其余按 502。
+
+**语种**：转写、发音、出镜三次调用用同一个 `language`，由稿子判断——
+稿子里有假名走 `ja`，拉丁字母明显多于汉字走 `en`，其余走 `zh`（`scriptLanguage()`）。
+网关也认 `zh-CN`、`en-US`、`ja-JP`，本项目统一传两位的 `zh` / `en` / `ja`。
 
 ### 成稿只有三个动作：修改 / 确认 / 导出
 
@@ -888,3 +920,20 @@ bash scripts/deploy-jdcloud.sh
 
 DNS：在阿里云给 `ip.aidigitcloud.cn` 加一条 **A** 记录指向 `111.228.6.222`（证书已是 `*.aidigitcloud.cn`）。
 
+### 备份
+
+部署脚本会装一条 crontab：每天 03:17 跑 [scripts/backup.sh](scripts/backup.sh)，
+用 `VACUUM INTO` 拿数据库的一致性快照（服务不停），再把 `data/images`、`data/speaks` 打包，
+放在 `/opt/ip-studio-backups/<时间戳>/`，保留 14 天，日志在同目录的 `backup.log`。
+这只是本机备份，**磁盘坏了一样会丢**；要异地，在脚本末尾加一行同步到对象存储。
+
+恢复：停服务 → 把某天的 `app.db` 拷回 `data/app.db`，`tar -xzf images.tar.gz -C data/` → 起服务。
+
+### 上线前的几道闸
+
+- **提示词只有管理员能改**。说明书页 `/prompts` 对普通用户只读；登录后台（`/admin`）后再打开说明书才能编辑、切版本。
+- **后台只认管理员自己的密码**（`ADMIN_PASSWORD`），不再接受访问密码。两者设成同一个值也能用，但那样知道访问密码的人就是管理员。
+- **生产环境不提供演示支付**：`NODE_ENV=production` 且 `PAY_PROVIDER` 是 mock（或没配）时，下单直接拒绝、演示回调一律不认。确实要在生产演示时显式设 `PAY_ALLOW_MOCK=1`。
+- **模型请求有超时**：非流式默认 120 秒（`LLM_TIMEOUT_MS`），流式成稿默认 360 秒（`LLM_STREAM_TIMEOUT_MS`）。
+- **成稿中途失败或关页面**：草稿退回「选方向」这一步，按已生成的字数估算扣点（演示模式不扣）。
+- **正文历史**：手动保存、离开编辑、重新生成时一定留一版；自动保存只在距上一版超过 10 分钟时留一版；每篇最多 50 版。

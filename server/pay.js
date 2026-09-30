@@ -13,7 +13,10 @@
  *   4. 回调可能丢——必须能主动查单补偿，不能只等推送
  */
 
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+/* ESM 里没有 require：crypto 的函数统一在这里导入（原来三处 require 一接真实渠道就会抛 ReferenceError） */
+import {
+  createDecipheriv, createHmac, createSign, createVerify, randomUUID, timingSafeEqual,
+} from 'node:crypto';
 import { conf } from './settings.js';
 
 /* 配置走 conf()：环境变量优先，后台填的存加密库里兜底。
@@ -36,6 +39,11 @@ const cfg = () => ({
   mockSecret: process.env.PAY_MOCK_SECRET || 'dev-only',
 });
 
+/* 演示支付只在开发环境开放。生产默认 mock 时，前端拿到 mockToken 就能自己回调、白开套餐。
+   确实要在生产演示（比如内网验收）时显式设 PAY_ALLOW_MOCK=1。 */
+export const mockAllowed = () =>
+  process.env.NODE_ENV !== 'production' || process.env.PAY_ALLOW_MOCK === '1';
+
 export function payInfo() {
   const c = cfg();
   const ready = {
@@ -49,8 +57,11 @@ export function payInfo() {
       { key: 'wechat', label: '微信支付', ready: ready.wechat },
       { key: 'alipay', label: '支付宝', ready: ready.alipay },
     ],
+    mockAllowed: c.provider === 'mock' ? mockAllowed() : undefined,
     note: c.provider === 'mock'
-      ? '演示模式：不会真的扣款，用来把下单→支付→发货整条流程跑通。'
+      ? (mockAllowed()
+        ? '演示模式：不会真的扣款，用来把下单→支付→发货整条流程跑通。'
+        : '支付通道还没开通，暂时不能在线升级。')
       : '扫码支付。付款后页面会自动刷新套餐，最多等十几秒。',
   };
 }
@@ -63,6 +74,7 @@ export const newTradeNo = () =>
 export async function createPayment({ channel, no, amount, subject }) {
   const c = cfg();
   if (c.provider === 'mock') {
+    if (!mockAllowed()) throw new Error('支付通道还没开通（生产环境不提供演示支付）');
     // 假支付：给一个能直接点的"我付好了"链接，签名防止别人替你付
     return { codeUrl: `mock://pay/${no}`, mock: true, mockToken: mockSign(no, amount) };
   }
@@ -103,8 +115,6 @@ function wechatAuth(c, method, url, bodyStr) {
   const nonce = randomUUID().replace(/-/g, '');
   const message = `${method}\n${url}\n${ts}\n${nonce}\n${bodyStr}\n`;
   // 商户私钥是 RSA，这里用 node:crypto 的 sign；私钥从环境变量读
-  // eslint-disable-next-line global-require
-  const { createSign } = require('node:crypto');
   const signature = createSign('RSA-SHA256').update(message).end().sign(c.wx.privateKey, 'base64');
   return `WECHATPAY2-SHA256-RSA2048 mchid="${c.wx.mchid}",nonce_str="${nonce}",`
     + `signature="${signature}",timestamp="${ts}",serial_no="${c.wx.serial}"`;
@@ -125,7 +135,6 @@ async function alipayFace(c, { no, amount, subject }) {
       out_trade_no: no, total_amount: (amount / 100).toFixed(2), subject,
     }),
   };
-  const { createSign } = await import('node:crypto');
   const base = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
   params.sign = createSign('RSA-SHA256').update(base, 'utf8').end().sign(c.ali.privateKey, 'base64');
 
@@ -148,6 +157,7 @@ async function alipayFace(c, { no, amount, subject }) {
 export function verifyNotify(channel, { headers, rawBody, query }) {
   const c = cfg();
   if (c.provider === 'mock') {
+    if (!mockAllowed()) return null;          // 生产环境一律不认演示回调
     const token = query?.get?.('token') || '';
     const no = query?.get?.('no') || '';
     const amount = Number(query?.get?.('amount') || 0);
@@ -172,7 +182,6 @@ function decodeWechat(c, headers, rawBody) {
   try {
     const body = JSON.parse(rawBody);
     const r = body.resource;
-    const { createDecipheriv } = require('node:crypto');
     const d = createDecipheriv('aes-256-gcm', c.wx.key, r.nonce);
     d.setAuthTag(Buffer.from(r.ciphertext, 'base64').subarray(-16));
     d.setAAD(Buffer.from(r.associated_data || ''));
@@ -189,7 +198,6 @@ function decodeWechat(c, headers, rawBody) {
 function decodeAlipay(c, rawBody) {
   try {
     const p = Object.fromEntries(new URLSearchParams(rawBody));
-    const { createVerify } = require('node:crypto');
     const sign = p.sign;
     delete p.sign; delete p.sign_type;
     const base = Object.keys(p).sort().map((k) => `${k}=${p[k]}`).join('&');

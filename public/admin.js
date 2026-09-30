@@ -71,15 +71,15 @@ function toast(msg) {
     if (admin) return enter(admin);
     setupMode = needsSetup;
     if (gate && !needsSetup && !setupLocked) {
-      el.gateSub.textContent = '输入访问密码进入后台。与 API 网关管理台同一组密码。';
+      el.gateSub.textContent = '输入管理员密码进入后台。';
       const row = document.getElementById('adminUserRow');
       const input = el.gateForm.username;
       row?.classList.add('hidden');
       if (input) {
         input.removeAttribute('required');
-        input.value = 'admin';
+        input.value = '';   // 留空：服务端用 ADMIN_USERNAME
       }
-      el.gateForm.password.placeholder = '访问密码';
+      el.gateForm.password.placeholder = '管理员密码';
     } else if (setupLocked) {
       el.gateSub.textContent = '管理员尚未初始化。公网入口已关闭，请在服务器用环境变量创建。';
       el.gateSubmit.disabled = true;

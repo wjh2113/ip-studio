@@ -23,6 +23,19 @@ const TEMP_PROSE = Number(process.env.LLM_TEMPERATURE) || 1.0;
 const TEMP_JSON = Number(process.env.LLM_TEMPERATURE_JSON) || 0.6;
 const TOP_P = Number(process.env.LLM_TOP_P) || 0.95;
 
+/* 超时：上游卡住时不能让请求一直挂着（原来要等 nginx 600 秒才断）。
+   非流式（选题、检查、口播提示等 JSON）默认 120 秒；流式成稿默认 360 秒。 */
+const CALL_TIMEOUT = Number(process.env.LLM_TIMEOUT_MS) || 120_000;
+const STREAM_TIMEOUT = Number(process.env.LLM_STREAM_TIMEOUT_MS) || 360_000;
+const withTimeout = (signal, ms) => (signal
+  ? AbortSignal.any([signal, AbortSignal.timeout(ms)])
+  : AbortSignal.timeout(ms));
+
+/* 中途失败或被用户中断时，按已经收到的字数估算用量扣点——
+   否则「边生成边关页面」可以白嫖大半篇。估算偏保守：输入每字 0.6 token、输出每字 1 token。 */
+const estimateTokens = (inputChars, outputChars) =>
+  Math.ceil((inputChars || 0) * 0.6 + (outputChars || 0) * 1.0);
+
 function detectProvider() {
   const forced = (process.env.LLM_PROVIDER || '').toLowerCase();
   if (forced) return forced;
@@ -78,10 +91,15 @@ async function tracked(meta, run) {
     if (metered) consume(meta.userId, '文案', tokens);
     return value;
   } catch (err) {
+    const partial = Number(err?.partialChars) || 0;
+    // 演示模式本来就不计费，中断也不估
+    const est = partial > 0 && PROVIDER !== 'mock' ? estimateTokens(meta.inputChars, partial) : 0;
     usageSink?.({
       ...meta, provider: PROVIDER, model, ok: false, ms: Date.now() - started,
       error: String(err?.message || err),
+      ...(est ? { units: est, unit: 'token' } : {}),
     });
+    if (metered && est) consume(meta.userId, '文案', est);
     throw err;
   }
 }
@@ -100,7 +118,7 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
         system,
         messages: [{ role: 'user', content: user }],
         output_config: { format: { type: 'json_schema', schema }, effort: 'medium' },
-      });
+      }, { timeout: CALL_TIMEOUT });
       const text = res.content.find((b) => b.type === 'text')?.text || '';
       return {
         value: parseJSON(text),
@@ -137,7 +155,7 @@ export async function generateText({ system, user, mock, meta = {} }) {
         system,
         messages: [{ role: 'user', content: user }],
         output_config: { effort: 'medium' },
-      });
+      }, { timeout: CALL_TIMEOUT });
       return {
         value: res.content.filter((b) => b.type === 'text').map((b) => b.text).join(''),
         usage: { input: res.usage?.input_tokens, output: res.usage?.output_tokens },
@@ -153,9 +171,18 @@ export async function generateText({ system, user, mock, meta = {} }) {
  * 流式正文：逐段回调 onDelta，返回完整文本
  * ------------------------------------------------------------------ */
 export async function streamText({ system, user, onDelta, mock, signal, meta = {} }) {
-  return tracked({ feature: 'unknown', ...meta }, () => streamOnce({
-    system, user, onDelta, mock, signal, userId: meta.userId,
-  }));
+  let sent = 0;
+  const count = (text) => { sent += text.length; onDelta(text); };
+  const inputChars = String(system || '').length + String(user || '').length;
+  return tracked({ feature: 'unknown', ...meta, inputChars }, async () => {
+    try {
+      return await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId });
+    } catch (err) {
+      // 带上已收到的字数，tracked() 据此估算扣点
+      if (err && typeof err === 'object') err.partialChars = sent;
+      throw err;
+    }
+  });
 }
 
 async function streamOnce({ system, user, onDelta, mock, signal, userId }) {
@@ -170,7 +197,7 @@ async function streamOnce({ system, user, onDelta, mock, signal, userId }) {
         messages: [{ role: 'user', content: user }],
         output_config: { effort: 'medium' },
       },
-      { signal },
+      { signal, timeout: STREAM_TIMEOUT },
     );
     let full = '';
     for await (const event of stream) {
@@ -206,7 +233,7 @@ async function gatewayChat({
 }) {
   const res = await fetch(`${GATEWAY_URL}/api/ai/chat`, {
     method: 'POST',
-    signal,
+    signal: withTimeout(signal, stream ? STREAM_TIMEOUT : CALL_TIMEOUT),
     headers: {
       'Content-Type': 'application/json',
       ...(GATEWAY_KEY ? { Authorization: `Bearer ${GATEWAY_KEY}` } : {}),
@@ -230,7 +257,7 @@ async function gatewayChat({
 async function openaiChat({ system, user, stream, onDelta, responseFormat, signal, temperature = TEMP_PROSE }) {
   const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
     method: 'POST',
-    signal,
+    signal: withTimeout(signal, stream ? STREAM_TIMEOUT : CALL_TIMEOUT),
     headers: {
       'Content-Type': 'application/json',
       ...(OPENAI_KEY ? { Authorization: `Bearer ${OPENAI_KEY}` } : {}),
@@ -301,7 +328,8 @@ export function parseJSON(text) {
 
 async function streamMock(text, onDelta, signal) {
   for (let i = 0; i < text.length; i += 12) {
-    if (signal?.aborted) break;
+    // 和真实通道一致：被中断就抛错，而不是假装写完了
+    if (signal?.aborted) throw Object.assign(new Error('已中断'), { name: 'AbortError' });
     onDelta(text.slice(i, i + 12));
     await new Promise((r) => setTimeout(r, 18));
   }
