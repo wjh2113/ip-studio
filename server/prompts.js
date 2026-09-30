@@ -869,7 +869,7 @@ quote 必须从正文**逐字照抄**（含标点），按正文顺序排列，�
 
 /* ==================================================================
  * 口播总评：录完一遍之后的一张分数卡
- * 走 quality-chat。发音、出镜没有材料时必须是 null，不许猜。
+ * 走 quality-chat。发音分数只认网关评测，模型不要另打这项的分。出镜没有材料时必须是 null。
  * ================================================================== */
 
 export const SPEAK_REVIEW_SCHEMA = {
@@ -909,13 +909,13 @@ export const SPEAK_REVIEW_SCHEMA = {
 };
 
 export const SPEAK_REVIEW_SYSTEM =
-`你是口播总评。用户对着稿子念完一遍。你会拿到：稿子、口播提示、转写。发音评测和出镜材料如果写的是「无」，对应分数必须是 null。
+`你是口播总评。用户对着稿子念完一遍。你会拿到：稿子、口播提示、转写、网关发音评测。发音分数由网关给出，总评不要另打这项的分。发音评测和出镜材料如果写的是「无」，对应分数必须是 null。
 
 出一份总评，不要分成多份报告。
 
 分数都是 0–100 的整数。
 - 完整：稿子有没有念全，有没有漏句、多句、说错词。依据是转写和稿子的对照。
-- 发音：只根据发音评测。材料是「无」时，score 必须是 null，不要靠转写猜读音。
+- 发音：只根据发音评测。材料是「无」时，score 必须是 null，不要靠转写猜读音。材料里已有分数时，照抄那个分数，不要自己另打。
 - 节奏：语速是否稳、该停的地方停了没有、有没有嗯啊和卡壳。转写没有时间戳时，只根据嗯、啊、重复和断句判断，不要编造每秒几个字。
 - 表达：重读、情绪是否贴上口播提示。提示里没要求的，不要扣分。
 - 出镜：看镜头、表情和手势是否过满。材料是「无」时，score 必须是 null。
@@ -928,7 +928,7 @@ export const SPEAK_REVIEW_SYSTEM =
 next 只写下一次重录最该改的一件事。没有待提升时，next 写「这遍可以过」。
 全部使用简体中文。`;
 
-export const speakReviewUser = (script, cues, transcript) => {
+export const speakReviewUser = (script, cues, transcript, pronunciation) => {
   const cueText = !cues?.cues?.length
     ? '无'
     : [
@@ -947,6 +947,19 @@ export const speakReviewUser = (script, cues, transcript) => {
       }),
     ].filter(Boolean).join('\n');
 
+  const pronBlock = !pronunciation || pronunciation.score == null
+    ? '无'
+    : [
+      `分数 ${pronunciation.score}`,
+      pronunciation.note || '',
+      ...(Array.isArray(pronunciation.issues) ? pronunciation.issues.map((i) => {
+        const q = String(i?.quote || '').trim();
+        const n = String(i?.note || '').trim();
+        if (!q && !n) return '';
+        return q ? `${q}${n ? `（${n}）` : ''}` : n;
+      }) : []),
+    ].filter(Boolean).join('\n');
+
   return `—— 稿子 ——
 ===== 正文开始 =====
 ${script}
@@ -960,7 +973,7 @@ ${transcript || '（空）'}
 转写没有逐句时间戳。节奏不要编造语速秒数。
 
 —— 发音评测 ——
-无
+${pronBlock}
 
 —— 出镜 ——
 无`;

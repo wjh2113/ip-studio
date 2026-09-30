@@ -55,7 +55,7 @@ const el = {
   multiHint: $('multiHint'), multiRunBtn: $('multiRunBtn'), verTabs: $('verTabs'),
   prompter: $('prompter'), pStage: $('pStage'), pScroll: $('pScroll'), pBody: $('pBody'),
   pPlay: $('pPlay'), pSpeedVal: $('pSpeedVal'), pSizeVal: $('pSizeVal'), pProgress: $('pProgress'),
-  pCues: $('pCues'), pMirror: $('pMirror'), pRestart: $('pRestart'), pClose: $('pClose'),
+  pCues: $('pCues'), pMirror: $('pMirror'), pRestart: $('pRestart'), pRec: $('pRec'), pClose: $('pClose'),
   saveBtn: $('saveBtn'), saveState: $('saveState'), learnBtn: $('learnBtn'),
   reviewBtn: $('reviewBtn'), reviewBox: $('reviewBox'), reviewVerdict: $('reviewVerdict'),
   reviewSummary: $('reviewSummary'), reviewList: $('reviewList'),
@@ -1298,10 +1298,19 @@ function setMode(mode) {
 /* ---------------- 保存 ---------------- */
 let saveTimer;
 
+/* 只改「保存中 / 已保存 / 失败」这几个状态。藏不藏由是不是编辑模式决定，
+   不要整段换 class，否则阅读模式的 hidden 会被清掉。 */
+function setSaveState(text, kind) {
+  if (!el.saveState) return;
+  el.saveState.textContent = text;
+  el.saveState.classList.remove('dirty', 'saved');
+  if (kind) el.saveState.classList.add(kind);
+  el.saveState.classList.toggle('hidden', state.mode !== 'edit');
+}
+
 function markDirty() {
   state.dirty = true;
-  el.saveState.textContent = '未保存';
-  el.saveState.className = 'save-state dirty';
+  setSaveState('未保存', 'dirty');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushSave, 1200);
 }
@@ -1311,20 +1320,30 @@ async function flushSave() {
   if (!state.dirty || !state.draft) return;
   const content = state.draft.content;
   state.dirty = false;
-  el.saveState.textContent = '保存中…';
-  el.saveState.className = 'save-state';
+  setSaveState('保存中…');
   try {
-    const { draft } = await api(`/drafts/${state.draft.id}/content`, { method: 'PUT', body: { content } });
-    state.draft = draft;          // 服务端已把 cues 清掉：正文变了，旧的口播提示就对不上了
-    if (state.mode === 'cue') renderCues(null);
-    el.saveState.textContent = '已保存';
-    el.saveState.className = 'save-state saved';
+    const { draft, kept } = await api(`/drafts/${state.draft.id}/content`, { method: 'PUT', body: { content } });
+    const newer = Boolean(state.draft && state.draft.content !== content);
+    state.draft = newer ? { ...draft, content: state.draft.content } : draft;
+    if (state.mode === 'cue') renderCues(state.draft.cues);
+    if (state.mode !== 'edit') {
+      if (ver.current) showVersion();
+      else renderContent();
+    }
+    renderVersionTabs();
+    if (state.illusOpen) renderIllusBar();
+    if (newer) markDirty();
+    else setSaveState('已保存', 'saved');
+    const notes = [];
+    if (kept?.cuesDropped) notes.push(`口播提示拿掉了 ${kept.cuesDropped} 条对不上的`);
+    if (kept?.illusDropped) notes.push(`配图拿掉了 ${kept.illusDropped} 张对不上的`);
+    if (notes.length) toast(notes.join('，'));
     loadHistory();
     if (state.revOpen) loadRevs().catch(() => {});
   } catch (err) {
     state.dirty = true;
-    el.saveState.textContent = `保存失败：${err.message}`;
-    el.saveState.className = 'save-state dirty';
+    setSaveState(`保存失败：${err.message}`, 'dirty');
+    toast(`保存失败：${err.message}`);
   }
 }
 
@@ -2335,6 +2354,8 @@ function renderCues(cues) {
     ['整体基调', o.tone], ['语速节奏', o.pace], ['出镜提醒', o.note],
   ].filter(([, v]) => v)
     .map(([k, v]) => `<div class="row"><b>${k}</b><span>${esc(v)}</span></div>`).join('')
+    + (cues.trimmed
+      ? `<div class="cues-note">改稿后有 ${cues.trimmed} 条对不上，已拿掉。还在的下一遍仍按这套提示评。</div>` : '')
     + (cues.coverage < 60
       ? `<div class="cues-note">只覆盖了正文约 ${cues.coverage}%——标题、标签这类不念的内容会跳过</div>` : '');
 
@@ -2716,10 +2737,101 @@ function pausePrompter() {
 
 const togglePrompter = () => (prompter.playing ? pausePrompter() : playPrompter());
 
-function closePrompter() {
+function closePrompterNow() {
   pausePrompter();
   el.prompter.classList.add('hidden');
   releaseWakeLock();
+}
+
+function closePrompter() {
+  if (pRec && pRec.state === 'recording') {
+    pRec.stop();
+    return;
+  }
+  closePrompterNow();
+}
+
+/* 提词器里直接录。停下来走原来的口播上传，总评完关掉提词器，结果进这篇的口播列表。 */
+let pRec = null;
+let pChunks = [];
+let pRecTimer = null;
+const PROMPTER_REC_MS = 8 * 60 * 1000;
+
+function setPRec(recording) {
+  if (!el.pRec) return;
+  el.pRec.classList.toggle('rec', recording);
+  el.pRec.disabled = false;
+  el.pRec.textContent = recording ? '■ 停止' : '● 录';
+}
+
+function audioMime() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
+  if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
+  return '';
+}
+
+async function togglePrompterRec() {
+  if (!state.draft?.cues?.cues?.length) { toast('先生成口播提示'); return; }
+  if (typeof MediaRecorder === 'undefined') { toast('这个浏览器不能在页面里录音'); return; }
+  if (pRec && pRec.state === 'recording') { pRec.stop(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    toast('没有拿到麦克风');
+    return;
+  }
+  const mime = audioMime();
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  pChunks = [];
+  rec.ondataavailable = (ev) => { if (ev.data?.size) pChunks.push(ev.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    if (pRecTimer) { clearTimeout(pRecTimer); pRecTimer = null; }
+    pRec = null;
+    setPRec(false);
+    const blob = new Blob(pChunks, { type: rec.mimeType || 'audio/webm' });
+    pChunks = [];
+    closePrompterNow();
+    if (blob.size > 0) submitPrompterTake(blob);
+    else toast('没有录到声音');
+  };
+  pRec = rec;
+  rec.start();
+  setPRec(true);
+  pRecTimer = setTimeout(() => {
+    if (pRec && pRec.state === 'recording') {
+      toast('录音已到 8 分钟，先停下来评估');
+      pRec.stop();
+    }
+  }, PROMPTER_REC_MS);
+}
+
+async function submitPrompterTake(blob) {
+  if (!state.draft) return;
+  if (blob.size > 24 * 1024 * 1024) { toast('录音请小于 24MB'); return; }
+  toast('正在评估这一遍');
+  try {
+    const res = await fetch(`/api/drafts/${state.draft.id}/speaks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': blob.type || 'audio/webm',
+        'X-Filename': 'prompter.webm',
+      },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `上传失败（${res.status}）`);
+    state.focusSpeakId = data.speak?.id || null;
+    if (state.mode !== 'cue') setMode('cue');
+    else await loadDraftSpeaks();
+    if (state.historyMode === 'speaks') loadSpeakHistory();
+    if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
+    else toast('这遍口播已留档');
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 /* 录制时别让屏幕睡过去 */
@@ -2740,6 +2852,7 @@ function bump(key, delta, lo, hi) {
 }
 
 el.pPlay.addEventListener('click', togglePrompter);
+el.pRec?.addEventListener('click', () => { togglePrompterRec().catch((err) => toast(err.message)); });
 el.pRestart.addEventListener('click', resetPrompter);
 el.pClose.addEventListener('click', closePrompter);
 el.pCues.addEventListener('click', () => {

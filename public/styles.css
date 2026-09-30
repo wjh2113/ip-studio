@@ -1090,6 +1090,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .pbtn:hover { border-color: #4d7cff; }
 .pbtn.sm { padding: 4px 10px; }
 .pbtn.on { background: #1b2740; border-color: #4d7cff; color: #9fbaff; }
+.pbtn.rec { background: #3a1214; border-color: #ff3d2e; color: #ffb4ac; }
 .pprogress { color: #8b93a3; font-variant-numeric: tabular-nums; }
 
 .prompter-stage { position: relative; flex: 1; overflow: hidden; }
