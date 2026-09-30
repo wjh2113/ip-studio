@@ -92,17 +92,40 @@ export async function pronounceAudio(buffer, { filename, mime, userId, script, l
   const lang = language || scriptLanguage(text);
   const { res, data } = await postAudio('/api/ai/pronounce', buffer, {
     filename, mime, userId,
-    fields: { capability: 'pronunciation', language: lang, text },
+    fields: {
+      capability: 'pronunciation',
+      language: lang,
+      text,
+      tenantId: GATEWAY_TENANT,
+    },
   });
   if (!res.ok) throw new Error(gatewayError(data, `发音评测失败 ${res.status}`));
+  const parsed = readPronounce(data);
+  if (!parsed) throw new Error('发音评测没有返回分数');
+  return parsed;
+}
+
+/* 网关 /api/ai/pronounce 的实际字段：score、note、issues、usage.prompt_tokens。 */
+export function readPronounce(data) {
   const score = Number(data?.score);
-  if (!Number.isFinite(score)) throw new Error('发音评测没有返回分数');
+  if (!Number.isFinite(score)) return null;
+  const issues = (Array.isArray(data?.issues) ? data.issues : []).slice(0, 4).map((item) => ({
+    quote: String(item?.quote || '').trim(),
+    note: String(item?.note || '').trim(),
+  })).filter((item) => item.quote || item.note);
+  const issueText = issues.map((item) => (
+    item.quote && item.note ? `${item.quote}：${item.note}` : (item.note || item.quote)
+  )).join('；');
+  const head = String(data?.note || '').trim();
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
-    note: String(data?.note || '').trim(),
-    issues: Array.isArray(data?.issues) ? data.issues : [],
+    note: [head, issueText].filter(Boolean).join('。'),
+    issues,
     transcript: String(data?.transcript || '').trim(),
-    usage: data?.usage || null,
+    usage: {
+      input: Number(data?.usage?.prompt_tokens ?? data?.usage?.input) || 0,
+      output: Number(data?.usage?.completion_tokens ?? data?.usage?.output) || 0,
+    },
   };
 }
 
