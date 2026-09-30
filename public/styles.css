@@ -1682,6 +1682,7 @@ pre, code, .tts-out { font-family: var(--font-mono); }
 .speak-next { margin: 8px 0; }
 .speak-fail { color: #b9770e; margin-bottom: 8px; }
 .speak-detail audio { width: 100%; margin-top: 8px; }
+.speak-extra { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .speak-orphan { margin-top: 8px; }
 .history-item .speak-orphan audio { width: 100%; }
 

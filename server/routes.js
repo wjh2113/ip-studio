@@ -28,7 +28,7 @@ loadPricing();
 import { mockContent, mockTopics } from './mock.js';
 import { enrichSummaries, fetchBoards, parseManual, riskOf, screenItems } from './hotspots.js';
 import { generate, imageInfo } from './images.js';
-import { removeTakeFile, runSpeakPipeline, saveTakeFile, transcribeAudio } from './speak.js';
+import { applyDim, pronounceAudio, removeTakeFile, runSpeakPipeline, saveTakeFile, scoreAppearance, transcribeAudio } from './speak.js';
 import {
   CONTENT_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, TONES,
   ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, DIGEST_SYSTEM, GENDERS,
@@ -1130,6 +1130,72 @@ export async function handleSpeakRetry(req, res, body, params) {
   const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
   const done = await runSpeakPipeline(row, user.id, buf);
   json(res, 200, { speak: presentSpeak(done, user.id, true) });
+}
+
+function readyTake(row) {
+  if (!row) throw new HttpError(404, '这条口播记录不存在');
+  if (!row.file) throw new HttpError(400, '这条记录没有文件');
+  if (row.status !== 'ready' || !row.review) throw new HttpError(400, '文字总评还没好，稍后再测');
+  return row;
+}
+
+function chargeExtra(userId, usage) {
+  const tokens = (Number(usage?.input) || 0) + (Number(usage?.output) || 0);
+  const credits = Number(usage?.credits) || 0;
+  const n = tokens || credits;
+  if (n > 0) consume(userId, '文案', n);
+}
+
+/* 语音测评：上传时不做，点这个才走网关发音评测，并写回「发音」分。 */
+export async function handleSpeakPronounce(req, res, body, params) {
+  const user = requireUser(req);
+  const row = readyTake(Speaks.byId(Number(params.sid), user.id));
+  assertQuota(user.id, '文案');
+  const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
+  const pronunciation = await pronounceAudio(buf, {
+    filename: row.file,
+    mime: row.mime,
+    userId: user.id,
+    script: row.script,
+  });
+  if (!pronunciation) throw new HttpError(400, '没有稿子，评不了发音');
+  chargeExtra(user.id, pronunciation.usage);
+  const review = {
+    ...applyDim(row.review, '发音', pronunciation.score, pronunciation.note || '按网关发音评测'),
+    checks: { ...(row.review.checks || {}), voice: true },
+  };
+  const saved = Speaks.finish(row.id, user.id, {
+    transcript: row.transcript, review, status: 'ready', error: '',
+  });
+  json(res, 200, { speak: presentSpeak(saved, user.id, true) });
+}
+
+/* 视频测评：浏览器抽出的几帧交给 vision，写回「出镜」分。 */
+export async function handleSpeakAppearance(req, res, body, params) {
+  const user = requireUser(req);
+  const row = readyTake(Speaks.byId(Number(params.sid), user.id));
+  const frames = Array.isArray(body?.frames) ? body.frames : [];
+  if (!frames.length) throw new HttpError(400, '没有画面');
+  if (frames.length > 4) throw new HttpError(400, '画面太多');
+  for (const frame of frames) {
+    if (typeof frame !== 'string' || frame.length < 32 || frame.length > 400000) {
+      throw new HttpError(400, '某一帧画面不对');
+    }
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(frame)) throw new HttpError(400, '某一帧画面不对');
+  }
+  assertQuota(user.id, '文案');
+  const look = await scoreAppearance({
+    userId: user.id, script: row.script, cues: row.cues, frames,
+  });
+  chargeExtra(user.id, look.usage);
+  const review = {
+    ...applyDim(row.review, '出镜', look.score, look.note),
+    checks: { ...(row.review.checks || {}), video: true },
+  };
+  const saved = Speaks.finish(row.id, user.id, {
+    transcript: row.transcript, review, status: 'ready', error: '',
+  });
+  json(res, 200, { speak: presentSpeak(saved, user.id, true) });
 }
 
 export async function handleSpeakDelete(req, res, body, params) {

@@ -955,6 +955,7 @@ function renderHistory() {
 }
 
 el.history.addEventListener('click', async (e) => {
+  if (await onSpeakCheck(e)) return;
   const speakDel = e.target.closest('button[data-speak-del]');
   if (speakDel) {
     e.stopPropagation();
@@ -2405,7 +2406,118 @@ function speakReviewHtml(s) {
     <div class="speak-dims">${dims}</div>
     ${lifts ? `<ol class="speak-lifts">${lifts}</ol>` : ''}
     <p class="speak-next">${esc(s.review.next || '')}</p>
+    <div class="speak-extra">
+      <button type="button" class="btn ghost small" data-speak-pron="${s.id}">${s.review.checks?.voice ? '重新语音测评' : '语音测评'}</button>
+      <button type="button" class="btn ghost small" data-speak-look="${s.id}">${s.review.checks?.video ? '重新视频测评' : '视频测评'}</button>
+    </div>
     ${s.audio ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` : ''}`;
+}
+
+function replaceSpeak(speak) {
+  state.focusSpeakId = speak.id;
+  const list = state.speaks || [];
+  state.speaks = list.some((s) => s.id === speak.id)
+    ? list.map((s) => (s.id === speak.id ? speak : s))
+    : [speak, ...list];
+  renderDraftSpeaks();
+  document.querySelectorAll('.speak-orphan').forEach((n) => { n.innerHTML = speakReviewHtml(speak); });
+}
+
+function blobBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result || '');
+      resolve(raw.slice(raw.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('画面读不出来'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function seekVideo(video, time) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('画面定位超时')), 8000);
+    const done = () => {
+      clearTimeout(timer);
+      video.removeEventListener('seeked', done);
+      resolve();
+    };
+    video.addEventListener('seeked', done);
+    video.currentTime = time;
+  });
+}
+
+/* 从已上传的视频里抽 4 帧。纯音频会在这里停住，不会去打出镜分。 */
+async function grabFrames(url) {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = url;
+  try {
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error('这份视频打不开'));
+    });
+    if (!video.videoWidth) throw new Error('这份是声音，没有画面');
+    const w = Math.min(480, video.videoWidth);
+    const h = Math.max(1, Math.round(video.videoHeight * (w / video.videoWidth)));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const dur = Number.isFinite(video.duration) && video.duration > 0.4 ? video.duration : 0;
+    const points = dur
+      ? [0.12, 0.38, 0.62, 0.86].map((p) => Math.max(0.05, Math.min(dur - 0.05, dur * p)))
+      : [0];
+    const frames = [];
+    for (const t of points) {
+      if (dur) await seekVideo(video, t);
+      ctx.drawImage(video, 0, 0, w, h);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.62));
+      if (!blob) throw new Error('画面抽不出来');
+      frames.push(await blobBase64(blob));
+    }
+    return frames;
+  } finally {
+    video.removeAttribute('src');
+    video.load();
+  }
+}
+
+async function runSpeakCheck(id, kind) {
+  let speak = (state.speaks || []).find((s) => s.id === id);
+  if (!speak?.audio || !speak.review) {
+    const got = await api(`/speaks/${id}`);
+    speak = got.speak;
+  }
+  const body = kind === 'video' ? { frames: await grabFrames(speak.audio) } : {};
+  const path = kind === 'video' ? `/speaks/${id}/appearance` : `/speaks/${id}/pronounce`;
+  const { speak: next } = await api(path, { method: 'POST', body });
+  replaceSpeak(next);
+  toast(kind === 'video' ? '视频测评好了' : '语音测评好了');
+}
+
+async function onSpeakCheck(e) {
+  const pron = e.target.closest('[data-speak-pron]');
+  const look = e.target.closest('[data-speak-look]');
+  const btn = pron || look;
+  if (!btn) return false;
+  e.stopPropagation();
+  e.preventDefault();
+  const id = Number(pron ? btn.dataset.speakPron : btn.dataset.speakLook);
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '测评中…';
+  try {
+    await runSpeakCheck(id, pron ? 'voice' : 'video');
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+  return true;
 }
 
 function renderDraftSpeaks() {
@@ -2517,18 +2629,19 @@ el.speakFile?.addEventListener('change', async () => {
     if (!res.ok) throw new Error(data.error || `上传失败（${res.status}）`);
     state.focusSpeakId = data.speak?.id || null;
     if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
-    else toast('这遍口播已留档');
+    else toast('文字总评好了。语音测评和视频测评要点开再做');
     await loadDraftSpeaks();
     if (state.historyMode === 'speaks') loadSpeakHistory();
   } catch (err) {
     toast(err.message);
   } finally {
     el.speakUploadBtn.disabled = !state.draft?.cues?.cues?.length;
-    el.speakUploadBtn.textContent = '上传录音';
+    el.speakUploadBtn.textContent = '上传音视频';
   }
 });
 
 el.speakList?.addEventListener('click', async (e) => {
+  if (await onSpeakCheck(e)) return;
   const retry = e.target.closest('[data-speak-retry]');
   if (retry) {
     const id = Number(retry.dataset.speakRetry);
@@ -2828,7 +2941,7 @@ async function submitPrompterTake(blob) {
     else await loadDraftSpeaks();
     if (state.historyMode === 'speaks') loadSpeakHistory();
     if (data.speak?.status === 'failed') toast(data.speak.error || '评估失败，录音已留下');
-    else toast('这遍口播已留档');
+    else toast('文字总评好了。语音测评和视频测评要点开再做');
   } catch (err) {
     toast(err.message);
   }

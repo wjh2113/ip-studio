@@ -88,6 +88,8 @@ const ROUTES = [
   ['GET', /^\/api\/speaks$/, R.handleSpeakList],
   ['GET', /^\/api\/speaks\/(?<sid>\d+)$/, R.handleSpeakGet],
   ['POST', /^\/api\/speaks\/(?<sid>\d+)\/retry$/, R.handleSpeakRetry],
+  ['POST', /^\/api\/speaks\/(?<sid>\d+)\/pronounce$/, R.handleSpeakPronounce],
+  ['POST', /^\/api\/speaks\/(?<sid>\d+)\/appearance$/, R.handleSpeakAppearance],
   ['DELETE', /^\/api\/speaks\/(?<sid>\d+)$/, R.handleSpeakDelete],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/variants$/, R.handleVariant],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/illus$/, R.handleIllus],
@@ -173,7 +175,10 @@ const server = createServer(async (req, res) => {
       }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉
       const raw = req.method === 'POST' && /^\/api\/pay\/notify\//.test(path);
-      const body = raw || req.method === 'GET' || req.method === 'DELETE' ? {} : await readJSON(req);
+      const frames = req.method === 'POST' && /^\/api\/speaks\/\d+\/appearance$/.test(path);
+      const body = raw || req.method === 'GET' || req.method === 'DELETE'
+        ? {}
+        : await readJSON(req, frames ? 2 * 1024 * 1024 : MAX_BODY);
       await match[2](req, res, body, params, url);
     } catch (err) {
       // QuotaError 自带 402；别把它当 500，前端要靠状态码识别"该升级了"
@@ -205,12 +210,12 @@ const server = createServer(async (req, res) => {
   await serveStatic(path, res);
 });
 
-async function readJSON(req) {
+async function readJSON(req, max = MAX_BODY) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY) throw new HttpError(413, '请求体过大');
+    if (size > max) throw new HttpError(413, '请求体过大');
     chunks.push(chunk);
   }
   if (!chunks.length) return {};

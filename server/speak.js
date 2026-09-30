@@ -1,6 +1,7 @@
 /* 口播总评
- * 录音先落盘，再转写，再走网关发音评测，最后用 quality-chat 出分数卡。
- * 发音分只认网关评测，quality-chat 不打这项。任何一步失败都留下记录。
+ * 上传先转写，再用 quality-chat 给文字总评（完整、节奏、表达）。
+ * 语音测评、视频测评不在这一步做，等用户单独点按钮。
+ * 发音分只认网关评测。出镜分只认抽帧后的 vision。任何一步失败都留下记录。
  */
 
 import { mkdir, rm, writeFile } from 'node:fs/promises';
@@ -12,7 +13,14 @@ import { SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, speakReviewUser } from './pro
 
 const GATEWAY_URL = (process.env.LLM_GATEWAY_URL || 'https://aiapimgrapi.aidigitcloud.cn').replace(/\/$/, '');
 const GATEWAY_KEY = process.env.LLM_GATEWAY_API_KEY || '';
+const GATEWAY_TENANT = process.env.LLM_TENANT_ID || 'IP';
+const VISION_CAPABILITY = process.env.LLM_CAPABILITY_VISION || 'vision';
 const WEIGHT = { 完整: 25, 发音: 25, 节奏: 20, 表达: 20, 出镜: 10 };
+
+const APPEARANCE_SYSTEM = `你在看出镜口播的画面。用户给出这一遍录像里按时间抽出的几帧，以及当时口播提示里对表情和动作的要求。
+只评看镜头、表情、手势是否过满或对不上提示。不要评读音，不要评稿子写得好不好。
+只输出一个 JSON 对象，不要解释。格式：{"score":0到100的整数或null,"note":"一句具体的话"}。
+画面里没有人出镜时，score 必须是 null，note 说明没有人。`;
 
 function gatewayError(data, fallback) {
   const msg = data?.detail?.message || data?.detail || data?.error?.message || data?.message;
@@ -81,6 +89,7 @@ export async function pronounceAudio(buffer, { filename, mime, userId, script })
     note: String(data?.note || '').trim(),
     issues: Array.isArray(data?.issues) ? data.issues : [],
     transcript: String(data?.transcript || '').trim(),
+    usage: data?.usage || null,
   };
 }
 
@@ -116,7 +125,31 @@ export function settleReview(raw, script, pronunciation) {
   })).filter((l) => l.do && (!l.quote || script.includes(l.quote)));
   let next = String(raw?.next || '').trim();
   if (!next) next = lifts.length ? '按第一条再录一遍' : '这遍可以过';
-  return { score, dims, lifts, next };
+  return { score, dims, lifts, next, checks: { ...(raw?.checks || {}) } };
+}
+
+function asScore(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/* 单独补一项分数，并按权重重算总分。null 的权重摊到其余项。 */
+export function applyDim(review, key, score, note) {
+  const prev = Array.isArray(review?.dims) ? review.dims : [];
+  const dims = Object.keys(WEIGHT).map((k) => {
+    const old = prev.find((d) => d.key === k) || { key: k, score: null, note: '' };
+    const next = k === key ? asScore(score) : asScore(old.score);
+    const text = k === key ? note : old.note;
+    return { key: k, score: next, note: String(text || '').trim() };
+  });
+  const used = dims.filter((d) => d.score != null);
+  const wsum = used.reduce((n, d) => n + WEIGHT[d.key], 0);
+  const total = wsum
+    ? Math.round(used.reduce((n, d) => n + d.score * WEIGHT[d.key], 0) / wsum)
+    : null;
+  return { ...(review || {}), score: total, dims };
 }
 
 export async function reviewTake({ userId, script, cues, transcript, pronunciation }) {
@@ -141,10 +174,91 @@ export async function reviewTake({ userId, script, cues, transcript, pronunciati
   return settleReview(out, script, pronunciation);
 }
 
-/* 转写和总评失败也不删记录。调用方已经把文件写好。 */
+function cueLook(cues) {
+  if (!cues?.cues?.length) return '无';
+  return cues.cues.map((c) => {
+    const bits = [
+      c.expression ? `表情 ${c.expression}` : '',
+      c.gesture ? `动作 ${c.gesture}` : '',
+    ].filter(Boolean).join('；');
+    return bits ? `${c.quote}（${bits}）` : '';
+  }).filter(Boolean).join('\n') || '无';
+}
+
+/* 几帧画面交给网关 vision。没有人出镜时分数是 null。 */
+export async function scoreAppearance({ userId, script, cues, frames }) {
+  const images = (frames || []).filter((f) => typeof f === 'string' && f.length > 32).slice(0, 4);
+  if (!images.length) throw new Error('没有画面');
+  if (!GATEWAY_KEY || PROVIDER === 'mock') {
+    return { score: 74, note: '演示模式：这里会看出镜、表情和手势', usage: null };
+  }
+  const text = `稿子节选：\n${String(script || '').slice(0, 500)}\n\n口播提示里的表情和动作：\n${cueLook(cues)}\n\n下面 ${images.length} 帧按时间先后。`;
+  const res = await fetch(`${GATEWAY_URL}/api/ai/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${GATEWAY_KEY}`,
+    },
+    body: JSON.stringify({
+      tenantId: GATEWAY_TENANT,
+      capability: VISION_CAPABILITY,
+      messages: [
+        { role: 'system', content: APPEARANCE_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text },
+            ...images.map((b64) => ({
+              type: 'image_url',
+              image_url: { url: `data:image/jpeg;base64,${b64}` },
+            })),
+          ],
+        },
+      ],
+      dataClass: 'internal',
+      fallback: true,
+      stream: false,
+      temperature: 0.3,
+      ...(userId ? { userId: String(userId) } : {}),
+    }),
+    signal: AbortSignal.timeout(120000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(gatewayError(data, `视频测评失败 ${res.status}`));
+  const raw = String(data.choices?.[0]?.message?.content || '').trim();
+  const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(jsonText); }
+  catch { throw new Error('视频测评没有返回分数'); }
+  const n = parsed?.score == null || parsed.score === '' ? null : Number(parsed.score);
+  return {
+    score: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null,
+    note: String(parsed?.note || '').trim() || (Number.isFinite(n) ? '按画面评的出镜' : '没有看到出镜的人'),
+    usage: {
+      input: data.usage?.prompt_tokens || 0,
+      output: data.usage?.completion_tokens || 0,
+    },
+  };
+}
+
+function keepChecked(review, previous) {
+  let next = review;
+  const checks = previous?.checks || {};
+  if (checks.voice) {
+    const dim = (previous.dims || []).find((d) => d.key === '发音');
+    next = applyDim(next, '发音', dim?.score, dim?.note);
+  }
+  if (checks.video) {
+    const dim = (previous.dims || []).find((d) => d.key === '出镜');
+    next = applyDim(next, '出镜', dim?.score, dim?.note);
+  }
+  if (checks.voice || checks.video) next = { ...next, checks: { ...checks } };
+  return next;
+}
+
+/* 转写和文字总评失败也不删记录。语音测评和视频测评不在这里做。 */
 export async function runSpeakPipeline(row, userId, buffer) {
   let transcript = '';
-  let pronunciation = null;
   try {
     const tr = await transcribeAudio(buffer, {
       filename: row.file || 'take.webm',
@@ -152,17 +266,10 @@ export async function runSpeakPipeline(row, userId, buffer) {
       userId,
     });
     transcript = tr.text;
-    try {
-      pronunciation = await pronounceAudio(buffer, {
-        filename: row.file || 'take.webm',
-        mime: row.mime,
-        userId,
-        script: row.script,
-      });
-    } catch {
-      pronunciation = null;
-    }
-    const review = await reviewTake({ userId, script: row.script, cues: row.cues, transcript, pronunciation });
+    let review = await reviewTake({
+      userId, script: row.script, cues: row.cues, transcript, pronunciation: null,
+    });
+    review = keepChecked(review, row.review);
     return Speaks.finish(row.id, userId, { transcript, review, status: 'ready', error: '' });
   } catch (err) {
     return Speaks.finish(row.id, userId, {
