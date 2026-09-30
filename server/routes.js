@@ -935,7 +935,11 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
     if (!out || !Array.isArray(out.issues)) throw new HttpError(502, '返回结构不对');
     return out;
   }, '检查失败，请再试一次');
+  return cleanReview(data, text);
+}
 
+/* 模型返回的检查结果 → 能安全展示和替换的结果。纯函数，单测覆盖。 */
+export function cleanReview(data, text) {
   // quote 必须能在原文里一字不差地找到，否则没法安全替换——找不到的直接丢掉
   const seen = new Set();
   const issues = data.issues

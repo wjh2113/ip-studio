@@ -10,6 +10,9 @@ STAGING="/tmp/ip-studio-deploy"
 PORT="${DEPLOY_PORT:-5177}"
 DOMAIN="${DEPLOY_DOMAIN:-ip.aidigitcloud.cn}"
 
+echo "==> 部署前先跑检查和测试（不通过就不上线）"
+(cd "${ROOT}" && npm test)
+
 echo "==> Stage to ${REMOTE}:${STAGING}"
 ssh "${REMOTE}" "rm -rf '${STAGING}' && mkdir -p '${STAGING}'"
 rsync -az \
