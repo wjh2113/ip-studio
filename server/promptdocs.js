@@ -251,9 +251,9 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '开录前的口播提示仍走 fast-chat。上传后的文字总评走 **quality-chat**，这一步不测发音、不看出镜。',
-      '语音测评是单独按钮，才走网关 POST /api/ai/pronounce。视频测评是另一个按钮，浏览器抽几帧交给 **vision**。',
+      '语音测评是单独按钮，才走网关 POST /api/ai/pronounce。视频测评是另一个按钮，整段视频走 POST /api/ai/appearance，由网关抽帧，不走 quality-chat。',
       'user 消息按固定顺序拼：当时的稿子、当时的口播提示、转写、发音评测、出镜。没点过的那两项仍是「无」。',
-      '发音分数只认网关评测。出镜分数只认 vision。转写没有时间戳，不许编造语速秒数。',
+      '发音分数只认网关评测。出镜分数只认 appearance。转写没有时间戳，不许编造语速秒数。',
       '待提升最多 6 条，quote 从这一遍的稿子快照逐字照抄。',
     ],
     guards: [

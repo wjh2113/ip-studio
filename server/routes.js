@@ -1170,22 +1170,18 @@ export async function handleSpeakPronounce(req, res, body, params) {
   json(res, 200, { speak: presentSpeak(saved, user.id, true) });
 }
 
-/* 视频测评：浏览器抽出的几帧交给 vision，写回「出镜」分。 */
+/* 视频测评：整段视频交给网关 appearance，由网关抽帧。 */
 export async function handleSpeakAppearance(req, res, body, params) {
   const user = requireUser(req);
   const row = readyTake(Speaks.byId(Number(params.sid), user.id));
-  const frames = Array.isArray(body?.frames) ? body.frames : [];
-  if (!frames.length) throw new HttpError(400, '没有画面');
-  if (frames.length > 4) throw new HttpError(400, '画面太多');
-  for (const frame of frames) {
-    if (typeof frame !== 'string' || frame.length < 32 || frame.length > 400000) {
-      throw new HttpError(400, '某一帧画面不对');
-    }
-    if (!/^[A-Za-z0-9+/=\s]+$/.test(frame)) throw new HttpError(400, '某一帧画面不对');
-  }
   assertQuota(user.id, '文案');
+  const buf = await readFile(resolvePath(DATA_DIR, 'speaks', String(user.id), row.file));
   const look = await scoreAppearance({
-    userId: user.id, script: row.script, cues: row.cues, frames,
+    userId: user.id,
+    cues: row.cues,
+    buffer: buf,
+    filename: row.file,
+    mime: row.mime,
   });
   chargeExtra(user.id, look.usage);
   const review = {
