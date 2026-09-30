@@ -1,0 +1,41 @@
+import { defineStore } from 'pinia';
+
+/* 和原来 public/js/core.js 里的 state 是同一份字段。
+ * 功能模块通过 core.js 读写，组件通过这个 store 读写，指向同一份。 */
+export const useStudioStore = defineStore('studio', {
+  state: () => ({
+    user: null,
+    meta: null,
+    draft: null,
+    streaming: false,
+    busy: false,
+    personas: [],
+    personaId: null,
+    editingId: null,
+    skipOnboard: false,
+    frameworkKey: null,
+    mode: 'read',
+    dirty: false,
+    assist: null,
+    ideaFailed: new Set(),
+    voiceApplying: false,
+    revOpen: false,
+    revId: null,
+    revText: '',
+    revisions: [],
+    view: 'write',
+    boards: null,
+    paramsUnlocked: false,
+    sections: [],
+    sectionId: null,
+    editingSection: null,
+    presets: [],
+    sectionPersonaId: null,
+    showArchived: false,
+    historyMode: 'drafts',
+    counts: { active: 0, archived: 0, activeDone: 0 },
+    speaks: [],
+    focusSpeakId: null,
+    step: 1,
+  }),
+});

@@ -3,13 +3,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Jobs, Users } from '../server/db.js';
 import { snapshot } from '../server/quota.js';
-import { defineJob, enqueue, recoverJobs, retry, waitFor } from '../server/jobs.js';
+import { defineJob, enqueue, recoverJobs, retry, stopQueue, waitFor } from '../server/jobs.js';
 
 const user = (name) => {
   const u = Users.create(name, 'x:y');
   snapshot(u.id);                                  // 进入本月计费周期
   return u;
 };
+
+test.after(async () => { await stopQueue(); });
+
+async function until(pred, ms = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (pred()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error('队列状态没有在预期时间内变化');
+}
 
 test('登记 → 做完 → 结果落库；同一件事没做完不重复建', async () => {
   let calls = 0;
@@ -57,12 +68,10 @@ test('每人并发有上限：同一个人第三件事要排队', async () => {
   defineJob('t-slow', { run: () => new Promise((r) => gates.push(r)) });
   const u = user('job-limit');
   const jobs = [1, 2, 3].map((i) => enqueue(u.id, 't-slow', { ref: `s${i}` }));
-  await new Promise((r) => setTimeout(r, 30));
-  assert.deepEqual(jobs.map((j) => Jobs.byId(j.id).status), ['running', 'running', 'queued']);
+  await until(() => jobs.map((j) => Jobs.byId(j.id).status).join() === 'running,running,queued');
   gates.shift()();
-  await waitFor(jobs[0].id, 1000);
-  await new Promise((r) => setTimeout(r, 30));
-  assert.equal(Jobs.byId(jobs[2].id).status, 'running');
+  await waitFor(jobs[0].id, 2000);
+  await until(() => Jobs.byId(jobs[2].id).status === 'running');
   while (gates.length) gates.shift()();
   await new Promise((r) => setTimeout(r, 30));
   gates.forEach((g) => g());
@@ -74,7 +83,7 @@ test('取消只对排队中的有效', async () => {
   defineJob('t-cancel', { run: () => new Promise((r) => gates.push(r)) });
   const u = user('job-cancel');
   const jobs = [1, 2, 3].map((i) => enqueue(u.id, 't-cancel', { ref: `c${i}` }));
-  await new Promise((r) => setTimeout(r, 30));
+  await until(() => Jobs.byId(jobs[0].id).status === 'running' && Jobs.byId(jobs[2].id).status === 'queued');
   assert.equal(Jobs.cancel(jobs[0].id, u.id), false);   // 在跑
   assert.equal(Jobs.cancel(jobs[2].id, u.id), true);    // 在排队
   assert.equal(Jobs.byId(jobs[2].id).status, 'cancelled');

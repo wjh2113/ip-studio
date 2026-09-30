@@ -101,6 +101,17 @@ if ! grep -qE '^ACCESS_PASSWORD=.+' "\${ENV_FILE}"; then
   fi
 fi
 
+if ! redis-cli ping >/dev/null 2>&1; then
+  echo "==> 安装并启动 Redis（BullMQ 用）"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server
+  sudo systemctl enable --now redis-server || sudo systemctl enable --now redis
+fi
+redis-cli ping
+if ! grep -qE '^REDIS_URL=.+' "\${ENV_FILE}"; then
+  set_kv REDIS_URL redis://127.0.0.1:6379
+fi
+
 npm install --omit=dev
 
 sudo cp "\${REMOTE_DIR}/deploy/nginx-ip-studio.conf" /etc/nginx/conf.d/ip-studio.conf

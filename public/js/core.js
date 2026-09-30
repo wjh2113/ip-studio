@@ -1,4 +1,6 @@
-/* 前端 · core：全局共享：DOM 引用 el、状态 state、接口封装 api、通用小工具（转义、提示、Markdown 渲染等）。从原 app.js 原样拆出。 */
+/* 前端 · core：全局共享：DOM 引用 el、状态 state、接口封装 api、通用小工具（转义、提示、Markdown 渲染等）。
+ * state 就是 Pinia 里的那一份，组件和这些模块改的是同一份数据。 */
+import { useStudioStore } from '../../web/src/stores/studio.js';
 
 /* 前端逻辑：登录 → 简报 → 三个方向 → 流式成稿 → 历史 */
 
@@ -90,16 +92,7 @@ export const el = {
   rebuildDigestBtn: $('rebuildDigestBtn'), styleHint: $('styleHint'),
 };
 
-export const state = {
-  user: null, meta: null, draft: null, streaming: false, busy: false,
-  personas: [], personaId: null, editingId: null, skipOnboard: false, frameworkKey: null,
-  mode: 'read', dirty: false, assist: null, ideaFailed: new Set(), voiceApplying: false,
-  revOpen: false, revId: null, revText: '', revisions: [],
-  view: 'write', boards: null, paramsUnlocked: false,
-  sections: [], sectionId: null, editingSection: null, presets: [], sectionPersonaId: null,
-  showArchived: false, historyMode: 'drafts', counts: { active: 0, archived: 0, activeDone: 0 },
-  speaks: [], focusSpeakId: null,
-};
+export const state = useStudioStore().$state;
 
 export const currentPersona = () => state.personas.find((p) => p.id === state.personaId) || null;
 

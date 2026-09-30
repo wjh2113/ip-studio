@@ -1,5 +1,5 @@
-/* HTTP 服务：静态资源 + /api 路由。零框架依赖。 */
-import { createServer } from 'node:http';
+/* HTTP 服务：Fastify 接请求。业务处理函数仍直接写 Node 的响应（流式成稿、支付原文、上传都靠这个）。 */
+import Fastify from 'fastify';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { loadEnv } from './env.js';
@@ -19,9 +19,10 @@ ensureAccessUser();
 syncAdminPassword();
 const { syncPromptBuiltins } = await import('./promptrev.js');
 syncPromptBuiltins();
-// 上次没跑完的长任务：退回预扣、重新排队（任务类型在 routes/*.js 里登记，所以放在加载路由之后）
-const { recoverJobs } = await import('./jobs.js');
+// 上次没跑完的长任务：退回预扣、重新排队，再投进 Redis / BullMQ
+const { recoverJobs, startQueue } = await import('./jobs.js');
 recoverJobs();
+await startQueue();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
@@ -153,7 +154,7 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
-const server = createServer(async (req, res) => {
+async function dispatch(req, res) {
   attachSecurity(res);
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const path = url.pathname;
@@ -227,7 +228,27 @@ const server = createServer(async (req, res) => {
   }
 
   await serveStatic(path, res);
+}
+
+const app = Fastify({
+  trustProxy: process.env.TRUST_PROXY === '1',
+  bodyLimit: 24 * 1024 * 1024,
+  logger: false,
 });
+
+/* 在 Fastify 读 body 之前把连接交给原来的处理函数，上传和流式输出才不会被截断。 */
+app.addHook('onRequest', async (request, reply) => {
+  reply.hijack();
+  try {
+    await dispatch(request.raw, reply.raw);
+  } catch (err) {
+    console.error('[http]', err);
+    if (!reply.raw.headersSent) reply.raw.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+    if (!reply.raw.writableEnded) reply.raw.end(JSON.stringify({ error: '服务异常' }));
+  }
+});
+
+await app.listen({ port: PORT, host: HOST });
 
 async function readJSON(req, max = MAX_BODY) {
   const chunks = [];
@@ -336,9 +357,10 @@ async function serveStatic(path, res) {
   }
 }
 
-server.listen(PORT, HOST, () => {
+{
   const info = providerInfo();
   const where = HOST === '0.0.0.0' ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
   console.log(`\n  文案工坊 已启动  →  ${where}`);
-  console.log(`  模型通道：${info.label}${info.live ? `（${info.model}）` : ' —— 复制 .env.example 为 .env 并填入密钥即可接入真实模型'}\n`);
-});
+  console.log(`  模型通道：${info.label}${info.live ? `（${info.model}）` : ' —— 复制 .env.example 为 .env 并填入密钥即可接入真实模型'}`);
+  console.log('  任务队列：BullMQ / Redis\n');
+}

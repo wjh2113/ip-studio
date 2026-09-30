@@ -1,7 +1,7 @@
 /* 路由 · jobs：任务中心。出图、口播转写与总评、语音/视频测评都在任务队列里跑，这里查进度、取消、重试。 */
 import { Jobs } from '../db.js';
 import { HttpError } from '../auth.js';
-import { ACTIVE, presentJob, retry } from '../jobs.js';
+import { ACTIVE, forgetQueued, presentJob, retry } from '../jobs.js';
 import { json, requireUser } from './common.js';
 
 const mine = (req, params) => {
@@ -28,6 +28,7 @@ export async function handleJobCancel(req, res, body, params) {
   const { user, job } = mine(req, params);
   if (job.status === 'running') throw new HttpError(409, '已经开始做了，取消不了，等它做完');
   if (!Jobs.cancel(job.id, user.id)) throw new HttpError(409, '这个任务已经结束了');
+  await forgetQueued(job.id);
   json(res, 200, { job: presentJob(Jobs.byId(job.id, user.id)) });
 }
 

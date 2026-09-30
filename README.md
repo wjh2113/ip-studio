@@ -737,7 +737,7 @@ eval 里人打的分和真实使用有距离。管理后台「内容质量」看
 出图、口播转写与文字总评、语音测评、视频测评要几十秒到几分钟。以前挂在一个请求上，刷新页面、手机锁屏、nginx 超时，结果就丢了，点数却可能已经扣了。现在这几样都进后台任务队列：
 
 - **请求只登记**：接口带 `async: true`（上传录音用 `?async=1`）时立刻回 `202` 和任务，前端每 1.5 秒轮询一次 `/api/jobs`；不带的老调用方式照旧等结果，只是活也在队列里跑，请求断了照样做完。
-- **worker 在服务进程里**（单机部署不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱。
+- **执行在 Redis + BullMQ**（worker 仍在服务进程里，不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱。任务状态记在 SQLite，服务启动时按「排队中」重新投进 Redis。
 - **点数**：任务里预扣、做完按实际结算；失败整笔退回。预扣的点数记在 `jobs.held` 上，服务重启时在跑的任务先退回预扣再重新排队，跑满两次还没成就记失败，可以在任务中心重试。
 - **任务中心**：顶栏「任务」按钮，有在跑的会显示数量。列表里能取消排队中的、重试失败的、「去看看」跳到对应的稿子或口播记录。刷新页面后还在跑的任务会接着盯，做完弹提示。
 - 代码在 `server/jobs.js`（队列本身）、`server/routes/jobs.js`（任务中心接口）；任务类型在各业务路由里用 `defineJob` 登记（`publish.js` 的 image，`speak.js` 的 speak / pronounce / appearance）。
@@ -915,7 +915,7 @@ Token 数取自上游返回的真实用量，不是估算：非流式读 `usage.
 
 ```
 server/
-  index.js        HTTP 服务：路由表、限流、静态文件（node:http，无框架）
+  index.js        HTTP 服务：Fastify、路由表、限流、静态文件
   routes.js       API 处理函数的聚合导出
   routes/         按业务域拆开的处理函数（common / auth / prompts / admin / personas / hotspots /
                   drafts / review / speak / editor / publish / materials / insights / billing）

@@ -7,17 +7,17 @@
 ```mermaid
 flowchart LR
   subgraph 浏览器
-    A[Vue 3 web/src/App.vue<br/>挂载后加载 public/app.js] --> C[public/js/core.js<br/>el · state · api · 小工具]
+    A[Vue 3 组件 web/src<br/>挂载后加载 public/app.js] --> C[public/js/core.js<br/>el · Pinia state · api]
     A --> F[public/js/*.js<br/>17 个功能模块]
     F --> C
   end
   subgraph Node 服务
-    I[server/index.js<br/>路由表 · 限流 · 静态文件] --> R[server/routes.js<br/>聚合导出]
+    I[server/index.js<br/>Fastify · 路由表 · 静态文件] --> R[server/routes.js<br/>聚合导出]
     R --> RD[server/routes/*.js<br/>16 个业务域]
     RD --> L[llm.js<br/>模型通道 · 分档 · 额度 · 超时]
     RD --> P[prompts.js<br/>提示词与拼装]
     RD --> S[speak.js · images.js · hotspots.js<br/>pay.js · docx.js]
-    RD --> J[jobs.js<br/>长任务队列 · 进程内 worker]
+    RD --> J[jobs.js<br/>BullMQ · Redis]
     J --> D
     L --> Q[quota.js · plans.js<br/>预扣与结算]
     RD --> D[db.js<br/>数据访问]
@@ -35,8 +35,9 @@ flowchart LR
 
 | 部分 | 用的是 | 说明 |
 |---|---|---|
-| 前端 | Vue 3（`web/`）+ 原有 `public/js` 模块 | Vite 构建进 `public/`。页面结构在 `web/src/App.vue`，交互仍在 `public/js`。样式是 `public/styles.css` |
-| 后端 | Node.js ≥ 22.5（ESM），原生 `node:http` | 无 Express / Koa；唯一依赖 `@anthropic-ai/sdk` |
+| 前端 | Vue 3 组件（`web/src/components`）+ Pinia + `public/js` | Vite 构建进 `public/`。交互仍在 `public/js`，和组件读写同一份 Pinia state。样式是 `public/styles.css` |
+| 后端 | Node.js ≥ 22.5（ESM），Fastify | 路由仍是原来的处理函数；请求在读 body 前交给它们，上传和流式输出不经过框架解析 |
+| 队列 | Redis + BullMQ | 任务状态在 SQLite。`REDIS_URL` 默认 `redis://127.0.0.1:6379` |
 | 数据库 | SQLite，Node 内置 `node:sqlite`，WAL 模式 | 表结构在 `server/migrations.js` |
 | 部署 | nginx 反代 + pm2 + rsync | `scripts/deploy-jdcloud.sh`，每日备份 `scripts/backup.sh` |
 | 测试 | Node 内置 `node:test` | `npm test`：先跑 `scripts/check.js` 再跑 `tests/*.test.js` |
