@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fromRoot } from './paths.js';
+import { rebindCues, rebindIllus } from './keep.js';
 
 const DB_PATH = process.env.DB_PATH ? resolve(process.env.DB_PATH) : fromRoot('data/app.db');
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -989,20 +990,25 @@ export const Drafts = {
       if (next) Revisions.keep(id, userId, next);
     });
   },
-  /* 用户在编辑器里手工改写后的保存。写入前先把上一版正文留档。 */
+  /* 用户在编辑器里手工改写后的保存。写入前先把上一版正文留档。
+     口播提示和原文配图按新正文留下还能对上的；多平台版本原样保留。 */
   saveContent(id, userId, content) {
     const next = String(content ?? '');
     return withTx(() => {
-      const row = db.prepare('SELECT content FROM drafts WHERE id = ? AND user_id = ?').get(id, userId);
-      if (!row) return false;
+      const row = db.prepare(
+        'SELECT content, cues_json, illus_json FROM drafts WHERE id = ? AND user_id = ?',
+      ).get(id, userId);
+      if (!row) return null;
       if (row.content && row.content !== next) Revisions.keep(id, userId, row.content);
-      // 正文变了：口播提示、平台版本、配图都基于旧正文，一起作废
+      const cues = rebindCues(next, parseJson(row.cues_json, null));
+      const illus = rebindIllus(next, parseJson(row.illus_json, null));
       const ok = db.prepare(`UPDATE drafts SET content = ?, status = 'done',
-                         cues_json = 'null', variants_json = 'null', illus_json = 'null', updated_at = ?
+                         cues_json = ?, illus_json = ?, updated_at = ?
                          WHERE id = ? AND user_id = ?`)
-        .run(next, now(), id, userId).changes > 0;
-      if (ok) Revisions.keep(id, userId, next);
-      return ok;
+        .run(next, JSON.stringify(cues.cues), JSON.stringify(illus.illus), now(), id, userId).changes > 0;
+      if (!ok) return null;
+      Revisions.keep(id, userId, next);
+      return { cuesDropped: cues.dropped, illusDropped: illus.dropped };
     });
   },
 

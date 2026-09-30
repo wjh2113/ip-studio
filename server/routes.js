@@ -875,8 +875,12 @@ export async function handleSaveContent(req, res, body, params) {
   const user = requireUser(req);
   const content = String(body?.content ?? '');
   if (content.length > 60000) throw new HttpError(400, '正文过长');
-  if (!Drafts.saveContent(Number(params.id), user.id, content)) throw new HttpError(404, '记录不存在');
-  json(res, 200, { draft: Drafts.byId(Number(params.id), user.id) });
+  const saved = Drafts.saveContent(Number(params.id), user.id, content);
+  if (!saved) throw new HttpError(404, '记录不存在');
+  json(res, 200, {
+    draft: Drafts.byId(Number(params.id), user.id),
+    kept: { cuesDropped: saved.cuesDropped, illusDropped: saved.illusDropped },
+  });
 }
 
 /* 正文历史：打开列表时把当前正文补成第一版（已有则不重复），之后每次保存再追加。 */
