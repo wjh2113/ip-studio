@@ -4,6 +4,7 @@ import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
 import { platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser } from '../prompts.js';
 import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
+import { mergeLexicon } from '../lexicon.js';
 
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */
 
@@ -36,7 +37,8 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
     if (!out || !Array.isArray(out.issues)) throw new HttpError(502, '返回结构不对');
     return out;
   }, '检查失败，请再试一次');
-  return cleanReview(data, text);
+  // 模型结果之外，再过一遍本地违禁词库：确定性、不花钱、不漏报
+  return mergeLexicon(cleanReview(data, text), text, { platform: draft?.platform });
 }
 
 /* 模型返回的检查结果 → 能安全展示和替换的结果。纯函数，单测覆盖。 */

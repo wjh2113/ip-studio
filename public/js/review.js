@@ -92,6 +92,7 @@ function renderFlags(flags) {
       <div class="flag-top">
         <span class="flag-dim">${esc(f.dimension)}</span>
         <span class="flag-level">${esc(f.level)}</span>
+        ${f.source === '词库' ? '<span class="flag-src" title="本地违禁词库命中：一定出现过，是否违规看语境">词库</span>' : ''}
       </div>
       <p class="flag-what">${esc(f.what)}</p>
       ${f.quote ? `<p class="flag-quote">「${esc(f.quote)}」${f.locatable ? '' : '<em>（原文里没精确匹配到，位置仅供参考）</em>'}</p>` : ''}

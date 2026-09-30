@@ -1722,3 +1722,6 @@ pre, code, .tts-out { font-family: var(--font-mono); }
   .rev-cols { grid-template-columns: 1fr; }
   .rev-text { max-height: 240px; }
 }
+
+/* 成稿检查：本地词库命中的标记 */
+.flag-src { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
