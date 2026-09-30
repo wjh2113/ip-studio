@@ -294,16 +294,16 @@ export const Sections = {
     const next = db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 AS n FROM sections WHERE persona_id = ?')
       .get(personaId).n;
     const info = db.prepare(`
-      INSERT INTO sections (user_id, persona_id, name, purpose, guide, fields_json, sort, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, personaId, f.name, f.purpose, f.guide, JSON.stringify(f.fields || []), next, t, t);
+      INSERT INTO sections (user_id, persona_id, name, purpose, guide, fields_json, default_framework, sort, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, personaId, f.name, f.purpose, f.guide, JSON.stringify(f.fields || []), f.default_framework || '', next, t, t);
     return this.byId(Number(info.lastInsertRowid), userId);
   },
   update(id, userId, f) {
     const changed = db.prepare(`
-      UPDATE sections SET name = ?, purpose = ?, guide = ?, fields_json = ?, updated_at = ?
+      UPDATE sections SET name = ?, purpose = ?, guide = ?, fields_json = ?, default_framework = ?, updated_at = ?
       WHERE id = ? AND user_id = ?
-    `).run(f.name, f.purpose, f.guide, JSON.stringify(f.fields || []), now(), id, userId).changes;
+    `).run(f.name, f.purpose, f.guide, JSON.stringify(f.fields || []), f.default_framework || '', now(), id, userId).changes;
     return changed ? this.byId(id, userId) : null;
   },
   byId(id, userId) {
@@ -537,6 +537,7 @@ function hydrateFramework(r) {
     key: `u:${r.id}`, id: r.id, builtin: false, kind: r.kind, name: r.name, summary: r.summary,
     platforms: arr(r.platforms), scenes: arr(r.scenes), slots: arr(r.slots_json),
     from_key: r.from_key, used_count: r.used_count, created_at: r.created_at, updated_at: r.updated_at,
+    source_chars: String(r.source_text || '').length,   // 原文本身只在需要时单独取，列表里不带
   };
 }
 
@@ -554,10 +555,10 @@ export const Frameworks = {
   create(userId, f) {
     const t = now();
     const info = db.prepare(`
-      INSERT INTO frameworks (user_id, name, summary, platforms, scenes, slots_json, from_key, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO frameworks (user_id, name, summary, platforms, scenes, slots_json, source_text, from_key, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(userId, f.name, f.summary || '', JSON.stringify(f.platforms || []), JSON.stringify(f.scenes || []),
-      JSON.stringify(f.slots), f.from_key || '', t, t);
+      JSON.stringify(f.slots), f.source_text || '', f.from_key || '', t, t);
     return this.byId(Number(info.lastInsertRowid), userId);
   },
   update(id, userId, f) {
@@ -566,7 +567,13 @@ export const Frameworks = {
       WHERE id = ? AND user_id = ?
     `).run(f.name, f.summary || '', JSON.stringify(f.platforms || []), JSON.stringify(f.scenes || []),
       JSON.stringify(f.slots), now(), id, userId).changes;
+    if (n && f.source_text !== undefined) {
+      db.prepare('UPDATE frameworks SET source_text = ? WHERE id = ? AND user_id = ?').run(f.source_text, id, userId);
+    }
     return n ? this.byId(id, userId) : null;
+  },
+  sourceOf(id, userId) {
+    return db.prepare('SELECT source_text FROM frameworks WHERE id = ? AND user_id = ?').get(id, userId)?.source_text || '';
   },
   remove(id, userId) {
     return db.prepare('DELETE FROM frameworks WHERE id = ? AND user_id = ?').run(id, userId).changes > 0;

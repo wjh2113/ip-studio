@@ -1,11 +1,12 @@
 /* 路由 · frameworks：框架库（内置 + 我的）、推荐、增删改、复制内置到我的。 */
 import { Frameworks, Sections } from '../db.js';
+import { generateJSON } from '../llm.js';
 import { HttpError } from '../auth.js';
-import { PLATFORMS } from '../prompts.js';
+import { EXTRACT_SCHEMA, EXTRACT_SYSTEM, extractUser, PLATFORMS, platformSpec } from '../prompts.js';
 import {
   BUILTIN_FRAMEWORKS, FRAMEWORK_LIMITS, builtinOf, normalizeFramework, recommendFrameworks,
 } from '../frameworks.js';
-import { json, requireUser } from './common.js';
+import { json, requireUser, sys, withRetry } from './common.js';
 
 const builtinFor = (userId) => {
   const usage = Frameworks.builtinUsage(userId);
@@ -87,4 +88,33 @@ export async function handleFrameworkDelete(req, res, body, params) {
   const user = requireUser(req);
   if (!Frameworks.remove(Number(params.fid), user.id)) throw new HttpError(404, '框架不存在');
   json(res, 200, { ok: true });
+}
+
+/* 范文拆解：把一篇优秀文案拆成框架草稿，不直接保存——作者在编辑器里改过再存。
+   原文一并返回，保存时带上，之后用来查成稿和范文的重合（防洗稿）。 */
+export async function handleFrameworkExtract(req, res, body) {
+  const user = requireUser(req);
+  const text = String(body?.text || '').trim();
+  if (text.length < 150) throw new HttpError(400, '范文太短了，至少 150 字才拆得出结构');
+  if (text.length > FRAMEWORK_LIMITS.source) throw new HttpError(400, `范文请控制在 ${FRAMEWORK_LIMITS.source} 字以内`);
+  const platform = PLATFORMS[body?.platform] ? body.platform : '';
+
+  const data = await withRetry(async () => {
+    const out = await generateJSON({
+      meta: { feature: '范文拆解', userId: user.id },
+      system: sys('extract', EXTRACT_SYSTEM),
+      user: extractUser(text, platform ? platformSpec(platform).label : ''),
+      schema: EXTRACT_SCHEMA,
+      mock: () => ({
+        name: '演示：范文框架', summary: '演示模式：配置模型密钥后这里是拆出来的结构', scenes: ['演示'],
+        slots: [{ role: '开头', guide: '演示', ratio: 0.2 }, { role: '主体', guide: '演示', ratio: 0.6 }, { role: '结尾', guide: '演示', ratio: 0.2 }],
+        why: '演示模式',
+      }),
+    });
+    if (!Array.isArray(out?.slots) || out.slots.length < 2) throw new HttpError(502, '没拆出完整结构');
+    return out;
+  }, '拆解失败，请再试一次');
+
+  const draft = clean({ ...data, platforms: platform ? [platform] : [], source_text: text });
+  json(res, 200, { framework: { ...draft, why: String(data.why || '').trim() } });
 }

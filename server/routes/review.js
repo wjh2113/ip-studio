@@ -1,10 +1,11 @@
 /* 路由 · review：成稿检查：语言错误 + 调性与风险两层。从原 routes.js 原样拆出。 */
-import { Drafts, Personas } from '../db.js';
+import { Drafts, Frameworks, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
 import { platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser } from '../prompts.js';
 import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { mergeLexicon } from '../lexicon.js';
+import { copyOverlap } from '../frameworks.js';
 
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */
 
@@ -38,7 +39,27 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
     return out;
   }, '检查失败，请再试一次');
   // 模型结果之外，再过一遍本地违禁词库：确定性、不花钱、不漏报
-  return mergeLexicon(cleanReview(data, text), text, { platform: draft?.platform });
+  const review = mergeLexicon(cleanReview(data, text), text, { platform: draft?.platform });
+  return withCopyCheck(review, draft, text, meta.userId);
+}
+
+/* 防洗稿：用的是从范文拆出来的框架时，查成稿和范文连续 8 字以上相同的片段。
+   确定性检查，不经过模型；3 处以上或累计 30 字以上报高，其余报中。 */
+export function withCopyCheck(review, draft, text, userId) {
+  const m = String(draft?.framework?.key || '').match(/^u:(\d+)$/);
+  const source = m && userId ? Frameworks.sourceOf(Number(m[1]), userId) : '';
+  if (!source) return review;
+  const hits = copyOverlap(text, source);
+  if (!hits.length) return review;
+  const chars = hits.reduce((n, h) => n + h.length, 0);
+  const level = hits.length >= 3 || chars >= 30 ? '高' : '中';
+  const flag = {
+    dimension: '原创度', level, quote: '', locatable: false, source: '比对',
+    what: `和框架的范文有 ${hits.length} 处连续相同的片段（共 ${chars} 字）：${hits.slice(0, 3).map((h) => `「${h.slice(0, 20)}${h.length > 20 ? '…' : ''}」`).join('、')}`,
+    suggestion: '框架只借结构，这几处用自己的经历和说法重写',
+  };
+  const flags = [flag, ...review.flags].sort((a, b) => ['高', '中', '低'].indexOf(a.level) - ['高', '中', '低'].indexOf(b.level));
+  return { ...review, flags, risk: flags.some((f) => f.level === '高') ? '高' : review.risk === '无' ? '中' : review.risk };
 }
 
 /* 模型返回的检查结果 → 能安全展示和替换的结果。纯函数，单测覆盖。 */

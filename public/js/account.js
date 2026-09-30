@@ -368,10 +368,26 @@ function openSectionForm(values, id = null) {
   el.sectionName.value = values.name || '';
   el.sectionPurpose.value = values.purpose || '';
   el.sectionGuide.value = values.guide || '';
+  fillFrameworkSelect(values.default_framework || '');
   renderFieldRows(values.fields || []);
   el.sectionError.textContent = '';
   el.sectionForm.classList.remove('hidden');
   el.sectionName.focus();
+}
+
+/* 栏目默认框架的下拉：内置 + 我的。每次打开表单都拉一次，框架库里刚加的也能选 */
+async function fillFrameworkSelect(current) {
+  const sel = document.getElementById('sectionFramework');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">不指定</option>';
+  try {
+    const { builtin, mine } = await api('/frameworks');
+    const opt = (f) => `<option value="${esc(f.key)}">${esc(f.name)}</option>`;
+    sel.innerHTML = '<option value="">不指定</option>'
+      + (mine.length ? `<optgroup label="我的">${mine.map(opt).join('')}</optgroup>` : '')
+      + `<optgroup label="内置">${builtin.map(opt).join('')}</optgroup>`;
+  } catch { /* 拉不到就只能不指定 */ }
+  sel.value = current;
 }
 
 function renderFieldRows(fields) {
@@ -427,6 +443,7 @@ el.sectionSaveBtn.addEventListener('click', async () => {
     purpose: el.sectionPurpose.value.trim(),
     guide: el.sectionGuide.value.trim(),
     fields: collectFields(),
+    default_framework: document.getElementById('sectionFramework')?.value || '',
   };
   const id = state.editingSection;
   await busy(el.sectionSaveBtn, async () => {

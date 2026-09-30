@@ -81,7 +81,10 @@ function normalizeSection(body = {}) {
     })
     .slice(0, SECTION_FIELD_MAX);
 
-  return { name, purpose: text(body.purpose, 300), guide: text(body.guide, 600), fields };
+  // 栏目默认框架：选这个栏目时自动带上（作者还能在简报里换掉）
+  const fw = String(body.default_framework || '');
+  const default_framework = /^(b:[\w-]+|u:\d+)$/.test(fw) ? fw : '';
+  return { name, purpose: text(body.purpose, 300), guide: text(body.guide, 600), fields, default_framework };
 }
 
 export async function handleSectionList(req, res, body, params) {

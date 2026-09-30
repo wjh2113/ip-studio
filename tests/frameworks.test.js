@@ -58,3 +58,35 @@ test('我的框架增删改与草稿快照', () => {
   assert.equal(Frameworks.builtinUsage(u.id)['b:scqa'], 1);
   assert.ok(b);
 });
+
+import { copyOverlap } from '../server/frameworks.js';
+import { withCopyCheck } from '../server/routes/review.js';
+import { Sections, Personas } from '../server/db.js';
+
+test('防洗稿：连续 8 字以上相同的片段被找出来，标点空白不算', () => {
+  const src = '周末花两个小时把一周的菜备好，工作日下班十五分钟就能吃上热饭。';
+  const hits = copyOverlap('我也试过：周末花两个小时，把一周的菜备好！结果真的很香。', src);
+  assert.deepEqual(hits, ['周末花两个小时把一周的菜备好']);
+  assert.deepEqual(copyOverlap('完全不同的一段话，讲的是别的事情。', src), []);
+});
+
+test('检查里的防洗稿：用范文拆出来的框架时比对原文', () => {
+  const u = Users.create('copy-user', 'x:y');
+  const src = '第一段范文内容写得很好很长。第二段范文内容也写得很好。第三段范文内容同样出色。';
+  const f = Frameworks.create(u.id, { name: 'F', slots: [{ role: 'a', ratio: 0.5 }, { role: 'b', ratio: 0.5 }], source_text: src });
+  const draft = { framework: { key: f.key } };
+  const base = { flags: [], risk: '无', issues: [] };
+  const out = withCopyCheck(base, draft, '第一段范文内容写得很好很长，第二段范文内容也写得很好，第三段范文内容同样出色', u.id);
+  assert.equal(out.flags[0].dimension, '原创度');
+  assert.equal(out.flags[0].level, '高');
+  assert.equal(out.risk, '高');
+  assert.equal(withCopyCheck(base, { framework: { key: 'b:scqa' } }, src, u.id), base);   // 内置框架没有范文
+});
+
+test('栏目可以设默认框架', () => {
+  const u = Users.create('sec-user', 'x:y');
+  const p = Personas.create(u.id, { name: 'p', platform: 'xiaohongshu', tone: 't', content_focus: '', audience: '', problem: '', notes: '',
+    creator_age: '', creator_gender: '', creator_industry: '', creator_role: '', creator_traits: '' });
+  const s = Sections.create(u.id, p.id, { name: '来时路', purpose: '', guide: '', fields: [], default_framework: 'b:story-three-act' });
+  assert.equal(s.default_framework, 'b:story-three-act');
+});

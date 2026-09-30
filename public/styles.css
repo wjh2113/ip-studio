@@ -1774,3 +1774,7 @@ pre, code, .tts-out { font-family: var(--font-mono); }
 .title-main b { font-size: 14.5px; }
 .title-main p { margin: 0; }
 .title-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+
+.fw-extract { display: grid; gap: 8px; margin-bottom: 12px; }
+.fw-extract textarea { width: 100%; }
+.fw-file { cursor: pointer; }

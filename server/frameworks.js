@@ -150,7 +150,7 @@ export const BUILTIN_FRAMEWORKS = [
 const BUILTIN_BY_KEY = new Map(BUILTIN_FRAMEWORKS.map((f) => [f.key, f]));
 export const builtinOf = (key) => BUILTIN_BY_KEY.get(key) || null;
 
-export const FRAMEWORK_LIMITS = { name: 30, summary: 200, slots: [2, 10], role: 20, guide: 200, perUser: 50, scenes: 6 };
+export const FRAMEWORK_LIMITS = { name: 30, summary: 200, slots: [2, 10], role: 20, guide: 200, perUser: 50, scenes: 6, source: 8000 };
 
 /* 清洗用户提交的框架。篇幅占比归一化到合计 1；缺省的平均分。 */
 export function normalizeFramework(body = {}, platformKeys = []) {
@@ -171,7 +171,31 @@ export function normalizeFramework(body = {}, platformKeys = []) {
   const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter((p) => platformKeys.includes(p));
   const scenes = (Array.isArray(body.scenes) ? body.scenes : String(body.scenes || '').split(/[,，、\s]+/))
     .map((x) => text(x, 10)).filter(Boolean).slice(0, FRAMEWORK_LIMITS.scenes);
-  return { name, summary: text(body.summary, FRAMEWORK_LIMITS.summary), platforms, scenes, slots };
+  const out = { name, summary: text(body.summary, FRAMEWORK_LIMITS.summary), platforms, scenes, slots };
+  // 范文原文：只在「从范文拆解」时带上，用来查成稿和范文的重合（防洗稿）；undefined = 不改
+  if (body.source_text !== undefined) out.source_text = String(body.source_text || '').trim().slice(0, FRAMEWORK_LIMITS.source);
+  return out;
+}
+
+/* 防洗稿：成稿里和范文连续 n 字以上相同的片段。标点和空白不算，重叠的片段合并。 */
+export function copyOverlap(text, source, n = 8) {
+  const norm = (x) => String(x || '').replace(/[\s，。！？、；：“”‘’（）《》【】,.!?;:'"()\[\]<>#*\-—…·]/g, '');
+  const a = norm(text);
+  const b = norm(source);
+  if (a.length < n || b.length < n) return [];
+  const grams = new Set();
+  for (let i = 0; i + n <= b.length; i += 1) grams.add(b.slice(i, i + n));
+  const hits = [];
+  let i = 0;
+  while (i + n <= a.length) {
+    if (grams.has(a.slice(i, i + n))) {
+      let j = i + n;
+      while (j < a.length && grams.has(a.slice(j - n + 1, j + 1))) j += 1;
+      hits.push(a.slice(i, j));
+      i = j;
+    } else i += 1;
+  }
+  return hits;
 }
 
 /* 推荐：按平台、题材/栏目与场景标签的字面重合、用户自己的优先、用得多的优先。

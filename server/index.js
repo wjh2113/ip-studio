@@ -108,6 +108,7 @@ const ROUTES = [
   ['DELETE', /^\/api\/materials\/(?<mid>\d+)$/, R.handleMaterialDelete],
   ['GET', /^\/api\/frameworks$/, R.handleFrameworkList],
   ['GET', /^\/api\/frameworks\/recommend$/, R.handleFrameworkRecommend],
+  ['POST', /^\/api\/frameworks\/extract$/, R.handleFrameworkExtract],
   ['POST', /^\/api\/frameworks$/, R.handleFrameworkCreate],
   ['PUT', /^\/api\/frameworks\/(?<fid>\d+)$/, R.handleFrameworkUpdate],
   ['DELETE', /^\/api\/frameworks\/(?<fid>\d+)$/, R.handleFrameworkDelete],

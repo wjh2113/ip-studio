@@ -33,6 +33,9 @@ export const MIGRATIONS = [
     CREATE INDEX idx_frameworks_user ON frameworks(user_id, id DESC);
     ALTER TABLE drafts ADD COLUMN framework_json TEXT NOT NULL DEFAULT 'null';
   `) },
+  { version: 3, name: '栏目默认框架', up: (db) => db.exec(`
+    ALTER TABLE sections ADD COLUMN default_framework TEXT NOT NULL DEFAULT '';
+  `) },
 ];
 
 export function runMigrations(db) {

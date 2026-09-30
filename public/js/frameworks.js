@@ -11,9 +11,12 @@ const ui = {
   editor: $('fwEditor'), name: $('fwName'), summary: $('fwSummary'), plats: $('fwPlats'),
   scenes: $('fwScenes'), slots: $('fwSlots'), slotAdd: $('fwSlotAdd'), preview: $('fwPreview'),
   error: $('fwError'), cancel: $('fwCancel'), save: $('fwSave'),
+  extractBtn: $('fwExtractBtn'), extract: $('fwExtract'), source: $('fwSource'), file: $('fwFile'),
+  sourcePlatform: $('fwSourcePlatform'), sourceCount: $('fwSourceCount'), extractCancel: $('fwExtractCancel'),
+  extractRun: $('fwExtractRun'), why: $('fwWhy'),
 };
 
-const fw = { recs: [], all: null, platforms: [], tab: 'all', editing: null, chosen: null };
+const fw = { recs: [], all: null, platforms: [], tab: 'all', editing: null, chosen: null, source: null };
 
 const platformLabel = (k) => fw.platforms.find((p) => p.key === k)?.label || k;
 const pct = (r) => Math.round(r * 100);
@@ -77,6 +80,7 @@ async function loadAll() {
   fw.all = data;
   fw.platforms = data.platforms;
   ui.platform.innerHTML = `<option value="">全部平台</option>${data.platforms.map((p) => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join('')}`;
+  ui.sourcePlatform.innerHTML = `<option value="">范文所在平台（选填）</option>${data.platforms.map((p) => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join('')}`;
   ui.plats.innerHTML = `<span class="sections-label">适用平台</span>${data.platforms.map((p) => `
     <label class="fw-plat"><input type="checkbox" value="${esc(p.key)}" />${esc(p.label)}</label>`).join('')}
     <span class="hint">都不勾 = 通用</span>`;
@@ -105,6 +109,7 @@ function renderList() {
         <b>${esc(f.name)}</b>
         <span class="fw-tag">${f.builtin ? '内置' : '我的'}</span>
         <span class="fw-tag">${f.platforms.length ? f.platforms.map(platformLabel).map(esc).join(' / ') : '通用'}</span>
+        ${f.source_chars ? '<span class="fw-tag" title="从范文拆出来的：用它写的稿子会查和范文的重合">有范文</span>' : ''}
         ${f.used_count ? `<span class="hint">用过 ${f.used_count} 次</span>` : ''}
       </div>
       ${f.summary ? `<p class="fw-sum">${esc(f.summary)}</p>` : ''}
@@ -208,8 +213,12 @@ function renderPreview() {
   ui.preview.innerHTML = slots.length ? slotBar(slots.map((x) => ({ ...x, ratio: x.ratio / total }))) : '';
 }
 
-function openEditor(f = null) {
-  fw.editing = f;
+function openEditor(f = null, { source = null, why = '' } = {}) {
+  fw.editing = f?.id ? f : null;
+  fw.source = source;                 // 从范文拆出来的新框架：保存时带上原文
+  ui.why.textContent = why ? `为什么有效：${why}` : '';
+  ui.why.classList.toggle('hidden', !why);
+  ui.extract.classList.add('hidden');
   ui.editor.classList.remove('hidden');
   ui.list.classList.add('hidden');
   ui.name.value = f?.name || '';
@@ -227,6 +236,7 @@ function openEditor(f = null) {
 
 function closeEditor() {
   fw.editing = null;
+  fw.source = null;
   ui.editor.classList.add('hidden');
   ui.list.classList.remove('hidden');
 }
@@ -257,6 +267,7 @@ ui.save.addEventListener('click', async () => {
     platforms: [...ui.plats.querySelectorAll('input:checked')].map((c) => c.value),
     slots: readSlots(),
   };
+  if (fw.source) body.source_text = fw.source;
   if (!body.name) { ui.error.textContent = '给框架起个名字'; return; }
   if (body.slots.length < 2) { ui.error.textContent = '至少要有 2 段'; return; }
   await busy(ui.save, async () => {
@@ -272,4 +283,55 @@ ui.save.addEventListener('click', async () => {
       toast('框架已保存');
     } catch (err) { ui.error.textContent = err.message; }
   });
+});
+
+/* ---------------- 从范文拆解 ---------------- */
+
+const countSource = () => { ui.sourceCount.textContent = ui.source.value.trim() ? `${ui.source.value.trim().length} 字` : ''; };
+
+ui.extractBtn.addEventListener('click', () => {
+  closeEditor();
+  ui.extract.classList.remove('hidden');
+  ui.list.classList.add('hidden');
+  ui.sourcePlatform.value = el.platformSel.value || '';
+  countSource();
+  ui.source.focus();
+});
+ui.extractCancel.addEventListener('click', () => {
+  ui.extract.classList.add('hidden');
+  ui.list.classList.remove('hidden');
+});
+ui.source.addEventListener('input', countSource);
+ui.file.addEventListener('change', async () => {
+  const f = ui.file.files?.[0];
+  if (!f) return;
+  if (f.size > 200 * 1024) { toast('文件太大，范文请控制在 8000 字以内'); return; }
+  ui.source.value = (await f.text()).slice(0, 8000);
+  ui.file.value = '';
+  countSource();
+});
+ui.extractRun.addEventListener('click', async () => {
+  const text = ui.source.value.trim();
+  if (text.length < 150) { toast('范文至少 150 字才拆得出结构'); return; }
+  await busy(ui.extractRun, async () => {
+    try {
+      const { framework } = await api('/frameworks/extract', {
+        method: 'POST', body: { text, platform: ui.sourcePlatform.value },
+      });
+      openEditor(framework, { source: framework.source_text || text, why: framework.why });
+    } catch (err) { toast(err.message); }
+  });
+});
+
+/* 选了带默认框架的栏目：自动带上它（作者还能在这一排里换掉） */
+el.sectionChips.addEventListener('click', async (e) => {
+  if (!e.target.closest('[data-section]')) return;
+  const sec = state.sections.find((x) => x.id === state.sectionId);
+  const key = sec?.default_framework;
+  if (!key) return;
+  try {
+    if (!fw.all) await loadAll();
+    const f = findKey(key);
+    if (f) { choose(f); toast(`栏目「${sec.name}」默认用「${f.name}」的写法`); }
+  } catch { /* 拉不到就算了 */ }
 });

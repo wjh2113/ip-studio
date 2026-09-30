@@ -696,7 +696,11 @@ const v = await ask.form({ fields: [...] });   // 取消返回 null
 - **进提示词**：选中的框架拼成「本篇写法框架」块，按目标字数把每段篇幅换算成字数；选题的三个方向按框架展开骨架，差异仍在切入角度；成稿按段落顺序和比例组织，并明确框架只管结构、不提供事实。
 - 框架快照随草稿保存，改框架、删框架都不影响历史稿件；三个方向卡片上显示「写法：xxx」。
 
-后续两期：粘贴范文自动拆成框架、检查里加「框架符合度」和防洗稿；按发布数据推荐效果好的框架、爆款一键存成框架。
+- **从范文拆解**：框架库里粘贴一篇范文（或读 .txt / .md，最多 8000 字），模型只拆结构——每段的作用、写法要点和篇幅比例，不抄原文句子；拆完进编辑器改好再存。原文随框架保存（卡片上标「有范文」），只用于防洗稿比对，不进创作提示词。
+- **栏目默认框架**：内容栏目里可以指定一个默认框架，点栏目时自动选上，仍可手动换。
+- **检查里的两项**：套了框架的稿子多一个「框架符合」维度（段落顺序、缺段、比例严重失衡）；如果框架带范文，代码按连续 8 字比对稿子和范文，重合 3 处以上或累计 30 字以上报「原创度 高」，否则「中」——这一项不靠模型判断。
+
+后续：按发布数据推荐效果好的框架、爆款一键存成框架。
 
 ## 标题候选
 
@@ -895,7 +899,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 
 ## API
 
-下表由 `server/index.js` 的路由表整理（共 92 条）。处理函数在 `server/routes/` 对应文件里；
+下表由 `server/index.js` 的路由表整理（共 100 条）。处理函数在 `server/routes/` 对应文件里；
 除注册、登录、`/api/me`、`/api/meta`、`/api/pricing`、`/api/prompt-docs`（只读）、后台的登录与初始化、支付回调外都要登录；其余 `/api/admin/*` 和提示词编辑要管理员会话。
 
 | 方法 | 路径 | 处理函数 | 文件 |
@@ -911,8 +915,8 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | DELETE | `/api/personas/:id` | `handlePersonaDelete` | personas.js |
 | GET | `/api/personas/:id/sections` | `handleSectionList` | personas.js |
 | POST | `/api/personas/:id/sections` | `handleSectionCreate` | personas.js |
-| PUT | `/api/personas/:id/sections/:sid` | `handleSectionUpdate` | personas.js |
-| DELETE | `/api/personas/:id/sections/:sid` | `handleSectionDelete` | personas.js |
+| PUT | `/api/personas/:id/sections/:sectionId` | `handleSectionUpdate` | personas.js |
+| DELETE | `/api/personas/:id/sections/:sectionId` | `handleSectionDelete` | personas.js |
 | GET | `/api/personas/:id/samples` | `handleSampleList` | personas.js |
 | POST | `/api/personas/:id/samples` | `handleSampleCreate` | personas.js |
 | DELETE | `/api/personas/:id/samples/:sampleId` | `handleSampleDelete` | personas.js |
@@ -964,6 +968,8 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | POST | `/api/drafts/:id/illus` | `handleIllus` | publish.js |
 | POST | `/api/drafts/:id/illus/:i/image` | `handleIllusImage` | publish.js |
 | DELETE | `/api/drafts/:id/variants/:platform` | `handleVariantDelete` | publish.js |
+| POST | `/api/drafts/:id/titles` | `handleTitles` | publish.js |
+| PUT | `/api/drafts/:id/title` | `handleTitleApply` | publish.js |
 | GET | `/api/images` | `handleImageInfo` | publish.js |
 | GET | `/api/drafts/:id/export.docx` | `handleExportDocx` | publish.js |
 | GET | `/api/prompt-docs` | `handlePromptDocs` | prompts.js |
@@ -973,6 +979,12 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | POST | `/api/personas/:id/materials` | `handleMaterialCreate` | materials.js |
 | PUT | `/api/materials/:mid` | `handleMaterialUpdate` | materials.js |
 | DELETE | `/api/materials/:mid` | `handleMaterialDelete` | materials.js |
+| GET | `/api/frameworks` | `handleFrameworkList` | frameworks.js |
+| GET | `/api/frameworks/recommend` | `handleFrameworkRecommend` | frameworks.js |
+| POST | `/api/frameworks/extract` | `handleFrameworkExtract` | frameworks.js |
+| POST | `/api/frameworks` | `handleFrameworkCreate` | frameworks.js |
+| PUT | `/api/frameworks/:fid` | `handleFrameworkUpdate` | frameworks.js |
+| DELETE | `/api/frameworks/:fid` | `handleFrameworkDelete` | frameworks.js |
 | GET | `/api/pool` | `handlePoolList` | materials.js |
 | POST | `/api/pool` | `handlePoolCreate` | materials.js |
 | PUT | `/api/pool/:pid` | `handlePoolUpdate` | materials.js |

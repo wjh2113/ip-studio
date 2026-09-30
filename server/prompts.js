@@ -522,7 +522,7 @@ ${DATA_NOTE}
  * 成稿检查：模型自己回头看一遍错字和通顺性
  * ================================================================== */
 
-export const REVIEW_DIMENSIONS = ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑'];
+export const REVIEW_DIMENSIONS = ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑', '框架符合'];
 
 export const REVIEW_SCHEMA = {
   type: 'object',
@@ -555,7 +555,7 @@ export const REVIEW_SCHEMA = {
         properties: {
           dimension: {
             type: 'string',
-            enum: ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑'],
+            enum: ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑', '框架符合'],
           },
           level: { type: 'string', enum: ['高', '中', '低'], description: '高=不改可能出事；中=建议改；低=提一句' },
           quote: { type: 'string', description: '触发这条的原文片段，逐字照抄；整篇性的问题留空字符串' },
@@ -616,6 +616,10 @@ fix 只修错，不做任何风格改动。整篇大面积语无伦次时 verdic
   「据报道」「有数据显示」「研究表明」后面跟着无从查证的内容，都算。
   这类只指出来让作者去核实，不要替他判断真假。
 
+**框架符合**——只有给了「本篇写法框架」时才查：
+  框架里的某一段整个没写、段落顺序明显颠倒、或某段篇幅严重失衡（比规定多一倍以上或不到一半）才报，
+  并在 what 里点名是哪一段。照框架写了但写法灵活、没用小标题，都不算问题。
+
 ════ 绝对不要报的 ════
 - 口语、短句、省略句、网络用语、语气词、emoji、话题标签——自媒体的正常写法。
 - 观点尖锐、有立场、吐槽、自嘲——这是风格不是问题。
@@ -631,6 +635,7 @@ export const reviewUser = (draft, text, persona, samples = []) => {
     creatorBlock(persona),
     styleBlock(persona, samples),
     sectionBlock(draft.section, draft.inputs),
+    frameworkBlock(draft.framework, draft.length),
     hotspotRefBlock(draft.hotspot),
     `—— 平台写作规范（${platformSpec(draft.platform).label}）——\n${platformSpec(draft.platform).spec}\n目标篇幅：约 ${draft.length} 字`,
   ].filter(Boolean).join('\n\n');
@@ -1211,3 +1216,45 @@ export const titlesUser = (draft, persona, text) => {
     text,
   ].filter(Boolean).join('\n');
 };
+
+/* ==================================================================
+ * 范文拆解：把一篇优秀文案拆成框架（只拆结构，不拆内容）
+ * ================================================================== */
+
+export const EXTRACT_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', description: '给这个框架起个名字，6-12 字，说清它是什么写法，不要用范文的标题' },
+    summary: { type: 'string', description: '一句话：适合写什么内容' },
+    scenes: { type: 'array', maxItems: 4, items: { type: 'string' }, description: '适用场景标签，2-4 字一个，如「种草」「避坑」「来时路」' },
+    slots: {
+      type: 'array', minItems: 2, maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', description: '这一段的作用，2-8 字，如「痛点开头」「三个亮点」' },
+          guide: { type: 'string', description: '这一段怎么写：写法和要点，用通用的话说，不出现范文里的具体事物、人名、数字' },
+          ratio: { type: 'number', description: '这一段在范文里大约占全文的比例，0-1' },
+        },
+        required: ['role', 'guide', 'ratio'],
+        additionalProperties: false,
+      },
+    },
+    why: { type: 'string', description: '一两句：这篇为什么有效（结构上的原因）' },
+  },
+  required: ['name', 'summary', 'scenes', 'slots', 'why'],
+  additionalProperties: false,
+};
+
+export const EXTRACT_SYSTEM =
+`你是一位拆解爆款文案的编辑。给你一篇范文，把它的**写作结构**拆成一个可复用的框架。
+要求：
+1. 按范文实际的段落推进，把它切成 2-8 段，每段写清「作用」和「怎么写」。
+2. **只拆结构，不拆内容**：guide 里不许出现范文的具体事物、品牌、人名、数字、原句，要写成换一个题材也能照着用的通用说法。
+3. ratio 按每段在范文里实际占的篇幅估，合计约为 1。
+4. why 从结构角度说为什么有效（比如「前三行就给结果」「每个要点都配一个亲历细节」），不评价内容好坏。
+5. 全部使用简体中文。`;
+
+export const extractUser = (text, platformLabel = '') =>
+`${platformLabel ? `范文所在平台：${platformLabel}\n\n` : ''}${fence('范文', text)}
+${DATA_NOTE}`;

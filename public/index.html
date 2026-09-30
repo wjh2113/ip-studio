@@ -454,6 +454,10 @@
           <textarea id="sectionGuide" rows="3" maxlength="600"
             placeholder="这个栏目该怎么写、不该怎么写"></textarea>
         </label>
+        <label class="full">默认写法框架
+          <select id="sectionFramework"><option value="">不指定</option></select>
+          <span class="hint">选这个栏目创作时自动带上，简报里还能换</span>
+        </label>
 
         <div class="field-editor">
           <div class="field-editor-head">
@@ -505,7 +509,20 @@
           <button type="button" data-tab="builtin">内置</button>
         </div>
         <select id="fwPlatform"></select>
+        <button type="button" class="btn ghost small" id="fwExtractBtn">从范文拆解</button>
         <button type="button" class="btn primary small" id="fwNewBtn">＋ 新建框架</button>
+      </div>
+      <div class="fw-extract hidden" id="fwExtract">
+        <p class="hint">贴一篇你觉得写得好的文案（自己的爆款、收藏的范文都行），拆出它的结构。只拆结构不拆内容；原文会随框架保存，用来检查以后的稿子有没有和它雷同。</p>
+        <textarea id="fwSource" rows="8" maxlength="8000" placeholder="粘贴范文，至少 150 字"></textarea>
+        <div class="fw-bar">
+          <label class="btn ghost small fw-file">读取 .txt / .md 文件<input type="file" id="fwFile" accept=".txt,.md,text/plain,text/markdown" hidden /></label>
+          <select id="fwSourcePlatform"></select>
+          <span class="hint" id="fwSourceCount"></span>
+          <span class="grow"></span>
+          <button type="button" class="btn ghost small" id="fwExtractCancel">取消</button>
+          <button type="button" class="btn primary small" id="fwExtractRun">拆解</button>
+        </div>
       </div>
       <div class="fw-list" id="fwList"></div>
 
@@ -523,6 +540,7 @@
           <div class="fw-slots" id="fwSlots"></div>
           <div class="fw-bar-preview" id="fwPreview"></div>
         </div>
+        <p class="hint hidden" id="fwWhy"></p>
         <p class="form-error" id="fwError"></p>
         <div class="section-form-foot">
           <button class="btn ghost small" type="button" id="fwCancel">取消</button>

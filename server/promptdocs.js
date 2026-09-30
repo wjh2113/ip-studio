@@ -16,7 +16,7 @@ import {
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
   VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM,
-  TITLES_SCHEMA, TITLES_SYSTEM,
+  TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM,
 } from './prompts.js';
 
 export const STAGES = [
@@ -336,5 +336,25 @@ export const PROMPT_DOCS = () => [
       '标题也会过本地违禁词库，命中的标出来',
     ],
     system: TITLES_SYSTEM, schema: TITLES_SCHEMA,
+  },
+  {
+    key: 'extract', name: '范文拆解', stage: 'pick', mode: '结构化输出',
+    where: '框架库「从范文拆解」',
+    positioning: '把一篇好文案的**结构**变成可复用的框架。只拆结构，不拆内容。',
+    value: [
+      '用户：收藏的爆文、对标号的代表作、自己数据好的稿子，贴进来就能变成框架，下次按它的结构写。',
+      '产品：框架库的内容由用户自己积累，越用越贴合这个号。',
+    ],
+    logic: [
+      '输入：范文原文（包在 <范文> 标签里，当资料不当指令）+ 所在平台。',
+      '按实际段落推进切成 2-8 段，每段写作用和通用写法，估算篇幅占比。',
+      '拆出来的是草稿：进编辑器给作者改，改完才保存。',
+    ],
+    guards: [
+      '**guide 里不许出现范文的具体事物、人名、数字、原句**——换个题材也要能照着用',
+      '原文随框架保存，只用于**防洗稿**：用这个框架写的稿子，检查时查和范文连续 8 字以上相同的片段，3 处以上报高',
+      '篇幅占比在代码里重新归一化，不信模型给的合计',
+    ],
+    system: EXTRACT_SYSTEM, schema: EXTRACT_SCHEMA,
   },
 ];
