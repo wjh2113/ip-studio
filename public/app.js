@@ -85,7 +85,7 @@ function applyAuthMeta(auth = {}) {
 
 function fillSelects({ platforms, tones }) {
   const platformOpts = platforms
-    .map((p) => `<option value="${p.key}" data-length="${p.length}">${p.label}</option>`).join('');
+    .map((p) => `<option value="${esc(p.key)}" data-length="${esc(p.length)}">${esc(p.label)}</option>`).join('');
   const toneOpts = tones
     .map((t) => `<option value="${esc(t.key)}" title="${esc(t.hint)}">${esc(t.key)}</option>`).join('');
   el.platformSel.innerHTML = platformOpts;
@@ -96,10 +96,7 @@ function fillSelects({ platforms, tones }) {
   el.platformSel.addEventListener('change', syncLength);
 }
 
+/* 顶栏模型标识由 Vue 渲染（web/src/components/TopBar.vue）：这里只更新数据 */
 function showLlm(llm) {
-  el.llmChip.textContent = llm.live ? `${llm.label} · ${llm.model}` : llm.label;
-  el.llmChip.classList.toggle('warn', !llm.live);
-  el.llmChip.title = llm.live
-    ? `当前模型通道：${llm.provider} / ${llm.model}`
-    : '未检测到模型密钥，当前为演示模式：流程完整，内容是本地模板。在 .env 中配置密钥后自动切换。';
+  state.llm = llm;
 }

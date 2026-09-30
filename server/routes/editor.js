@@ -13,7 +13,7 @@ export async function handleAssist(req, res, body, params) {
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
 
-  const clip = async (v, n) => String(v ?? '').slice(0, n);
+  const clip = (v, n) => String(v ?? '').slice(0, n);
   const selection = clip(body?.selection, 4000);
   const before = clip(body?.before, 1500);
   const after = clip(body?.after, 1500);

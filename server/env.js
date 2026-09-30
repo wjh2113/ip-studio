@@ -2,7 +2,9 @@
 import { readFileSync } from 'node:fs';
 import { fromRoot } from './paths.js';
 
-export function loadEnv(file = fromRoot('.env')) {
+export function loadEnv(file = process.env.ENV_FILE || fromRoot('.env')) {
+  // ENV_FILE=none：一个 .env 都不读（接口测试起服务时用，保证不碰真实密钥和数据库）
+  if (file === 'none') return;
   let raw;
   try { raw = readFileSync(file, 'utf8'); } catch { return; }
   for (const line of raw.split('\n')) {

@@ -90,7 +90,7 @@ export async function handleOrderCreate(req, res, body) {
 
   let pay;
   try {
-    pay = await createPayment({ channel, no, amount, subject: `文案工坊 · ${item.label}` });
+    pay = await createPayment({ channel, no, amount, subject: `自媒体助手 · ${item.label}` });
   } catch (err) {
     await Orders.close(no);
     throw new HttpError(502, `下单失败：${describe(err)}`);

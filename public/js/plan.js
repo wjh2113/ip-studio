@@ -1,5 +1,5 @@
 /* 前端 · plan：用量、套餐与支付。从原 app.js 原样拆出。 */
-import { api, el, esc, toast } from './core.js';
+import { api, el, esc, state, toast } from './core.js';
 
 /* ==================================================================
  * 用量与套餐
@@ -17,15 +17,9 @@ export async function loadPlan() {
   } catch { /* 拿不到就不显示，不影响别的 */ }
 }
 
+/* 顶栏余额由 Vue 渲染（web/src/components/TopBar.vue）：这里只更新数据 */
 function renderCreditChip() {
-  const q = plan.data?.quota;
-  if (!q) { el.creditChip.classList.add('hidden'); return; }
-  el.creditChip.classList.remove('hidden');
-  const ratio = q.total ? q.left / q.total : 0;
-  el.creditChip.innerHTML = `${esc(q.label)} · 剩 <b>${q.left.toLocaleString()}</b>`;
-  // 低于 15% 变红——这时候提醒还来得及，撞到 402 才说就晚了
-  el.creditChip.classList.toggle('low', ratio < 0.15);
-  el.creditChip.title = ratio < 0.15 ? '额度快用完了，点开看看' : '点开看用量与套餐';
+  state.quota = plan.data?.quota || null;
 }
 
 el.creditChip.addEventListener('click', openPlan);

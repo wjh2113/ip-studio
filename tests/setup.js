@@ -26,6 +26,9 @@ for (const k of ['LLM_GATEWAY_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', '
 export const TEST_DIR = dir;
 
 test.after(async () => {
+  // 先停队列（测试的 Redis 前缀按进程号分开，停的时候顺手清掉，不在 db 15 里越积越多），再关数据库
+  const { stopQueue } = await import('../server/jobs.js');
+  await stopQueue({ drainMs: 2000 });
   const { closeDb } = await import('../server/client.js');
   await closeDb();
 });

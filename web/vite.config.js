@@ -23,9 +23,11 @@ export default defineConfig({
     }),
   ],
   server: { port: 5180, strictPort: true, proxy },
+  /* 构建产物单独放 dist/，每次先清空：不和手写的 public/ 混在一起，也不会留下一堆旧的带哈希文件。
+     dist/ 不进 git（.gitignore），部署脚本在本机构建后同步到服务器。 */
   build: {
-    outDir: here('../public'),
-    emptyOutDir: false,
+    outDir: here('../dist'),
+    emptyOutDir: true,
     assetsDir: 'assets',
   },
 });

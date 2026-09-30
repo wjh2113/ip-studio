@@ -125,7 +125,7 @@ export async function handleSpeakCreate(req, res, file, params, url) {
   });
   const filename = await saveTakeFile(user.id, row.id, file.ext, file.buffer);
   await Speaks.setFile(row.id, user.id, filename, file.buffer.length);
-  await replySpeakJob(req, res, user.id, enqueueTake(user.id, row.id, row.title), row.id, url);
+  await replySpeakJob(req, res, user.id, await enqueueTake(user.id, row.id, row.title), row.id, url);
 }
 
 export async function handleSpeakRetry(req, res, body, params, url) {
@@ -133,7 +133,7 @@ export async function handleSpeakRetry(req, res, body, params, url) {
   const row = await Speaks.byId(Number(params.sid), user.id);
   if (!row) throw new HttpError(404, '这条口播记录不存在');
   if (!row.file) throw new HttpError(400, '这条记录没有录音文件');
-  await replySpeakJob(req, res, user.id, enqueueTake(user.id, row.id, row.title), row.id, url, body);
+  await replySpeakJob(req, res, user.id, await enqueueTake(user.id, row.id, row.title), row.id, url, body);
 }
 
 const enqueueTake = async (userId, speakId, title) => await enqueue(userId, 'speak', {

@@ -9,7 +9,7 @@ export const $ = (id) => document.getElementById(id);
 export const el = {
   auth: $('authScreen'), app: $('app'), authForm: $('authForm'), authTabs: $('authTabs'),
   authError: $('authError'), authSubmit: $('authSubmit'), userName: $('userName'),
-  logout: $('logoutBtn'), llmChip: $('llmChip'), history: $('history'), newBtn: $('newBtn'),
+  logout: $('logoutBtn'), history: $('history'), newBtn: $('newBtn'),
   briefForm: $('briefForm'), briefHint: $('briefHint'), topicsBtn: $('topicsBtn'),
   platformSel: $('platformSel'), toneSel: $('toneSel'),
   topicsCard: $('topicsCard'), topics: $('topics'), retopicsBtn: $('retopicsBtn'),

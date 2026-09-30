@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 部署文案工坊到京东云：rsync + npm + nginx + pm2。
+# 部署自媒体助手到京东云：rsync + npm + nginx + pm2。
 # 不覆盖服务器上的 .env 和 data/（库和密钥留在线上）。
 set -euo pipefail
 
@@ -37,6 +37,8 @@ sudo rsync -a \
   --exclude 'node_modules' \
   --exclude 'data' \
   "\${STAGING}/" "\${REMOTE_DIR}/"
+# 前端构建产物整目录替换（--delete），旧的带哈希文件不会越积越多
+sudo rsync -a --delete "\${STAGING}/dist/" "\${REMOTE_DIR}/dist/"
 sudo mkdir -p "\${REMOTE_DIR}/data"
 sudo chown -R ubuntu:ubuntu "\${REMOTE_DIR}"
 cd "\${REMOTE_DIR}"
@@ -45,6 +47,8 @@ ENV_FILE="\${REMOTE_DIR}/.env"
 if [[ ! -f "\${ENV_FILE}" ]]; then
   cp "\${REMOTE_DIR}/.env.example" "\${ENV_FILE}"
 fi
+# .env 里有数据库密码、网关 Key、加密密钥：只给运行服务的用户读
+chmod 600 "\${ENV_FILE}"
 
 set_kv() {
   local k="\$1" v="\$2"
@@ -123,16 +127,30 @@ fi
 if ! grep -qE '^DATABASE_URL=.+' "\${ENV_FILE}"; then
   echo "==> 创建 PostgreSQL 库 ip_studio（端口 \${PG_PORT}）"
   PG_PASS=\$(openssl rand -hex 24)
-  sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ip_studio') THEN CREATE ROLE ip_studio LOGIN PASSWORD '\${PG_PASS}'; ELSE ALTER ROLE ip_studio WITH PASSWORD '\${PG_PASS}'; END IF; END \\\$\\\$;"
+  # 密码走标准输入，不放在命令行参数里（ps 看得见）；出错时也不让 PostgreSQL 把这条语句连同密码写进日志
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -q <<SQL
+SET log_min_error_statement = panic;
+DO \\\$\\\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ip_studio') THEN CREATE ROLE ip_studio LOGIN PASSWORD '\${PG_PASS}';
+  ELSE ALTER ROLE ip_studio WITH PASSWORD '\${PG_PASS}'; END IF;
+END \\\$\\\$;
+SQL
   sudo -u postgres psql -v ON_ERROR_STOP=1 -tc "SELECT 1 FROM pg_database WHERE datname = 'ip_studio'" | grep -q 1 \
     || sudo -u postgres createdb -O ip_studio ip_studio
   set_kv DATABASE_URL "postgres://ip_studio:\${PG_PASS}@127.0.0.1:\${PG_PORT}/ip_studio"
 fi
 
 npm install --omit=dev
-if [[ -f "\${REMOTE_DIR}/data/app.db" ]]; then
-  echo "==> 若 PostgreSQL 还是空库，从原来的 SQLite 导入"
-  node --env-file="\${ENV_FILE}" "\${REMOTE_DIR}/scripts/import-sqlite.js" "\${REMOTE_DIR}/data/app.db"
+if [[ -f "\${REMOTE_DIR}/data/app.db" && ! -f "\${REMOTE_DIR}/data/app.db.imported" ]]; then
+  # 先停旧服务再导入：旧服务还开着的话，导入期间写进 SQLite 的数据会丢；
+  # pm2 要是在导入中途把新代码拉起来，新服务会往 PostgreSQL 里写管理员和提示词，和导入撞车。
+  echo "==> 停服务，从原来的 SQLite 导入 PostgreSQL（只做一次，成功后写 app.db.imported 标记）"
+  pm2 stop ip-studio >/dev/null 2>&1 || true
+  if ! node --env-file="\${ENV_FILE}" "\${REMOTE_DIR}/scripts/import-sqlite.js" "\${REMOTE_DIR}/data/app.db"; then
+    echo "!! 导入失败，PostgreSQL 已回滚，服务保持停止（SQLite 原库没动）。看上面的报错修好后重新部署；" >&2
+    echo "!! 确定不要导入的话，touch \${REMOTE_DIR}/data/app.db.imported 再部署。" >&2
+    exit 1
+  fi
 fi
 
 sudo cp "\${REMOTE_DIR}/deploy/nginx-ip-studio.conf" /etc/nginx/conf.d/ip-studio.conf
@@ -145,6 +163,8 @@ else
   pm2 start "\${REMOTE_DIR}/ecosystem.config.cjs"
 fi
 pm2 save
+# 以前前端构建产物放在 public/ 下，现在在 dist/。新服务起来以后再删，删早了旧服务在重启前会白屏
+rm -rf "\${REMOTE_DIR}/public/assets" "\${REMOTE_DIR}/public/index.html"
 
 # 每日备份（幂等：已装过就不重复加）
 sudo mkdir -p /opt/ip-studio-backups && sudo chown ubuntu:ubuntu /opt/ip-studio-backups

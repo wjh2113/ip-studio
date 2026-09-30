@@ -1,4 +1,4 @@
-# 文案工坊 · 架构说明
+# 自媒体助手 · 架构说明
 
 给第一次接手代码的人看：模块怎么分、一次请求怎么走、改东西去哪。设计取舍的来龙去脉在 README 里。
 
@@ -35,7 +35,7 @@ flowchart LR
 
 | 部分 | 用的是 | 说明 |
 |---|---|---|
-| 前端 | Vue 3 组件（`web/src/components`）+ Pinia + `public/js` | Vite 构建进 `public/`。交互仍在 `public/js`，和组件读写同一份 Pinia state。样式是 `public/styles.css` |
+| 前端 | Vue 3 组件（`web/src/components`）+ Pinia + `public/js` | Vite 构建进 `dist/`（不进 git）。多数界面和交互仍在 `public/js`（按 id 改 DOM），顶栏的模型标识和余额已由 Vue 渲染；两边读写同一份 Pinia state。样式是 `public/styles.css` |
 | 后端 | Node.js ≥ 22.5（ESM），Fastify | 路由仍是原来的处理函数；请求在读 body 前交给它们，上传和流式输出不经过框架解析 |
 | 队列 | Redis + BullMQ | 任务状态在 PostgreSQL。`REDIS_URL` 默认 `redis://127.0.0.1:6379` |
 | 数据库 | PostgreSQL + Drizzle | `DATABASE_URL`，默认 `postgres://127.0.0.1:5432/ip_studio`。表在 `server/schema.js`，变更只在 `server/migrations.js` 末尾追加 |
@@ -79,7 +79,15 @@ flowchart LR
 
 ## 前端模块（public/js/）
 
-页面由 Vue 3 挂载（`web/src/main.js` → `App.vue`，标记和原来的页面一致）。挂载完成后才加载 `public/app.js`：先加载 `core.js`，再加载各功能模块，最后启动。改页面结构改 `web/src/App.vue`，改完执行 `npm run build:web`。
+页面由 Vue 3 挂载（`web/src/main.js` → `App.vue`，标记和原来的页面一致）。挂载完成后才加载 `public/app.js`：先加载 `core.js`，再加载各功能模块，最后启动。改页面结构改 `web/src/components/*.vue`，改完执行 `npm run build:web`（输出到 `dist/`）。
+
+**迁移到 Vue 的规则**：一个节点要么归 Vue 管（模板里有绑定），要么归 `public/js` 管（模块按 id 改它），不能两边都管——Vue 重新渲染时会把模块写进去的内容抹掉，模块手里的 `el` 也会指向已经被换掉的旧节点。迁一块的步骤：
+
+1. 在 `web/src/stores/studio.js` 加字段，组件里用 `{{ }}` / `v-if` / `v-for` 读它；
+2. 模块里原来改 DOM 的地方改成只写 store（参考 `plan.js` 的 `renderCreditChip`、`app.js` 的 `showLlm`）；
+3. 删掉 `core.js` 里 `el` 的对应项；点击这类事件，按钮本身不会被 Vue 换掉的可以先留在模块里。
+
+已迁移：顶栏模型标识、余额（`TopBar.vue`）。建议顺序：任务数角标 → 左侧列表（创作记录、账号）→ 三个方向 → 各个弹窗 → 编辑器和口播（最难，放最后）。
 
 - `core.js` 放所有模块共享的东西：DOM 引用 `el`、全局状态 `state`、`api()`、`esc`、`toast`、`markdown` 等。
   **它不 import 任何功能模块**，所以永远最先执行完，别的模块在加载时读 `el` / `state` 不会出错。

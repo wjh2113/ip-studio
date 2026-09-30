@@ -302,7 +302,7 @@ export async function handleEvalRun(req, res, body) {
 
   const pool = [
     { id: null, name: '内置', system: feature.builtin() },
-    ...Variants.list(feature.key).map((v) => ({ id: v.id, name: v.name, system: v.system })),
+    ...(await Variants.list(feature.key)).map((v) => ({ id: v.id, name: v.name, system: v.system })),
   ];
   if (pool.length < 2) throw new HttpError(400, '只有内置一份提示词，没什么可比的——先加个变体');
 
@@ -428,7 +428,7 @@ export async function handleEvalVote(req, res, body, params) {
 export async function handleSettingsList(req, res) {
   const admin = await requireAdmin(req);
   json(res, 200, {
-    fields: settingsStatus(),
+    fields: await settingsStatus(),
     encrypted: hasKey(),
     warn: hasKey() ? '' : '没有设置 SECRET_KEY，敏感项的加密形同虚设。'
       + '生产环境务必设一个随机的长字符串，并且不要和数据库放在一起备份。',
@@ -440,11 +440,11 @@ export async function handleSettingsSave(req, res, body) {
   const admin = await requireAdmin(req);
   const key = String(body?.key || '');
   try {
-    saveSetting(key, body?.value, admin.username);
+    await saveSetting(key, body?.value, admin.username);
   } catch (err) {
     throw new HttpError(400, String(err?.message || err));
   }
-  json(res, 200, { fields: settingsStatus() });
+  json(res, 200, { fields: await settingsStatus() });
 }
 
 /* 连通性自检。填完不试一下，第一次真实支付才发现配错，那时候是用户在等着付钱。 */

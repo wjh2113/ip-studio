@@ -6,7 +6,9 @@
 
 - 注释、界面文案、README 用中文；git 提交信息用英文。
 - 后端运行时依赖：`fastify`、`bullmq`、`drizzle-orm`、`pg`、`@anthropic-ai/sdk`。数据库是 PostgreSQL（`DATABASE_URL`），任务队列要本机 Redis（`REDIS_URL`）。前端是 Vue 3 + Pinia，构建依赖放在 devDependencies（`vue`、`pinia`、`vite`）。再加别的依赖之前先问。
-- 改完跑 `npm test`，不通过不提交。测试用临时数据库和演示模式，不读 `.env`。
+- 改完跑 `npm test`，不通过不提交。测试要本机 PostgreSQL 和 Redis（`DATABASE_URL`、`REDIS_URL`），每个测试进程用独立 schema、演示模式，不读 `.env`。
+- `npm test` 先跑 `scripts/check.js`：语法、ESM、`debugger`，以及 `scripts/check-async.js` 的「异步调用漏了 await」检查。数据层全是 async：调用一律 `await`，对结果 `.map` 要写成 `(await X()).map`；不要把不含 await 的函数写成 `async`。确实要不等的，写 `void f().catch(...)` 或在行尾加 `// no-await-ok`。
+- 接口改动要在 `tests/routes.test.js` 里补一条：它真的起服务、走 HTTP，单测覆盖不到的漏 await、返回结构不对都靠它拦。
 - 不要读取、打印或提交 `.env` 和 `data/`。
 
 ## 后端
@@ -21,11 +23,16 @@
   3. 如果有提示词，在 `promptrev.js` 的 `PROMPT_KEYS` 和 `promptdocs.js` 里登记。
 - 模型输出必须在代码里校验：引用原文的字段要能逐字找到，找不到就丢；结构不全重试一次（`withRetry`）；不信任模型给的分数和金额。
 - 额度用 `quota.js` 的 `reserve` → `settle`，不要先查后扣。
+- PostgreSQL 不像以前的 SQLite 会把请求排成一列：「先读再写」的地方要么写成一条带条件的 UPDATE（`WHERE status = 'pending'` 这种），要么放进 `withTx` 并对那一行 `.for('update')`；靠唯一索引防重复的，插入用 `onConflictDoNothing()`，冲突时回 409 而不是 500（`auth.js` 的 `isUniqueViolation`）。
+- 长任务（出图、口播评测）用 `jobs.js` 的 `defineJob` / `enqueue`，不要挂在请求上等。任务状态以 PostgreSQL 为准，Redis 只放任务号。
 - 支付：金额只从服务端的套餐表算；回调必须验签；发货只在订单从 pending 变 paid 时做一次。
 
 ## 前端
 
-- 页面结构在 `web/src/components/*.vue`，由 `web/src/App.vue` 拼起来。`public/app.js` 在挂载之后加载模块并启动；功能写在 `public/js/<模块>.js`。改完页面执行 `npm run build:web`。本地看界面：先 `npm run dev`，再 `npm run dev:web`（http://127.0.0.1:5180）。
+- 现状（2026-10）：Vue 3 挂载页面，但**绝大部分界面还是 `public/js` 里的模块按 id 找元素、拼 HTML**；`.vue` 文件多数只是静态标记。真正由 Vue 渲染的目前只有顶栏的模型标识和余额（`TopBar.vue` 读 store 的 `llm`、`quota`）。
+- **一个节点只能归一方管**：归 Vue 管的（有 `{{ }}`、`v-if`、`v-for`、`:class`），功能模块只改 store 里的数据，不要再 `innerHTML` / `classList` 去碰它；归 `public/js` 管的节点，不要在上面加 Vue 绑定。把一块迁到 Vue 时，同时删掉 `core.js` 里 `el` 的对应项和模块里改 DOM 的代码。
+- 页面结构在 `web/src/components/*.vue`，由 `web/src/App.vue` 拼起来。`public/app.js` 在挂载之后加载模块并启动；功能写在 `public/js/<模块>.js`。
+- 构建：`npm run build:web` 输出到 `dist/`（每次清空，不进 git），服务端从 `dist/` 出首页和 `/assets/*`，其余静态文件还在 `public/`。没构建过时首页会提示先构建。本地看界面：先 `npm run dev`，再 `npm run dev:web`（http://127.0.0.1:5180，改 `.vue` 后要整页刷新，因为 `public/js` 在加载时就记住了元素）。
 - 共享的 `el`、`state`、`api` 在 `public/js/core.js`。`state` 是 Pinia store（`web/src/stores/studio.js`）的 `$state`。`core.js` 不能 import 功能模块。
 - 模块之间要「通知」而不是「调用」时，用 window 事件（现有：`cw-spent`、`cw-quota`、`cw-enter`、`cw-job-done`）。
 - 拼 HTML 一律先 `esc()`；Markdown 用 `markdown()`（先转义再加标签）。

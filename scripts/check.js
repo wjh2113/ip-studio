@@ -3,18 +3,23 @@
  *   2. 项目是 ESM（package.json type: module），.js 里出现 require( 一定是 bug——
  *      pay.js 曾经就是这样：一接真实支付就 ReferenceError
  *   3. 不许留 debugger
+ *   4. 异步调用漏了 await（规则见 scripts/check-async.js）
+ *   5. 前端 web/ 目录：.js 同样过语法检查；.vue 由 vite build 检查
  * 以后装得上 ESLint 时可以换成它；这几条规则到时照搬即可。 */
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { ROOT } from '../server/paths.js';
+import { checkAsync } from './check-async.js';
 
-const DIRS = ['server', 'public', 'tests', 'scripts'];
+const DIRS = ['server', 'public', 'tests', 'scripts', 'web'];
 const files = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (name === 'assets' && dir.endsWith('/public')) continue;
+    if (name === 'node_modules') continue;
+    // 构建产物不查（vite 输出的压缩代码）
+    if ((name === 'assets' || name === 'app') && dir.endsWith('/public')) continue;
     if (statSync(p).isDirectory()) walk(p);
     else if (name.endsWith('.js')) files.push(p);
   }
@@ -39,6 +44,8 @@ for (const f of files) {
     if (/^\s*debugger\s*;?\s*$/.test(code)) problems.push(`${rel}:${i + 1}: 留下了 debugger`);
   });
 }
+
+problems.push(...checkAsync(['server', 'scripts']));
 
 if (problems.length) {
   console.error(problems.join('\n'));

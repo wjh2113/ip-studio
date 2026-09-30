@@ -1,8 +1,8 @@
 /* 提示词版本。发给模型的是当前启用的那一版；每次手改或代码更新都追加一行，不覆盖旧的。 */
 
 import './db.js';
-import { and, desc, eq } from 'drizzle-orm';
-import { orm } from './client.js';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { orm, withTx } from './client.js';
 import { promptRevisions } from './schema.js';
 import { HttpError } from './auth.js';
 import {
@@ -60,10 +60,21 @@ export async function listRevisions(key) {
   }));
 }
 
+/* 同一条提示词「先全部停用、再启用一版」必须一口气做完：两个管理员同时点、或者两个进程同时启动，
+   中间插进来就会出现一版都没启用、或者两版同时启用。按提示词加事务级锁，排队执行。
+   数据库里还有唯一索引（迁移 3）兜底：同一条提示词同时只能有一版 active=1。 */
+function inPromptTx(key, fn) {
+  return withTx(async () => {
+    await orm().execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`prompt:${key}`}))`);
+    return fn();
+  });
+}
+
 /* 代码里的正文变了就追加一版。当前如果是手改，不把新手改覆盖掉，只把代码版放进历史。 */
 export async function syncPromptBuiltins() {
   for (const [key, builtin] of Object.entries(PROMPT_KEYS)) {
     const system = builtin();
+    await inPromptTx(key, async () => {
     const prev = await orm().select({ system: promptRevisions.system }).from(promptRevisions)
       .where(and(eq(promptRevisions.feature, key), eq(promptRevisions.source, 'code')))
       .orderBy(desc(promptRevisions.id)).limit(1);
@@ -79,6 +90,7 @@ export async function syncPromptBuiltins() {
     const current = await orm().select().from(promptRevisions)
       .where(and(eq(promptRevisions.feature, key), eq(promptRevisions.active, 1))).limit(1);
     if (current[0]) remember(key, current[0].system, current[0].source);
+    });
   }
 }
 
@@ -89,9 +101,11 @@ export async function savePromptEdit(key, system, userId) {
   if (text.length > 20000) throw new HttpError(400, '提示词请控制在 2 万字以内');
   const cur = activePrompt.get(key);
   if (cur?.system === text) return listRevisions(key);
-  await orm().update(promptRevisions).set({ active: 0 }).where(eq(promptRevisions.feature, key));
-  await orm().insert(promptRevisions).values({
-    feature: key, system: text, source: 'edit', note: '手工修改', active: 1, user_id: userId || 0, created_at: now(),
+  await inPromptTx(key, async () => {
+    await orm().update(promptRevisions).set({ active: 0 }).where(eq(promptRevisions.feature, key));
+    await orm().insert(promptRevisions).values({
+      feature: key, system: text, source: 'edit', note: '手工修改', active: 1, user_id: userId || 0, created_at: now(),
+    });
   });
   remember(key, text, 'edit');
   return listRevisions(key);
@@ -102,8 +116,10 @@ export async function activateRevision(key, id) {
   const row = await orm().select().from(promptRevisions)
     .where(and(eq(promptRevisions.id, Number(id)), eq(promptRevisions.feature, key))).limit(1);
   if (!row[0]) throw new HttpError(404, '这一版不存在');
-  await orm().update(promptRevisions).set({ active: 0 }).where(eq(promptRevisions.feature, key));
-  await orm().update(promptRevisions).set({ active: 1 }).where(eq(promptRevisions.id, row[0].id));
+  await inPromptTx(key, async () => {
+    await orm().update(promptRevisions).set({ active: 0 }).where(eq(promptRevisions.feature, key));
+    await orm().update(promptRevisions).set({ active: 1 }).where(eq(promptRevisions.id, row[0].id));
+  });
   remember(key, row[0].system, row[0].source);
   return listRevisions(key);
 }

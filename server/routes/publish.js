@@ -181,7 +181,8 @@ export async function handleIllus(req, res, body, params) {
 
   const store = { ...(draft.illus || {}) };
   const before = store[verKey(v)];
-  const keepImage = async (it) => {
+  // 纯函数，不要写成 async：它在 .map 里用，写成 async 会把每一项变成 Promise，存进库里就成了 {}
+  const keepImage = (it) => {
     const old = before?.placed === 'mark'
       ? before.items?.find((o) => o.i === it.i && o.prompt === it.prompt)
       : before?.items?.find((o) => o.prompt === it.prompt);

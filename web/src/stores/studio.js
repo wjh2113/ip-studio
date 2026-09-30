@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia';
 
-/* 和原来 public/js/core.js 里的 state 是同一份字段。
- * 功能模块通过 core.js 读写，组件通过这个 store 读写，指向同一份。 */
+/* 和原来 public/js/core.js 里的 state 是同一份字段（core.js 里 state = useStudioStore().$state）。
+ * 功能模块通过 core.js 读写，组件通过这个 store 读写，指向同一份。
+ *
+ * 目前真正由 Vue 渲染的只有顶栏的模型标识和余额（TopBar.vue 读 llm、quota）；
+ * 其余界面还是 public/js 里的模块按 id 找元素、拼 HTML。迁移规则见 docs/ARCHITECTURE.md。 */
 export const useStudioStore = defineStore('studio', {
   state: () => ({
     user: null,
@@ -37,5 +40,8 @@ export const useStudioStore = defineStore('studio', {
     speaks: [],
     focusSpeakId: null,
     step: 1,
+    // 以下由 Vue 组件渲染：功能模块只改数据，不要再去碰对应的 DOM
+    llm: null,          // /api/meta 的 llm：{ live, label, model, provider }（TopBar）
+    quota: null,        // /api/plan 的 quota：{ label, left, total, … }（TopBar 余额）
   }),
 });

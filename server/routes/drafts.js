@@ -203,7 +203,7 @@ export async function handleContent(req, res, body, params) {
     'X-Accel-Buffering': 'no',
   });
 
-  const send = async (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
   // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });

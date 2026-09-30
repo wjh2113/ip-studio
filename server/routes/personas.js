@@ -289,7 +289,7 @@ export async function handleDigestRebuild(req, res, body, params) {
 
 /* 把样本重新蒸馏成语气档案 —— 每次增删样本后都重算，保证档案和样本一致 */
 async function rebuildDigest(persona, userId) {
-  const samples = await Samples.list(persona.id, userId, { withContent: true, limit: DIGEST_MAX_SAMPLES })
+  const samples = (await Samples.list(persona.id, userId, { withContent: true, limit: DIGEST_MAX_SAMPLES }))
     .map((s) => ({ title: s.title, content: s.content.slice(0, DIGEST_MAX_CHARS) }));
   if (!samples.length) return '';
 

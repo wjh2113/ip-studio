@@ -1,4 +1,4 @@
-# 文案工坊 · 多用户自媒体文案生成系统
+# 自媒体助手 · 多用户自媒体文案生成系统
 
 两个板块：**创作**（题材 → 方向 → 成稿 → 编辑 → 学语气）和**热点**（抓榜单 → 和账号比对 → 找可蹭的点）。
 
@@ -10,9 +10,12 @@
 
 ```bash
 npm install
-cp .env.example .env   # 填入模型密钥；不填也能跑（演示模式）
+cp .env.example .env   # 填入 DATABASE_URL、REDIS_URL 和模型密钥；模型密钥不填也能跑（演示模式）
+npm run build:web      # 构建前端到 dist/（不进 git，改了 web/ 下的文件要重新构建）
 npm start              # http://localhost:5177
 ```
+
+需要本机有 PostgreSQL 和 Redis。跑测试：`DATABASE_URL=postgres://用户@127.0.0.1:5432/postgres npm test`（每个测试进程用独立 schema，跑完删掉）。
 
 首次打开先注册一个账号即可。
 
@@ -737,7 +740,9 @@ eval 里人打的分和真实使用有距离。管理后台「内容质量」看
 出图、口播转写与文字总评、语音测评、视频测评要几十秒到几分钟。以前挂在一个请求上，刷新页面、手机锁屏、nginx 超时，结果就丢了，点数却可能已经扣了。现在这几样都进后台任务队列：
 
 - **请求只登记**：接口带 `async: true`（上传录音用 `?async=1`）时立刻回 `202` 和任务，前端每 1.5 秒轮询一次 `/api/jobs`；不带的老调用方式照旧等结果，只是活也在队列里跑，请求断了照样做完。
-- **执行在 Redis + BullMQ**（worker 仍在服务进程里，不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱。任务状态记在 PostgreSQL，服务启动时按「排队中」重新投进 Redis。
+- **执行在 Redis + BullMQ**（worker 仍在服务进程里，不另起进程），全站同时跑 `JOB_CONCURRENCY` 个（默认 3），每人 `JOB_PER_USER` 个（默认 2），多的排队；有人做完一件，他排着的下一件立刻开始。同一张图、同一遍口播的同一种评测没做完时再点，返回同一个任务，不重复花钱——靠数据库唯一索引保证，并发连点也只建一条。
+- **任务状态以 PostgreSQL 为准**，Redis 里只放任务号：启动时、以及之后每分钟按「排队中」对一次账补投。Redis 连不上时服务照常启动（日志里说明原因），任务先记在库里，Redis 恢复后自动开始。Redis 键前缀按数据库区分（`REDIS_PREFIX` 可覆盖），同一台 Redis 上的测试库、正式库互不相干。
+- **停机不打断**：部署时 pm2 发 SIGTERM，服务先不接新请求，等进行中的成稿流、上传和后台任务做完（最多约 30 秒，`ecosystem.config.cjs` 的 `kill_timeout`），再断开 Redis 和数据库。
 - **点数**：任务里预扣、做完按实际结算；失败整笔退回。预扣的点数记在 `jobs.held` 上，服务重启时在跑的任务先退回预扣再重新排队，跑满两次还没成就记失败，可以在任务中心重试。
 - **任务中心**：顶栏「任务」按钮，有在跑的会显示数量。列表里能取消排队中的、重试失败的、「去看看」跳到对应的稿子或口播记录。刷新页面后还在跑的任务会接着盯，做完弹提示。
 - 代码在 `server/jobs.js`（队列本身）、`server/routes/jobs.js`（任务中心接口）；任务类型在各业务路由里用 `defineJob` 登记（`publish.js` 的 image，`speak.js` 的 speak / pronounce / appearance）。
@@ -1082,7 +1087,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 bash scripts/deploy-jdcloud.sh
 ```
 
-会 rsync 代码、`npm install`、写 nginx、pm2 拉起。不覆盖线上 `.env` 和 `data/`。第一次部署会安装 PostgreSQL（还没有 `DATABASE_URL` 时建库 `ip_studio`）、生成 `SECRET_KEY`、管理员密码，并从现有业务复制 LLM 网关 Key。若 `data/app.db` 还在且新库没有用户，会把 SQLite 里的数据导入一次。
+会 rsync 代码、`npm install`、写 nginx、pm2 拉起。不覆盖线上 `.env` 和 `data/`。第一次部署会安装 PostgreSQL（还没有 `DATABASE_URL` 时建库 `ip_studio`）、生成 `SECRET_KEY`、管理员密码，并从现有业务复制 LLM 网关 Key。若 `data/app.db` 还在、且还没导入过（没有 `data/app.db.imported` 标记），会先停服务，再把 SQLite 里的数据导入一次（新库里已有用户、账号或稿子就跳过）。前端在本机构建，`dist/` 整目录同步到服务器。
 
 DNS：在阿里云给 `ip.aidigitcloud.cn` 加一条 **A** 记录指向 `111.228.6.222`（证书已是 `*.aidigitcloud.cn`）。
 

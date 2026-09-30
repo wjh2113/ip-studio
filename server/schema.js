@@ -1,5 +1,6 @@
 /* 表结构（Drizzle）。列名沿用原来的蛇形，读出来的字段和以前的 SQLite 行一致。
  * 改表请在 migrations.js 末尾追加编号迁移，并在这里同步字段。 */
+import { sql } from 'drizzle-orm';
 import { doublePrecision, index, integer, pgTable, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
 
 const id = () => integer('id').primaryKey().generatedAlwaysAsIdentity();
@@ -225,6 +226,9 @@ export const jobs = pgTable('jobs', {
 }, (t) => [
   index('idx_jobs_user').on(t.user_id, t.id),
   index('idx_jobs_status').on(t.status, t.id),
+  // 迁移 2：同一件事（ref）同时只能有一条在排队或在跑
+  uniqueIndex('idx_jobs_active_ref').on(t.user_id, t.ref)
+    .where(sql`ref <> '' AND status IN ('queued', 'running')`),
 ]);
 
 export const orders = pgTable('orders', {
@@ -291,7 +295,11 @@ export const promptRevisions = pgTable('prompt_revisions', {
   active: integer('active').notNull().default(0),
   user_id: integer('user_id').notNull().default(0),
   created_at: text('created_at').notNull(),
-}, (t) => [index('idx_prompt_rev').on(t.feature, t.id)]);
+}, (t) => [
+  index('idx_prompt_rev').on(t.feature, t.id),
+  // 迁移 3：同一条提示词同时只能启用一版
+  uniqueIndex('idx_prompt_one_active').on(t.feature).where(sql`active = 1`),
+]);
 
 export const evalCases = pgTable('eval_cases', {
   id: id(),

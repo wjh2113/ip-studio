@@ -1,7 +1,7 @@
 /* 数据层：PostgreSQL + Drizzle。图片和录音仍在 DATA_DIR，不进库。 */
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getDatabase, inTransaction, orm, withTx } from './client.js';
 import { runMigrations } from './migrations.js';
 import { fromRoot } from './paths.js';
@@ -276,13 +276,17 @@ export const Personas = {
 export const Sections = {
   async create(userId, personaId, f) {
     const t = now();
-    const next = await one(orm().select({ n: sql`COALESCE(MAX(${sections.sort}), 0) + 1` }).from(sections).where(eq(sections.persona_id, personaId)));
-    const row = await one(orm().insert(sections).values({
-      user_id: userId, persona_id: personaId, name: f.name, purpose: f.purpose, guide: f.guide,
-      fields_json: JSON.stringify(f.fields || []), default_framework: f.default_framework || '',
-      sort: Number(next.n), created_at: t, updated_at: t,
-    }).returning());
-    return hydrateSection(row);
+    // 锁住账号那一行再取「下一个序号」，同时加两个栏目不会拿到同一个 sort
+    return withTx(async () => {
+      await orm().select({ id: personas.id }).from(personas).where(eq(personas.id, personaId)).for('update');
+      const next = await one(orm().select({ n: sql`COALESCE(MAX(${sections.sort}), 0) + 1` }).from(sections).where(eq(sections.persona_id, personaId)));
+      const row = await one(orm().insert(sections).values({
+        user_id: userId, persona_id: personaId, name: f.name, purpose: f.purpose, guide: f.guide,
+        fields_json: JSON.stringify(f.fields || []), default_framework: f.default_framework || '',
+        sort: Number(next.n), created_at: t, updated_at: t,
+      }).returning());
+      return hydrateSection(row);
+    });
   },
   async update(id, userId, f) {
     const rows = await orm().update(sections).set({
@@ -374,8 +378,15 @@ export const Quota = {
     const u = await one(q);
     if (!u) return null;
     if (u.period !== period) {
-      await orm().update(users).set({ period, used: 0 }).where(eq(users.id, userId));
-      return { ...u, period, used: 0 };
+      /* 跨月重置只做一次：带上「还是旧周期」的条件。不带条件的话，一个读到旧周期的请求
+         会在别人已经按新周期预扣之后再把 used 清零，等于白送额度（并发实测过）。 */
+      const reset = await orm().update(users).set({ period, used: 0 })
+        .where(and(eq(users.id, userId), ne(users.period, period)))
+        .returning({ plan: users.plan, period: users.period, used: users.used, avatar_credits: users.avatar_credits });
+      if (reset.length) return reset[0];
+      return one(orm().select({
+        plan: users.plan, period: users.period, used: users.used, avatar_credits: users.avatar_credits,
+      }).from(users).where(eq(users.id, userId)));
     }
     return u;
   },
@@ -592,17 +603,15 @@ export const Pool = {
       .where(and(eq(topicPool.user_id, userId), same(topicPool.persona_id, personaId ?? null)))
       .orderBy(sql`(${topicPool.plan_date} = '')`, asc(topicPool.plan_date), desc(topicPool.id));
   },
+  /* 只改传进来的字段，一条 UPDATE 完成：不先读再写，两个人同时改不同字段不会互相覆盖 */
   async update(id, userId, patch) {
-    const cur = await this.byId(id, userId);
-    if (!cur) return null;
-    await orm().update(topicPool).set({
-      subject: patch.subject ?? cur.subject,
-      note: patch.note ?? cur.note,
-      plan_date: patch.plan_date ?? cur.plan_date,
-      status: patch.status ?? cur.status,
-      draft_id: patch.draft_id === undefined ? cur.draft_id : patch.draft_id,
-    }).where(and(eq(topicPool.id, id), eq(topicPool.user_id, userId)));
-    return this.byId(id, userId);
+    const set = {};
+    for (const k of ['subject', 'note', 'plan_date', 'status']) if (patch[k] != null) set[k] = patch[k];
+    if (patch.draft_id !== undefined) set.draft_id = patch.draft_id;
+    if (!Object.keys(set).length) return this.byId(id, userId);
+    const rows = await orm().update(topicPool).set(set)
+      .where(and(eq(topicPool.id, id), eq(topicPool.user_id, userId))).returning();
+    return rows[0] || null;
   },
   async remove(id, userId) {
     const rows = await orm().delete(topicPool).where(and(eq(topicPool.id, id), eq(topicPool.user_id, userId))).returning({ id: topicPool.id });
@@ -689,7 +698,8 @@ export const Drafts = {
   },
   async setTopics(id, userId, topics, persona) {
     await withTx(async () => {
-      const row = await one(orm().select({ content: drafts.content }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))));
+      // 锁住这篇稿子：同一篇的保存、换方向、成稿写回排队进行，历史版本不会记错「上一版」
+      const row = await one(orm().select({ content: drafts.content }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).for('update'));
       if (row?.content) await Revisions.keep(id, userId, row.content);
       await orm().update(drafts).set({
         topics_json: JSON.stringify(topics), chosen: null, title: '', content: '',
@@ -700,7 +710,7 @@ export const Drafts = {
   async setContent(id, userId, { chosen, title, content, status }) {
     const next = String(content ?? '');
     await withTx(async () => {
-      const row = await one(orm().select({ content: drafts.content }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))));
+      const row = await one(orm().select({ content: drafts.content }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).for('update'));
       if (row?.content && row.content !== next) await Revisions.keep(id, userId, row.content);
       await orm().update(drafts).set({ chosen, title, content: next, status, updated_at: now() })
         .where(and(eq(drafts.id, id), eq(drafts.user_id, userId)));
@@ -712,7 +722,7 @@ export const Drafts = {
     return withTx(async () => {
       const row = await one(orm().select({
         content: drafts.content, cues_json: drafts.cues_json, illus_json: drafts.illus_json, generated: drafts.generated,
-      }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))));
+      }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).for('update'));
       if (!row) return null;
       const keepOpts = snapshot ? {} : { minGapMs: REVISION_GAP };
       if (snapshot && row.content && row.content !== next) await Revisions.keep(id, userId, row.content);
@@ -815,6 +825,8 @@ export const Drafts = {
   },
   async remove(id, userId) {
     return withTx(async () => {
+      // 先锁稿子这一行，和保存（也是先锁稿子、再动历史版本）按同一顺序拿锁，同时删和存不会互相死锁
+      await orm().select({ id: drafts.id }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).for('update');
       await Revisions.removeFor(id, userId);
       await Metrics.removeFor(id, userId);
       const rows = await orm().delete(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))).returning({ id: drafts.id });
@@ -879,10 +891,11 @@ const hydrateJob = (r) => (r ? {
 } : null);
 
 export const Jobs = {
+  /* 同一个 ref 已经有在排队 / 在跑的，唯一索引会挡住，这里返回 null，调用方去取已有那条 */
   async create({ userId, kind, ref = '', label = '', payload = {} }) {
     const row = await one(orm().insert(jobs).values({
       user_id: userId, kind, ref, label, payload_json: JSON.stringify(payload), created_at: now(),
-    }).returning());
+    }).onConflictDoNothing().returning());
     return hydrateJob(row);
   },
   async byId(id, userId = null) {

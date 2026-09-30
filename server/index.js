@@ -32,6 +32,8 @@ setUsageSink((e) => {
 });
 
 const PUBLIC_DIR = fromRoot('public');
+// Vue 前端的构建产物（npm run build:web → dist/）。手写的页面、样式、后台还在 public/
+const DIST_DIR = fromRoot('dist');
 const PORT = Number(process.env.PORT) || 5177;
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_BODY = 256 * 1024;
@@ -232,10 +234,20 @@ async function dispatch(req, res) {
   await serveStatic(path, res);
 }
 
+/* Fastify 只负责接连接：请求一进来就在 onRequest 里交给下面的 dispatch，body 解析、限流、报错格式都在 dispatch 里。
+ * 所以 bodyLimit、trustProxy 这类 Fastify 选项在这里不起作用，不要再加（客户端 IP 见 limit.js）。 */
 const app = Fastify({
-  trustProxy: process.env.TRUST_PROXY === '1',
-  bodyLimit: 24 * 1024 * 1024,
   logger: false,
+  // 接收完整个请求（头 + 体）的时限。24MB 录音在慢网络上要一会儿，给 5 分钟，和 Node 的默认值一致。
+  // 流式成稿是响应，不受它限制。
+  requestTimeout: 300_000,
+  // 进到 onRequest 之前 Fastify 自己就拒掉的请求（比如地址里有非法转义 /%zz）：也回 JSON、也带安全头
+  frameworkErrors: (err, request, reply) => {
+    reply.hijack();
+    const res = attachSecurity(reply.raw);
+    if (!res.headersSent) res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: '请求地址不合法' }));
+  },
 });
 
 /* 在 Fastify 读 body 之前把连接交给原来的处理函数，上传和流式输出才不会被截断。 */
@@ -251,6 +263,35 @@ app.addHook('onRequest', async (request, reply) => {
 });
 
 await app.listen({ port: PORT, host: HOST });
+
+/* 优雅停机。pm2 restart / 部署时发 SIGTERM（开发时 Ctrl+C 是 SIGINT）：
+ *   1. 不再接新连接；已经在输出的流式成稿、正在上传的录音让它们做完（最多 JOB_DRAIN_MS）；
+ *   2. 任务队列把手上的活做完再断开 Redis；
+ *   3. 关数据库连接池，退出。
+ * 超时还没做完的任务留在表里，下次启动时退回预扣、重新排队。
+ * pm2 默认只等 1.6 秒就强杀，ecosystem.config.cjs 里把 kill_timeout 调到了 30 秒。 */
+let stopping = false;
+async function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`\n  收到 ${signal}，正在停机：等进行中的请求和任务做完…`);
+  const force = setTimeout(() => { console.error('  停机超时，强制退出'); process.exit(1); }, 30_000);
+  force.unref();
+  try {
+    const { stopQueue } = await import('./jobs.js');
+    const { closeDb } = await import('./client.js');
+    await Promise.allSettled([app.close(), stopQueue()]);
+    await closeDb();
+    process.exit(0);
+  } catch (err) {
+    console.error('  停机出错：', err);
+    process.exit(1);
+  }
+}
+process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.on('SIGINT', () => { void shutdown('SIGINT'); });
+// 漏掉的 Promise 拒绝记下来，不让它把整个服务带走（Node 22 默认会直接退出进程）
+process.on('unhandledRejection', (err) => { console.error('[unhandledRejection]', err); });
 
 async function readJSON(req, max = MAX_BODY) {
   const chunks = [];
@@ -337,7 +378,11 @@ async function serveStatic(path, res) {
   // 营销落地页。走单独入口，投放链接指这里；/ 上那版是产品说明，两套动线互不影响
   if (path === '/start' || path === '/start/') path = '/promo.html';
 
-  const rel = normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, '');
+  // 应用首页和构建出来的 js 在 dist/
+  if (path === '/' || path === '/index.html') { await serveAppShell(res); return; }
+  if (path.startsWith('/assets/')) { await serveBuilt(path, res); return; }
+
+  const rel = normalize(path).replace(/^(\.\.[/\\])+/, '');
   const file = join(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR)) { res.writeHead(403).end('Forbidden'); return; }
   try {
@@ -349,20 +394,45 @@ async function serveStatic(path, res) {
     res.end(data);
   } catch {
     // 单页应用：未知路径回落到首页
-    try {
-      const html = await readFile(join(PUBLIC_DIR, 'index.html'));
-      res.writeHead(200, { 'Content-Type': MIME['.html'] });
-      res.end(html);
-    } catch {
-      res.writeHead(404).end('Not Found');
-    }
+    await serveAppShell(res);
+  }
+}
+
+/* 应用首页（dist/index.html）。没构建过就明说，不要给一个白屏 */
+async function serveAppShell(res) {
+  try {
+    const html = await readFile(join(DIST_DIR, 'index.html'));
+    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+    res.end(html);
+  } catch {
+    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('前端还没构建：在项目目录运行 npm run build:web（开发时也可以用 npm run dev:web 打开 5180 端口）');
+  }
+}
+
+/* 构建产物：文件名带内容哈希，内容变了名字就变，可以让浏览器长期缓存。
+   找不到就是 404——以前回落成首页 HTML，浏览器只会报一个看不懂的 MIME 错误。 */
+async function serveBuilt(path, res) {
+  const rel = normalize(path).replace(/^(\.\.[/\\])+/, '');
+  const file = join(DIST_DIR, rel);
+  if (!file.startsWith(join(DIST_DIR, 'assets'))) { res.writeHead(403).end('Forbidden'); return; }
+  try {
+    const data = await readFile(file);
+    res.writeHead(200, {
+      'Content-Type': MIME[extname(file)] || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    });
+    res.end(data);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not Found');
   }
 }
 
 {
   const info = providerInfo();
   const where = HOST === '0.0.0.0' ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
-  console.log(`\n  文案工坊 已启动  →  ${where}`);
+  console.log(`\n  自媒体助手 已启动  →  ${where}`);
   console.log(`  模型通道：${info.label}${info.live ? `（${info.model}）` : ' —— 复制 .env.example 为 .env 并填入密钥即可接入真实模型'}`);
   console.log('  任务队列：BullMQ / Redis\n');
 }

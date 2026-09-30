@@ -26,9 +26,18 @@ export function validateCredentials(username, password) {
   return null;
 }
 
+/* 唯一约束冲突（PostgreSQL 23505）。drizzle 会把驱动的错误包一层放进 cause */
+export const isUniqueViolation = (err) => err?.code === '23505' || err?.cause?.code === '23505';
+
 export async function register(username, password) {
   if (await Users.byName(username)) throw new HttpError(409, '该用户名已被注册');
-  return Users.create(username, hashPassword(password));
+  try {
+    return await Users.create(username, hashPassword(password));
+  } catch (err) {
+    // 两个人同时注册同一个名字：先查时都没有，插入时后到的撞唯一索引。这是 409，不是 500
+    if (isUniqueViolation(err)) throw new HttpError(409, '该用户名已被注册');
+    throw err;
+  }
 }
 
 export async function login(username, password) {

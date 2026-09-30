@@ -4,12 +4,16 @@ import { HttpError } from './auth.js';
 
 const buckets = new Map();
 
+/* 在 nginx 后面（TRUST_PROXY=1）时取真实客户端 IP。
+   优先 X-Real-IP：nginx 用 $remote_addr 覆盖写入，客户端伪造不了。
+   X-Forwarded-For 的最左一段是客户端自己能随便写的（nginx 的 $proxy_add_x_forwarded_for 只是在后面追加），
+   以前取最左一段，换个请求头就能绕过注册、登录限流；退而求其次时取最右一段，即 nginx 亲眼看到的地址。 */
 export function clientIp(req) {
   if (process.env.TRUST_PROXY === '1') {
-    const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    if (xff) return xff;
     const real = String(req.headers['x-real-ip'] || '').trim();
     if (real) return real;
+    const hops = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
   }
   return req.socket?.remoteAddress || 'unknown';
 }

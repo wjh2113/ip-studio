@@ -1,7 +1,7 @@
 <template>
 <div id="authScreen" class="auth-screen hidden">
   <div class="auth-card">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>文案工坊</span></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></div>
     <p class="auth-sub" id="authSub">给一个题材，先出三个话题方向，选中后生成完整成稿。</p>
 
     <div class="tabs" id="authTabs">

@@ -13,6 +13,38 @@ import { getDatabase } from './client.js';
 
 export const MIGRATIONS = [
   { version: 1, name: '基线：PostgreSQL 全表', up: baseline },
+  { version: 2, name: '同一件事只能有一个在排队或在跑的任务', up: async (db) => {
+    // 并发连点时（SQLite 同步执行时碰不到）可能已经建出重复任务：每组留一条（优先留在跑的，其次最新的），
+    // 其余记为取消，并把它们预扣的点数退回去（取消的任务启动恢复时不会再管它）
+    await db.exec(`
+      WITH ranked AS (
+        SELECT id, user_id, held, row_number() OVER (
+          PARTITION BY user_id, ref ORDER BY (status = 'running') DESC, id DESC
+        ) AS rn
+        FROM jobs WHERE ref <> '' AND status IN ('queued', 'running')
+      ),
+      dups AS (SELECT id, user_id, held FROM ranked WHERE rn > 1),
+      refund AS (
+        UPDATE users u SET used = GREATEST(0, u.used - ROUND(s.h)::integer)
+        FROM (SELECT user_id, SUM(held) AS h FROM dups WHERE held > 0 GROUP BY user_id) s
+        WHERE u.id = s.user_id
+        RETURNING u.id
+      )
+      UPDATE jobs SET status = 'cancelled', held = 0, error = '重复任务，已合并',
+        finished_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      WHERE id IN (SELECT id FROM dups);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_ref ON jobs(user_id, ref)
+        WHERE ref <> '' AND status IN ('queued', 'running');
+    `);
+  } },
+  { version: 3, name: '同一条提示词同时只能启用一版', up: async (db) => {
+    // 以前「先停用再启用」不在一个事务里，可能已经有两版同时启用：每条只留最新那版
+    await db.exec(`
+      UPDATE prompt_revisions SET active = 0
+      WHERE active = 1 AND id NOT IN (SELECT MAX(id) FROM prompt_revisions WHERE active = 1 GROUP BY feature);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_one_active ON prompt_revisions(feature) WHERE active = 1;
+    `);
+  } },
 ];
 
 function toPg(text) {
@@ -65,6 +97,8 @@ export function bind(client) {
 export async function runMigrations(handle) {
   const pool = handle?.pool || (await getDatabase()).pool;
   const client = await pool.connect();
+  // 同时启动的两个进程（比如导入脚本和服务）别一起跑迁移：拿到锁的跑，另一个等它跑完再看版本号
+  await client.query('SELECT pg_advisory_lock(hashtext($1))', [MIGRATION_LOCK]);
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version integer PRIMARY KEY,
@@ -87,9 +121,12 @@ export async function runMigrations(handle) {
     }
     return version;
   } finally {
+    try { await client.query('SELECT pg_advisory_unlock(hashtext($1))', [MIGRATION_LOCK]); } catch { /* 连接断了锁也就没了 */ }
     client.release();
   }
 }
+
+const MIGRATION_LOCK = 'ip-studio:migrations';
 
 async function baseline(db) {
   await db.exec(`

@@ -5,6 +5,8 @@
 # 只是本机备份：磁盘坏了一样会丢。要做到异地，把 BACKUP_DIR 同步到对象存储，
 # 例如在本脚本末尾加一行 ossutil / rclone 命令（凭据放服务器环境变量，不进仓库）。
 set -euo pipefail
+# 备份里有密码哈希和加密过的配置：只给自己读
+umask 077
 
 APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 DATA_DIR="${DATA_DIR:-${APP_DIR}/data}"
@@ -24,7 +26,20 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-pg_dump --dbname="${DATABASE_URL}" --format=custom --file="${OUT}/app.dump"
+# 连接串拆成 PG* 环境变量：密码不出现在 pg_dump 的命令行参数里（ps 看得见）
+eval "$(DATABASE_URL="${DATABASE_URL}" node -e '
+  const u = new URL(process.env.DATABASE_URL);
+  const q = (v) => `'"'"'${String(v).replace(/'"'"'/g, `'"'"'\\'"'"''"'"'`)}'"'"'`;
+  const out = {
+    PGHOST: u.hostname || "127.0.0.1",
+    PGPORT: u.port || "5432",
+    PGUSER: decodeURIComponent(u.username || ""),
+    PGPASSWORD: decodeURIComponent(u.password || ""),
+    PGDATABASE: decodeURIComponent(u.pathname.slice(1) || ""),
+  };
+  for (const [k, v] of Object.entries(out)) if (v) console.log(`export ${k}=${q(v)}`);
+')"
+pg_dump --format=custom --file="${OUT}/app.dump"
 
 for d in images speaks; do
   if [[ -d "${DATA_DIR}/${d}" ]]; then

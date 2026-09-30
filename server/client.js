@@ -44,7 +44,18 @@ const pools = new Set();
 
 export async function openDatabase(name = schemaName()) {
   await ensureSchema(name);
-  const pool = new Pool({ connectionString: withSearchPath(databaseUrl(), name), max: 8 });
+  const pool = new Pool({
+    connectionString: withSearchPath(databaseUrl(), name),
+    max: Number(process.env.DB_POOL_MAX) || 8,
+    idleTimeoutMillis: 30_000,
+    // 连接池满或数据库连不上时最多等 10 秒报错，不要让请求一直挂着
+    connectionTimeoutMillis: 10_000,
+    // 单条语句最多跑 60 秒，防止一条慢查询把连接全占住
+    statement_timeout: 60_000,
+  });
+  // 空闲连接被数据库断开（重启、主备切换、管理员踢连接）时 pg 会在池上抛 error；
+  // 不接住的话整个 Node 进程直接退出。接住以后连接池会自己丢掉坏连接、按需重连。
+  pool.on('error', (err) => console.error('[db] 空闲连接出错，已丢弃：', err.message));
   pools.add(pool);
   const db = drizzle(pool, { schema });
   return { name, pool, db };
