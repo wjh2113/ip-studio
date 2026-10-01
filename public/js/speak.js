@@ -1,6 +1,6 @@
 /* 前端 · speak：口播提示、口播记录与评测、提词器。从原 app.js 原样拆出。 */
 import { api, busy, el, esc, state, toast } from './core.js';
-import { setDraft } from './brief.js';
+import { useBriefStore } from '../../web/src/stores/brief.js';
 import { flushSave, setMode } from './editor.js';
 import { useJobsStore } from '../../web/src/stores/jobs.js';
 import { legacy } from '../../web/src/lib/legacy.js';
@@ -225,6 +225,28 @@ export async function loadSpeakHistory() {
 }
 
 legacy.openSpeakRecord = (id) => openSpeakRecord(id);
+legacy.loadSpeakHistory = () => loadSpeakHistory();
+
+/* 侧栏「口播」筛选下的列表：点开一遍、删除、语音 / 视频测评 */
+el.speakHistory.addEventListener('click', async (e) => {
+  if (await onSpeakCheck(e)) return;
+  const del = e.target.closest('button[data-speak-del]');
+  if (del) {
+    e.stopPropagation();
+    const id = Number(del.dataset.speakDel);
+    if (!await ask.confirm({ title: '删除这一遍口播记录？', body: '录音和总评会一起去掉。', ok: '删除', danger: true })) return;
+    try {
+      await api(`/speaks/${id}`, { method: 'DELETE' });
+      if (state.focusSpeakId === id) state.focusSpeakId = null;
+      toast('已删除这遍口播');
+      loadSpeakHistory();
+      if (state.mode === 'cue') loadDraftSpeaks();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const item = e.target.closest('.history-item[data-speak]');
+  if (item && !state.streaming) await openSpeakRecord(Number(item.dataset.speak));
+});
 
 export async function openSpeakRecord(id) {
   let speak = (state.speaks || []).find((s) => s.id === id)
@@ -248,7 +270,7 @@ export async function openSpeakRecord(id) {
   }
   if (state.draft?.id !== speak.draftId) {
     const { draft } = await api(`/drafts/${speak.draftId}`);
-    setDraft(draft);
+    useBriefStore().setDraft(draft);
   }
   if (state.mode !== 'cue') setMode('cue');
   else loadDraftSpeaks();

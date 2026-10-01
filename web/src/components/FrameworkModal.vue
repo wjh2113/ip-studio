@@ -100,10 +100,11 @@ import { useStudioStore } from '../stores/studio.js';
 import { ask, toast } from '../lib/feedback.js';
 import { useBusy } from '../lib/busy.js';
 import { api } from '../lib/api.js';
-import { callLegacy } from '../lib/legacy.js';
+import { useBriefStore } from '../stores/brief.js';
 
 const fw = useFrameworksStore();
 const s = useStudioStore();
+const brief = useBriefStore();
 
 const TABS = [{ key: 'all', label: '全部' }, { key: 'mine', label: '我的' }, { key: 'builtin', label: '内置' }];
 const tab = ref('all');
@@ -119,7 +120,7 @@ watch(() => fw.libOpen, async (open) => {
   if (!open) return;
   panel.value = 'list';
   listError.value = '';
-  platform.value = callLegacy('briefContext')?.platform || '';
+  platform.value = brief.form.platform || '';
   try { await fw.loadAll(); } catch (err) { listError.value = err.message; }
 });
 
@@ -228,7 +229,7 @@ const extracting = useBusy();
 
 function openExtract() {
   panel.value = 'extract';
-  sourcePlatform.value = callLegacy('briefContext')?.platform || '';
+  sourcePlatform.value = brief.form.platform || '';
   nextTick(() => sourceBox.value?.focus());
 }
 

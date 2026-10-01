@@ -1,7 +1,9 @@
 /* 前端 · versions：多平台版本与图文配图。从原 app.js 原样拆出。 */
 import { markAts, placeCuts } from '../place.js';
 import { api, busy, el, esc, markdown, state, toast } from './core.js';
-import { platformLabel } from './compose.js';
+import { useStudioStore } from '../../web/src/stores/studio.js';
+
+const platformLabel = (key) => useStudioStore().platformLabel(key);
 import { currentText, updateActionLabels } from './export.js';
 import { useJobsStore } from '../../web/src/stores/jobs.js';
 
@@ -115,7 +117,7 @@ export function showVersion() {
   updateActionLabels();
   // 检查/学习/多平台都以原文为准；看别的版本时禁掉，别让人以为在对当前这版操作。
   // 配图是按版本来的，所以不禁。
-  [el.reviewBtn, el.learnBtn, el.multiBtn].forEach((b) => { b.disabled = other; });
+  [el.reviewBtn, el.multiBtn].forEach((b) => { b.disabled = other; });
   el.multiBtn.title = other ? '多平台版本从原文改写，先切回原文' : '把这篇改成其它平台的版本';
   el.cuesPane?.classList.toggle('hidden', other || state.mode !== 'cue');
 }

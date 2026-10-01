@@ -10,10 +10,10 @@
       <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
         title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()">任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
       <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
-      <span class="user-name" id="userName"></span>
+      <span class="user-name" id="userName">{{ s.user?.username }}</span>
       <a class="btn ghost small" href="/prompts" target="_blank" rel="noopener"
          title="每条提示词的产品定位、价值与功能逻辑">说明书</a>
-      <button class="btn ghost small" id="logoutBtn">退出</button>
+      <button class="btn ghost small" id="logoutBtn" @click="session.logout()">退出</button>
     </div>
   </header>
 </template>
@@ -23,10 +23,12 @@ import { computed } from 'vue';
 import { useStudioStore } from '../stores/studio.js';
 import { usePlanStore } from '../stores/plan.js';
 import { useJobsStore } from '../stores/jobs.js';
+import { useSessionStore } from '../stores/session.js';
 
 const s = useStudioStore();
 const plan = usePlanStore();
 const jobs = useJobsStore();
+const session = useSessionStore();
 const quota = computed(() => plan.quota);
 
 const llmText = computed(() => {

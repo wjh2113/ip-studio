@@ -2,108 +2,32 @@
     <div id="writeView" :class="{ hidden: s.view !== 'write' }">
       <!-- 步骤条同时是导航：走过的步骤可以点回去 -->
       <ol class="steps" id="steps">
-        <li class="step active" data-step="1"><b>1</b> 确定选题</li>
-        <li class="step" data-step="2"><b>2</b> 选择话题方向</li>
-        <li class="step" data-step="3"><b>3</b> 创作内容</li>
+        <li v-for="x in STEPS" :key="x.n" class="step" :class="stepClass(x.n)" :data-step="x.n" @click="b.clickStep(x.n)"><b>{{ x.n }}</b> {{ x.label }}</li>
       </ol>
 
       <!-- 引导：还没有账号设定 -->
-      <section class="card onboard hidden" id="onboardCard">
+      <section v-if="onboarding" class="card onboard" id="onboardCard">
         <h2>先给这个号定个位</h2>
         <p>设定账号的平台、内容方向、目标用户和要解决的问题之后，每次创作都会自动带上这份语境——
           选题不会跑偏，语气也不会每篇都换一个人。</p>
         <div class="actions">
-          <button class="btn primary" id="quickBtn" type="button">贴一段自我介绍，帮我填</button>
-          <button class="btn ghost" id="onboardBtn">自己一项项填</button>
-          <button class="btn ghost" id="skipOnboardBtn">先不设定，直接创作</button>
+          <button class="btn primary" id="quickBtn" type="button" @click="account.quick.open = true">贴一段自我介绍，帮我填</button>
+          <button class="btn ghost" id="onboardBtn" @click="account.open(null)">自己一项项填</button>
+          <button class="btn ghost" id="skipOnboardBtn" @click="skipOnboard">先不设定，直接创作</button>
         </div>
       </section>
 
-      <!-- 第一步 -->
-      <section class="card" id="briefCard">
-        <div class="card-head">
-          <h2>创作简报</h2>
-          <span class="inherit-note" id="inheritNote"></span>
-        </div>
-        <form id="briefForm">
-          <label class="full">题材 <span class="req">*</span>
-            <textarea name="subject" rows="2" maxlength="200" required
-              placeholder="自己写，或从下面挑一条"></textarea>
-          </label>
-
-          <div class="sections-pick" id="sectionPick">
-            <span class="sections-label">内容栏目</span>
-            <div class="section-chips" id="sectionChips"></div>
-            <button type="button" class="btn ghost small" id="manageSectionsBtn">管理栏目</button>
-          </div>
-
-          <div class="section-inputs hidden" id="sectionInputs"></div>
-
-          <FrameworkPick />
-
-          <div class="hot-ref hidden" id="hotRef"></div>
-
-          <!-- 选题池：热点里看到的、推荐里想留的，不当场写也不丢 -->
-          <div class="pool" id="poolBox">
-            <div class="ideas-head">
-              <span>选题池<em id="poolNote"></em></span>
-              <button class="btn ghost small" type="button" id="poolToggle">展开 ▾</button>
-            </div>
-            <div class="pool-list hidden" id="poolList"></div>
-          </div>
-
-          <div class="ideas" id="ideas">
-            <div class="ideas-head">
-              <span>推荐题材<em id="ideasNote">这个号还没写过的</em></span>
-              <button class="btn ghost small" type="button" id="ideasRefresh">换一批</button>
-            </div>
-            <div class="ideas-list" id="ideasList"></div>
-          </div>
-
-          <!-- 默认按账号设定走，只展示不可改；点「修改」才展开成表单 -->
-          <div class="inherited hidden" id="inheritRow">
-            <div class="inherited-facts" id="inheritFacts"></div>
-            <button type="button" class="btn ghost small" id="editParamsBtn">修改</button>
-          </div>
-
-          <div class="grid" id="paramGrid">
-            <label>发布平台<select name="platform" id="platformSel"></select></label>
-            <label>风格调性<select name="tone" id="toneSel"></select></label>
-            <label>目标读者<input name="audience" maxlength="120" placeholder="例：一线城市上班族" /></label>
-            <label>目标字数<input name="length" type="number" min="150" max="4000" step="50" /></label>
-            <div class="param-reset hidden" id="paramReset">
-              <button type="button" class="btn ghost small" id="resetParamsBtn">恢复账号设定</button>
-            </div>
-          </div>
-
-          <label class="full">必须覆盖的关键词 / 信息点
-            <input name="keywords" maxlength="300" placeholder="用逗号分隔，可留空" />
-          </label>
-
-          <div class="actions">
-            <button class="btn primary" type="submit" id="topicsBtn">生成三个话题方向</button>
-            <span class="hint" id="briefHint"></span>
-          </div>
-        </form>
-      </section>
-
-      <!-- 第二步 -->
-      <section class="card hidden" id="topicsCard">
-        <div class="card-head">
-          <button class="btn ghost small step-back" data-goto="1">← 改题材</button>
-          <h2>三个话题方向<span class="modal-sub" id="topicsFw"></span></h2>
-          <button class="btn ghost small" id="retopicsBtn">换一批</button>
-        </div>
-        <div class="topics" id="topics"></div>
-      </section>
+      <BriefCard v-show="s.step === 1 && !onboarding" />
+      <TopicsCard v-show="s.step === 2" />
 
       <!-- 第三步 -->
-      <section class="card hidden" id="contentCard">
+      <!-- 成稿区还归 public/js（editor.js 等）按 id 改内容；这里只管它显不显示 -->
+      <section class="card" id="contentCard" :class="{ hidden: s.step !== 3 }">
         <!-- 标题行 + 工具条吸顶：长文往下读的时候，模式切换和这几个动作始终够得着 -->
         <div class="head-stick">
         <!-- 一排八个按钮谁也找不着，按"要干什么"分三组，模式切换单独提到标题行 -->
         <div class="card-head">
-          <button class="btn ghost small step-back" data-goto="2">← 换方向</button>
+          <button class="btn ghost small step-back" data-goto="2" @click="!s.streaming && b.goStep(2)">← 换方向</button>
           <h2 id="contentTitle">完整文案</h2>
           <span class="counter" id="counter"></span>
           <span class="grow"></span>
@@ -155,7 +79,6 @@
                上面的菜单转发点击到它们。比把几百行处理逻辑重写一遍稳妥。 -->
           <span class="hidden" aria-hidden="true">
             <button type="button" id="reviewBtn"></button>
-            <button type="button" id="learnBtn"></button>
             <button type="button" id="multiBtn"></button>
             <button type="button" id="illusBtn"></button>
             <button type="button" id="copyBtn"></button>
@@ -265,8 +188,32 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
+import BriefCard from './BriefCard.vue';
+import TopicsCard from './TopicsCard.vue';
 import { useStudioStore } from '../stores/studio.js';
-import FrameworkPick from './FrameworkPick.vue';
+import { useBriefStore } from '../stores/brief.js';
+import { useAccountStore } from '../stores/account.js';
 
 const s = useStudioStore();
+const b = useBriefStore();
+const account = useAccountStore();
+
+const STEPS = [{ n: 1, label: '确定选题' }, { n: 2, label: '选择话题方向' }, { n: 3, label: '创作内容' }];
+
+const onboarding = computed(() => Boolean(s.user) && !s.personas.length && !s.skipOnboard);
+
+/* 当前步高亮；之前的步骤、以及「这一步已完成」时的当前步打勾；能跳过去的可以点 */
+function stepClass(n) {
+  return {
+    active: n === s.step,
+    done: n < s.step || (b.stepDone && n === s.step),
+    reachable: n !== s.step && b.reachable(n),
+  };
+}
+
+function skipOnboard() {
+  s.skipOnboard = true;
+  b.focusSubject += 1;
+}
 </script>

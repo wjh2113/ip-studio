@@ -1,11 +1,12 @@
 <template>
   <AuthScreen />
 
-  <div id="app" class="app hidden">
+  <div id="app" class="app" :class="{ hidden: !s.user }">
     <TopBar />
     <div class="layout">
       <Sidebar />
-      <main class="main" id="main" data-step="1">
+      <!-- 宽度按步骤走，见 .main[data-step] -->
+      <main class="main" id="main" :data-step="s.step">
         <WriteView />
         <HotView />
       </main>
@@ -31,6 +32,7 @@
 </template>
 
 <script setup>
+import { useStudioStore } from './stores/studio.js';
 import AuthScreen from './components/AuthScreen.vue';
 import TopBar from './components/TopBar.vue';
 import Sidebar from './components/Sidebar.vue';
@@ -51,4 +53,6 @@ import InsightsModal from './components/InsightsModal.vue';
 import Prompter from './components/Prompter.vue';
 import Toast from './components/common/Toast.vue';
 import AskDialog from './components/common/AskDialog.vue';
+
+const s = useStudioStore();
 </script>

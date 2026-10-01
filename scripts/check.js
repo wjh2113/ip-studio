@@ -5,7 +5,8 @@
  *   3. 不许留 debugger
  *   4. 异步调用漏了 await（规则见 scripts/check-async.js）
  *   5. 前端 web/ 目录：.js 同样过语法检查；.vue 用 Vue 自带的编译器把模板和脚本编一遍
- *      （拼错的指令、没闭合的标签、脚本语法错误在这里就拦下，不用等 vite build）
+ *      （拼错的指令、没闭合的标签、脚本语法错误在这里就拦下，不用等 vite build），
+ *      并且模板最外层不许以注释开头（注释会让组件变成多个根节点，v-show 和传进来的 class 都失效）
  * 以后装得上 ESLint 时可以换成它；这几条规则到时照搬即可。 */
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -61,6 +62,10 @@ async function checkVue(list) {
     const rel = relative(ROOT, f);
     const { descriptor, errors } = sfc.parse(readFileSync(f, 'utf8'), { filename: f });
     if (errors.length) { out.push(`${rel}: ${errors[0].message}`); continue; }
+    // 模板最前面是注释的话，组件就有了两个根节点（注释也算）：v-show、外面传的 class / id 都会落空
+    if (descriptor.template && /^\s*<!--/.test(descriptor.template.content)) {
+      out.push(`${rel}: 模板最外层不要以注释开头，把注释挪进根元素里面`);
+    }
     try {
       const id = rel.replace(/\W/g, '');
       if (descriptor.script || descriptor.scriptSetup) {

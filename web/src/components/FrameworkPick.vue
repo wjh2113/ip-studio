@@ -1,6 +1,6 @@
 <template>
-  <!-- 写法框架：默认不套；推荐三个，点一下就用。框架管结构，素材管事实 -->
   <div class="sections-pick" id="fwPick">
+    <!-- 写法框架：默认不套；推荐三个，点一下就用。框架管结构，素材管事实 -->
     <span class="sections-label">写法框架</span>
     <div class="section-chips" id="fwChips">
       <button type="button" class="section-chip" :class="{ on: !s.frameworkKey }" data-fw="" @click="fw.choose(null)">不套框架</button>

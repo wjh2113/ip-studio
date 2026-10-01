@@ -4,7 +4,6 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
 
 export const useSectionsStore = defineStore('sections', () => {
@@ -30,10 +29,9 @@ export const useSectionsStore = defineStore('sections', () => {
     await load(persona.id);
   }
 
-  /* 关掉管理浮层：增删过的栏目同步到简报那一排 */
+  /* 关掉管理浮层。简报那一排读的是同一份 studio.sections，增删过会自己跟上 */
   function closed() {
     managerOpen.value = false;
-    callLegacy('sectionsChanged');
   }
 
   return { managerOpen, personaId, load, openManager, closed };

@@ -1,6 +1,6 @@
 <template>
-  <!-- 用 hidden 类而不是 v-if：关上再打开时里面的输入不丢，浏览器测试也按 .hidden 判断开关 -->
   <div class="modal-mask" :id="id" :class="{ hidden: !open }" @click.self="maskClose && close()">
+    <!-- 用 hidden 类而不是 v-if：关上再打开时里面的输入不丢，浏览器测试也按 .hidden 判断开关 -->
     <div class="modal" :class="size">
       <div class="modal-head">
         <h2>{{ title }}<span v-if="sub || $slots.sub" class="modal-sub" :id="subId"><slot name="sub">{{ sub }}</slot></span></h2>

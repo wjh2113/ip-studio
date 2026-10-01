@@ -1,11 +1,37 @@
-/* 前端 · compose：第二步流式成稿、创作记录列表。从原 app.js 原样拆出。 */
+/* 前端 · compose：选了方向之后的流式成稿，以及「换了一篇稿子」时成稿区各块的重置。
+ * 简报、方向、创作记录已经在 Vue 里（stores/brief.js、history.js），它们通过 lib/legacy.js 调到这里。 */
 import { api, countChars, el, esc, goStep, markSteps, markdown, state, toast } from './core.js';
-import { renderPersonaBar } from './account.js';
-import { renderTopics, setDraft } from './brief.js';
 import { closeAssist, renderContent, setMode } from './editor.js';
 import { runReview } from './review.js';
-import { loadDraftSpeaks, loadSpeakHistory, onSpeakCheck, openSpeakRecord } from './speak.js';
+import { renderCues } from './speak.js';
+import { renderIllusBar, renderMultiBar, renderVersionTabs, ver } from './versions.js';
+import { readSSE } from '../../web/src/lib/api.js';
 import { legacy } from '../../web/src/lib/legacy.js';
+import { useHistoryStore } from '../../web/src/stores/history.js';
+
+const loadHistory = () => useHistoryStore().load();
+
+/* 换了一篇稿子（或回到空白简报，draft 为 null）：成稿区各块跟着换 */
+legacy.draftChanged = (draft) => {
+  el.revPane?.classList.add('hidden');
+  el.revBtn?.classList.remove('on');
+  el.reviewBox.classList.add('hidden');
+  state.review = null;
+  renderCues(null);
+  ver.current = '';                    // 换稿子了，回到原文
+  state.multiOpen = false;
+  state.illusOpen = false;
+  renderIllusBar();
+  renderMultiBar();
+  renderVersionTabs();
+  if (draft?.content) {
+    el.contentTitle.textContent = draft.title || '完整文案';
+    setMode('read');
+    renderContent();
+  }
+};
+
+legacy.generate = (index) => generate(index);
 
 /* ---------------- 第二步：流式成稿 ---------------- */
 export async function generate(index) {
@@ -19,9 +45,6 @@ export async function generate(index) {
   el.contentTitle.textContent = topic.title;
   el.content.innerHTML = '<span class="cursor"></span>';
   el.counter.textContent = '生成中…';
-  el.contentCard.classList.remove('hidden');
-  el.contentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  el.topics.querySelectorAll('button').forEach((b) => { b.disabled = true; });
 
   let text = '';
   try {
@@ -72,143 +95,5 @@ export async function generate(index) {
     } catch { /* 取不回来就停在错误提示上 */ }
   } finally {
     state.streaming = false;
-    el.topics.querySelectorAll('button').forEach((b) => { b.disabled = false; });
-    renderTopics(state.draft);
   }
 }
-
-export async function readSSE(res, onEvent) {
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const blocks = buf.split('\n\n');
-    buf = blocks.pop() || '';
-    for (const block of blocks) {
-      let event = 'message';
-      let data = '';
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim();
-        else if (line.startsWith('data:')) data += line.slice(5).trim();
-      }
-      if (data) onEvent(event, JSON.parse(data));
-    }
-  }
-}
-
-/* ---------------- 历史 ---------------- */
-legacy.loadHistory = () => loadHistory();
-
-export async function loadHistory() {
-  if (state.historyMode === 'speaks') return loadSpeakHistory();
-  try {
-    const q = new URLSearchParams();
-    if (state.personaId !== null) q.set('persona_id', state.personaId);
-    if (state.showArchived) q.set('archived', '1');
-    const { drafts, counts } = await api(`/drafts${q.toString() ? `?${q}` : ''}`);
-    // 列表、计数由 Vue 渲染（web/src/components/Sidebar.vue），这里只更新数据
-    state.list = drafts;
-    state.counts = counts;
-    api('/speaks').then(({ speaks }) => { state.speakCount = speaks.length; }).catch(() => {});
-  } catch { /* 未登录或网络异常时静默 */ }
-}
-
-el.historyFilter.addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (!btn || state.streaming) return;
-  state.historyMode = btn.dataset.view === 'speaks' ? 'speaks' : 'drafts';
-  if (state.historyMode === 'drafts') state.showArchived = btn.dataset.arch === '1';
-  loadHistory();
-});
-
-el.archiveDoneBtn.addEventListener('click', async () => {
-  const n = state.counts.activeDone;
-  if (!n) return;
-  if (!await ask.confirm({ title: `把 ${n} 篇已完成的创作收进归档？`, body: '随时可以在「已归档」里恢复。', ok: '归档' })) return;
-  // 按钮归 Vue 管：不用 busy()（它会改按钮的 innerHTML），改 archivingDone 让组件显示「处理中」
-  if (state.archivingDone) return;
-  state.archivingDone = true;
-  try {
-    const { archived } = await api('/drafts/archive-done', {
-      method: 'POST',
-      body: { persona_id: state.personaId === null ? '' : state.personaId },
-    });
-    toast(`已归档 ${archived} 篇`);
-    await loadHistory();
-  } catch (err) { toast(err.message); } finally { state.archivingDone = false; }
-});
-
-/* 创作记录列表由 Vue 渲染（Sidebar.vue 读 state.list / counts / draft），数据一变自动更新。
-   这个函数留着给口播模式用，也兼容以前「改完数据调一下 renderHistory」的调用。 */
-export function renderHistory() {
-  if (state.historyMode === 'speaks') loadSpeakHistory();
-}
-
-// 创作记录（Vue 渲染）和口播记录（speak.js 渲染）两个列表共用一套点击处理，都是事件委托
-async function onHistoryClick(e) {
-  if (await onSpeakCheck(e)) return;
-  const speakDel = e.target.closest('button[data-speak-del]');
-  if (speakDel) {
-    e.stopPropagation();
-    const id = Number(speakDel.dataset.speakDel);
-    if (!await ask.confirm({ title: '删除这一遍口播记录？', body: '录音和总评会一起去掉。', ok: '删除', danger: true })) return;
-    try {
-      await api(`/speaks/${id}`, { method: 'DELETE' });
-      if (state.focusSpeakId === id) state.focusSpeakId = null;
-      toast('已删除这遍口播');
-      loadHistory();
-      if (state.mode === 'cue') loadDraftSpeaks();
-    } catch (err) { toast(err.message); }
-    return;
-  }
-
-  const speakItem = e.target.closest('.history-item[data-speak]');
-  if (speakItem) {
-    if (state.streaming) return;
-    await openSpeakRecord(Number(speakItem.dataset.speak));
-    return;
-  }
-
-  const arch = e.target.closest('button[data-arch-id]');
-  if (arch) {
-    e.stopPropagation();
-    try {
-      await api(`/drafts/${arch.dataset.archId}/archive`, {
-        method: 'POST', body: { archived: arch.dataset.to === '1' },
-      });
-      toast(arch.dataset.to === '1' ? '已归档' : '已恢复');
-      loadHistory();
-    } catch (err) { toast(err.message); }
-    return;
-  }
-
-  const del = e.target.closest('button[data-del]');
-  if (del) {
-    e.stopPropagation();
-    const id = Number(del.dataset.del);
-    if (!await ask.confirm({ title: '删除这条创作记录？', ok: '删除', danger: true })) return;
-    await api(`/drafts/${id}`, { method: 'DELETE' });
-    if (state.draft?.id === id) el.newBtn.click();
-    loadHistory();
-    return;
-  }
-  const item = e.target.closest('.history-item');
-  if (!item || state.streaming) return;
-  const { draft } = await api(`/drafts/${item.dataset.id}`);
-  if (draft.persona_id && draft.persona_id !== state.personaId
-      && state.personas.some((p) => p.id === draft.persona_id)) {
-    state.personaId = draft.persona_id;
-    renderPersonaBar();
-    loadHistory();
-  }
-  setDraft(draft);
-}
-
-el.history.addEventListener('click', onHistoryClick);
-el.speakHistory.addEventListener('click', onHistoryClick);
-
-export const platformLabel = (key) =>
-  state.meta?.platforms.find((p) => p.key === key)?.label || key;

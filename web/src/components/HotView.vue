@@ -88,7 +88,7 @@ import BusyBtn from './common/BusyBtn.vue';
 import { useHotStore } from '../stores/hot.js';
 import { useStudioStore } from '../stores/studio.js';
 import { toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
+import { useBriefStore } from '../stores/brief.js';
 
 const h = useHotStore();
 const s = useStudioStore();
@@ -121,8 +121,9 @@ function runManual() {
 /* 一键把选题带回创作简报，成稿会引用这条热点 */
 function useMatch(m) {
   s.view = 'write';
-  callLegacy('resetBrief');
-  callLegacy('useSubject', m.subject, {
+  const brief = useBriefStore();
+  brief.reset();
+  brief.useSubject(m.subject, {
     title: m.origin?.title || '', url: m.origin?.url || '',
     platform: m.origin?.platform || '', summary: m.origin?.summary || '',
     summarySource: m.origin?.summarySource || 'none', angle: m.angle,

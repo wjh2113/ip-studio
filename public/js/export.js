@@ -1,6 +1,6 @@
 /* 前端 · export：复制 / 下载 / 导出。从原 app.js 原样拆出。 */
 import { busy, el, esc, markdown, state, toast } from './core.js';
-import { platformLabel } from './compose.js';
+import { useStudioStore } from '../../web/src/stores/studio.js';
 import { illOf, ver, weave } from './versions.js';
 
 /* ---------------- 复制 / 下载 ---------------- */
@@ -24,7 +24,7 @@ export function currentText() {
   return (ver.current ? state.draft?.variants?.[ver.current]?.content : state.draft?.content) || '';
 }
 
-export const currentLabel = () => (ver.current ? platformLabel(ver.current) : '');
+export const currentLabel = () => (ver.current ? useStudioStore().platformLabel(ver.current) : '');
 
 /* 把图读成 data URI。
    剪贴板里放图片链接是没用的——指向 localhost 且要登录态，

@@ -1,90 +1,16 @@
-/* 功能入口。页面由 Vue 3（web/src/main.js）挂载后再加载本文件。
- * 各块功能在 public/js/ 下按业务拆开：
- *   core.js      全局共享：DOM 引用 el、状态 state、接口封装 api、通用小工具（转义、提示、Markdown 渲染等）
- *   auth.js      登录 / 注册
- *   account.js   账号设定、语气样本与语气档案、内容栏目
- *   brief.js     创作简报：参数继承、题材推荐、第一步三个方向
- *   compose.js   第二步流式成稿、创作记录列表
+/* 成稿区（第三步）还没迁到 Vue 的几个模块。页面由 Vue 3（web/src/main.js）挂载后加载本文件：
+ *   core.js      共用：DOM 引用 el、状态 state，以及从 web/src/lib 转过来的 api、toast、文本小工具
+ *   compose.js   选了方向之后的流式成稿；换稿子时成稿区各块的重置
  *   export.js    复制 / 下载 / 导出
  *   editor.js    成稿编辑器：保存、划词改写、/ 续写、AI 浮层、三动作工具条、正文历史、阅读/编辑模式、语音改稿
  *   review.js    成稿检查
  *   speak.js     口播提示、口播记录与评测、提词器
  *   versions.js  多平台版本与图文配图
- *   library.js   素材库与选题池
- *   quickstart.js 快速建号：贴自我介绍和旧文章，先把账号设定填出来
- * 这里先按顺序加载它们（core 最先），最后启动。 */
-import { api, el, esc, state, syncLength, toast } from './js/core.js';
-import { enterApp } from './js/auth.js';
-import './js/account.js';
-import './js/brief.js';
+ * 它们把需要被 Vue 那边调用的函数登记在 web/src/lib/legacy.js 里；启动（拉登录态、进应用）在 Vue 那边。 */
+import './js/core.js';
 import './js/compose.js';
 import './js/export.js';
 import './js/editor.js';
 import './js/review.js';
 import './js/speak.js';
 import './js/versions.js';
-import './js/library.js';
-import './js/quickstart.js';
-
-/* ---------------- 启动 ---------------- */
-(async function boot() {
-  const [{ user }, meta] = await Promise.all([api('/me'), api('/meta')]);
-  state.meta = meta;
-  applyAuthMeta(meta.auth);
-  // 从落地页带 ?signup=1 过来的，直接停在注册页
-  if (new URLSearchParams(location.search).get('signup')) {
-    document.querySelector('#authTabs [data-mode="register"]')?.click();
-  }
-  fillSelects(meta);
-  showLlm(meta.llm);
-  user ? enterApp(user) : el.auth.classList.remove('hidden');
-})().catch((e) => toast(e.message));
-
-function applyAuthMeta(auth = {}) {
-  const tab = document.getElementById('registerTab');
-  const invite = document.getElementById('inviteRow');
-  const userRow = document.getElementById('userRow');
-  const userInput = el.authForm?.username;
-  if (auth.gate) {
-    tab?.remove();
-    el.authTabs?.classList.add('hidden');
-    userRow?.classList.add('hidden');
-    if (userInput) {
-      userInput.removeAttribute('required');
-      userInput.value = '';
-    }
-    const sub = document.getElementById('authSub');
-    const tip = document.getElementById('authTip');
-    if (sub) sub.textContent = '输入访问密码进入。与 API 网关管理台同一组密码。';
-    if (tip) tip.textContent = '不开放公开注册。';
-    const pw = el.authForm?.password;
-    if (pw) pw.placeholder = '访问密码';
-    el.authSubmit.textContent = '进入';
-  } else if (auth.register === false) {
-    tab?.remove();
-    if (new URLSearchParams(location.search).get('signup')) {
-      history.replaceState(null, '', '/');
-    }
-  }
-  if (auth.invite && invite) {
-    invite.dataset.needed = '1';
-  }
-}
-
-function fillSelects({ platforms, tones }) {
-  const platformOpts = platforms
-    .map((p) => `<option value="${esc(p.key)}" data-length="${esc(p.length)}">${esc(p.label)}</option>`).join('');
-  const toneOpts = tones
-    .map((t) => `<option value="${esc(t.key)}" title="${esc(t.hint)}">${esc(t.key)}</option>`).join('');
-  el.platformSel.innerHTML = platformOpts;
-  el.personaPlatform.innerHTML = platformOpts;
-  el.toneSel.innerHTML = toneOpts;
-  el.personaTone.innerHTML = toneOpts;
-  syncLength();
-  el.platformSel.addEventListener('change', syncLength);
-}
-
-/* 顶栏模型标识由 Vue 渲染（web/src/components/TopBar.vue）：这里只更新数据 */
-function showLlm(llm) {
-  state.llm = llm;
-}

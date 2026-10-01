@@ -1,5 +1,5 @@
 /* 过渡期的桥：已经迁到 Vue 的部分，要调用还留在 public/js 里的函数时从这里拿。
- * public/js 的模块加载时把函数登记进来（legacy.setDraft = setDraft）。
+ * public/js 的模块加载时把函数登记进来（legacy.generate = generate）。
  * 全部迁完后整个文件删掉——到那时不应该还有人 import 它。 */
 export const legacy = {};
 

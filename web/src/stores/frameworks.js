@@ -5,10 +5,9 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { api } from '../lib/api.js';
-import { on } from '../lib/bus.js';
 import { toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
+import { useBriefStore } from './brief.js';
 
 export const useFrameworksStore = defineStore('frameworks', () => {
   const recs = ref([]);            // 给当前简报推荐的
@@ -33,15 +32,16 @@ export const useFrameworksStore = defineStore('frameworks', () => {
     chosen.value = f || null;
   }
 
-  /* 推荐按平台、栏目、账号、题材来。平台和题材还在旧的简报表单里，由它登记 briefContext 给过来 */
+  /* 推荐按平台、栏目、账号、题材来 */
   async function loadRecs() {
     const s = useStudioStore();
     if (!s.user) return;
-    const ctx = callLegacy('briefContext') || {};
+    const ctx = useBriefStore().form;
     const q = new URLSearchParams({ platform: ctx.platform || '' });
     if (s.sectionId) q.set('section_id', s.sectionId);
     if (s.personaId) q.set('persona_id', s.personaId);
-    if (ctx.subject) q.set('subject', ctx.subject.slice(0, 200));
+    const subject = String(ctx.subject || '').trim();
+    if (subject) q.set('subject', subject.slice(0, 200));
     try {
       recs.value = (await api(`/frameworks/recommend?${q}`)).frameworks;
     } catch { recs.value = []; }
@@ -87,9 +87,6 @@ export const useFrameworksStore = defineStore('frameworks', () => {
     await loadAll();
     return framework;
   }
-
-  // 账号、栏目变了（旧模块发 brief-context），推荐跟着换
-  on('brief-context', () => { loadRecs(); });
 
   return {
     recs, chosen, all, libOpen, platforms, pickList, platformLabel, findKey,

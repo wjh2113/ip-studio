@@ -32,6 +32,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { clock } from '../lib/text.js';
 import { callLegacy } from '../lib/legacy.js';
+import { useBriefStore } from '../stores/brief.js';
 
 const jobs = useJobsStore();
 const s = useStudioStore();
@@ -58,7 +59,7 @@ async function act(j, what) {
       else if (j.payload?.draftId) {
         if (s.draft?.id !== j.payload.draftId) {
           const { draft } = await api(`/drafts/${j.payload.draftId}`);
-          callLegacy('setDraft', draft);
+          useBriefStore().setDraft(draft);
         }
         if (j.kind === 'image') toast('配图在正文上方的「配图」里');
       }

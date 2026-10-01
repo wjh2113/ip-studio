@@ -1,7 +1,11 @@
 /* 前端 · editor：成稿编辑器：保存、划词改写、/ 续写、AI 浮层、三动作工具条、正文历史、阅读/编辑模式、语音改稿。从原 app.js 原样拆出。 */
 import { IMAGE_MARK } from '../place.js';
 import { api, countChars, el, esc, state, toast } from './core.js';
-import { loadHistory, readSSE } from './compose.js';
+import { readSSE } from '../../web/src/lib/api.js';
+import { useHistoryStore } from '../../web/src/stores/history.js';
+import { useAccountStore } from '../../web/src/stores/account.js';
+
+const loadHistory = () => useHistoryStore().load();
 import { currentLabel, downloadAs, updateActionLabels } from './export.js';
 import { loadDraftSpeaks, renderCues } from './speak.js';
 import { illOf, renderIllusBar, renderMultiBar, renderVersionTabs, showVersion, ver, withIllus } from './versions.js';
@@ -468,7 +472,7 @@ el.confirmMenu.addEventListener('click', async (e) => {
   if (act === 'cues') { setMode('cue'); if (!state.draft?.cues) el.cuesRunBtn.click(); return; }
   if (act === 'multi') { state.multiOpen = true; renderMultiBar(); return; }
   if (act === 'illus') { el.illusBtn.click(); return; }
-  if (act === 'learn') { el.learnBtn.click(); return; }
+  if (act === 'learn') { useAccountStore().learn(state.draft, { beforeSave: flushSave }); return; }
   if (act === 'review') { el.reviewBtn.click(); return; }
   if (act === 'metrics') { useInsightsStore().openMetrics(); return; }
   if (act === 'titles') { useTitlesStore().open(); return; }
@@ -918,11 +922,3 @@ function syncModeUi(mode) {
   el.saveState.classList.toggle('hidden', !editing);
   el.markDock?.classList.toggle('hidden', !editing);
 }
-
-/* 完整设定默认折起来——侧栏是长期占屏的东西，平时用不着把整份设定摊在那儿 */
-el.personaMoreBtn.addEventListener('click', () => {
-  state.personaOpen = !state.personaOpen;
-  el.personaMoreBtn.setAttribute('aria-expanded', String(state.personaOpen));
-  el.personaMoreBtn.firstChild.textContent = state.personaOpen ? '收起完整设定 ' : '展开完整设定 ';
-  el.personaSummary.classList.toggle('hidden', !state.personaOpen);
-});

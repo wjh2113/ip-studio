@@ -5,6 +5,8 @@ import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
+import { useBriefStore } from './brief.js';
+import { useHistoryStore } from './history.js';
 
 export const useTitlesStore = defineStore('titles', () => {
   const show = ref(false);
@@ -46,8 +48,8 @@ export const useTitlesStore = defineStore('titles', () => {
     applying.value = i;
     try {
       const { draft } = await api(`/drafts/${s.draft.id}/title`, { method: 'PUT', body: { title: text } });
-      callLegacy('setDraft', draft);
-      callLegacy('loadHistory');               // 左侧创作记录里的标题也跟着换
+      useBriefStore().setDraft(draft);
+      useHistoryStore().load();                // 左侧创作记录里的标题也跟着换
       show.value = false;
       toast('标题已替换，上一版留在历史里');
     } catch (err) {
