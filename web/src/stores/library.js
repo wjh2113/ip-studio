@@ -144,33 +144,38 @@ export const useLibraryStore = defineStore('library', () => {
 
   /* 选本地文件夹：浏览器读出相对路径，拼成目录树存成一条素材 */
   async function importFolder(fileList) {
-    const files = [...(fileList || [])].filter((f) => f && f.webkitRelativePath);
-    if (!files.length) { toast('没有读到文件夹内容'); return; }
-    const root = files[0].webkitRelativePath.split('/')[0] || '本地文件夹';
-    const paths = files
-      .map((f) => f.webkitRelativePath)
-      .filter((p) => !p.split('/').some((seg) => seg === '.DS_Store' || seg === 'Thumbs.db'))
-      .sort((a, b) => a.localeCompare(b, 'zh'));
-    const capped = paths.slice(0, FOLDER_FILE_CAP);
-    const tree = formatDirTree(capped.map((p) => p.split('/').slice(1).filter(Boolean)));
-    const omitted = paths.length > FOLDER_FILE_CAP
-      ? `\n…另有 ${paths.length - FOLDER_FILE_CAP} 个文件未列出\n`
-      : '';
-    const body = [
-      `文件夹：${root}`,
-      `共 ${paths.length} 个文件`,
-      '',
-      tree || '(空文件夹)',
-      omitted,
-    ].join('\n').trim().slice(0, BODY_MAX);
+    const payload = folderPayloadFromFiles(fileList);
+    if (!payload) { toast('没有读到文件夹内容'); return; }
+    startCreate(payload);
+    toast(`已读入「${payload.root}」共 ${payload.fileCount} 个文件，核对后保存`);
+  }
 
-    startCreate({
-      kind: '文章',
-      title: `本地目录 · ${root}`.slice(0, 80),
-      body,
-      tags: '本地文件夹,目录',
-    });
-    toast(`已读入「${root}」共 ${paths.length} 个文件，核对后保存`);
+  /* 刷新已存的本地目录素材：再选一次同一文件夹，覆盖正文 */
+  async function refreshFolder(m, fileList) {
+    if (!m?.id) return;
+    const payload = folderPayloadFromFiles(fileList);
+    if (!payload) { toast('没有读到文件夹内容'); return; }
+    try {
+      await api(`/materials/${m.id}`, {
+        method: 'PUT',
+        body: {
+          kind: m.kind || '文章',
+          title: payload.title,
+          body: payload.body,
+          tags: payload.tags,
+        },
+      });
+      selectedId.value = m.id;
+      await loadMaterials();
+      toast(`已刷新「${payload.root}」共 ${payload.fileCount} 个文件`);
+    } catch (err) {
+      toast(err.message || '刷新失败');
+    }
+  }
+
+  function isLocalFolder(m) {
+    const tags = String(m?.tags || '');
+    return tags.includes('本地文件夹') || String(m?.title || '').startsWith('本地目录');
   }
 
   function startEdit(m) {
@@ -275,10 +280,41 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     tab, kind, q, sort, viewMode, loading, list, kinds, selectedId, pool, error, form, poolForm,
     open, loadMaterials, loadPool, filtered, selected, countsByKind,
-    startCreate, importClipboard, importFromUrl, importFolder, startEdit, cancelForm, saveForm, remove,
+    startCreate, importClipboard, importFromUrl, importFolder, refreshFolder, isLocalFolder,
+    startEdit, cancelForm, saveForm, remove,
     addPool, datePool, removePool, writePool,
   };
 });
+
+function folderPayloadFromFiles(fileList) {
+  const files = [...(fileList || [])].filter((f) => f && f.webkitRelativePath);
+  if (!files.length) return null;
+  const root = files[0].webkitRelativePath.split('/')[0] || '本地文件夹';
+  const paths = files
+    .map((f) => f.webkitRelativePath)
+    .filter((p) => !p.split('/').some((seg) => seg === '.DS_Store' || seg === 'Thumbs.db'))
+    .sort((a, b) => a.localeCompare(b, 'zh'));
+  const capped = paths.slice(0, FOLDER_FILE_CAP);
+  const tree = formatDirTree(capped.map((p) => p.split('/').slice(1).filter(Boolean)));
+  const omitted = paths.length > FOLDER_FILE_CAP
+    ? `\n…另有 ${paths.length - FOLDER_FILE_CAP} 个文件未列出\n`
+    : '';
+  const body = [
+    `文件夹：${root}`,
+    `共 ${paths.length} 个文件`,
+    '',
+    tree || '(空文件夹)',
+    omitted,
+  ].join('\n').trim().slice(0, BODY_MAX);
+  return {
+    root,
+    fileCount: paths.length,
+    kind: '文章',
+    title: `本地目录 · ${root}`.slice(0, 80),
+    body,
+    tags: '本地文件夹,目录',
+  };
+}
 
 /* 把相对路径片段列表排成缩进树。paths: string[][]，不含根目录名 */
 function formatDirTree(segmentsList) {

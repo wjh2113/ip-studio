@@ -108,6 +108,10 @@
                   <span class="mat-used">{{ m.used_count || 0 }}</span>
                   <span class="mat-when">{{ stamp(m.updated_at || m.created_at) }}</span>
                   <span class="library-acts" @click.stop>
+                    <button v-if="lib.isLocalFolder(m)" type="button" class="mini" title="重新读取本地文件夹"
+                      :data-refresh-folder="m.id" @click="pickFolderRefresh(m)">
+                      <Icon name="refresh" :size="14" />
+                    </button>
                     <button type="button" class="mini" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="14" /></button>
                     <button type="button" class="mini rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="14" /></button>
                   </span>
@@ -129,6 +133,12 @@
                   </div>
                   <div class="mat-card-foot">
                     <span>{{ stamp(m.updated_at || m.created_at) }}</span>
+                    <span class="library-acts" @click.stop>
+                      <button v-if="lib.isLocalFolder(m)" type="button" class="mini" title="重新读取本地文件夹"
+                        @click="pickFolderRefresh(m)"><Icon name="refresh" :size="14" /></button>
+                      <button type="button" class="mini" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="14" /></button>
+                      <button type="button" class="mini rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="14" /></button>
+                    </span>
                   </div>
                 </article>
               </div>
@@ -173,6 +183,8 @@
 
             <p class="lib-disclaimer">素材仅作参考，写作时召回真东西；模型不能编造之外的事。</p>
             <div class="library-detail-foot">
+              <button v-if="lib.isLocalFolder(detail)" type="button" class="btn ghost small" id="libRefreshFolder"
+                @click="pickFolderRefresh(detail)"><Icon name="refresh" :size="14" />刷新目录</button>
               <button type="button" class="btn primary small" @click="lib.startEdit(detail)">编辑</button>
               <button type="button" class="btn danger ghost small" @click="lib.remove(detail)">删除</button>
             </div>
@@ -264,6 +276,7 @@ const s = useStudioStore();
 const lib = useLibraryStore();
 const saving = useBusy();
 const folderInput = ref(null);
+const refreshTarget = ref(null);
 
 const rows = computed(() => lib.filtered());
 const detail = computed(() => lib.selected());
@@ -295,12 +308,21 @@ function statusLabel(st) {
   return ({ idea: '待选', planned: '已排期', done: '已写成' })[st] || st;
 }
 function pickFolder() {
+  refreshTarget.value = null;
+  folderInput.value?.click();
+}
+function pickFolderRefresh(m) {
+  refreshTarget.value = m;
+  toast('请再选一次同一本地文件夹');
   folderInput.value?.click();
 }
 async function onFolderPicked(ev) {
   const input = ev.target;
+  const target = refreshTarget.value;
+  refreshTarget.value = null;
   try {
-    await lib.importFolder(input.files);
+    if (target) await lib.refreshFolder(target, input.files);
+    else await lib.importFolder(input.files);
   } finally {
     input.value = '';
   }
