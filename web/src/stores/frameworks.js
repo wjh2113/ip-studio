@@ -13,7 +13,6 @@ export const useFrameworksStore = defineStore('frameworks', () => {
   const recs = ref([]);            // 给当前简报推荐的
   const chosen = ref(null);        // 选中的框架对象（从框架库挑的不一定在推荐里）
   const all = ref(null);           // { builtin, mine, platforms }
-  const libOpen = ref(false);
 
   const platforms = computed(() => all.value?.platforms || []);
   const platformLabel = (k) => platforms.value.find((p) => p.key === k)?.label || useStudioStore().platformLabel(k);
@@ -89,7 +88,7 @@ export const useFrameworksStore = defineStore('frameworks', () => {
   }
 
   return {
-    recs, chosen, all, libOpen, platforms, pickList, platformLabel, findKey,
+    recs, chosen, all, platforms, pickList, platformLabel, findKey,
     choose, loadRecs, loadAll, applySectionDefault, remove, save, copy,
   };
 });

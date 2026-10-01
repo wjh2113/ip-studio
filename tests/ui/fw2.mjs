@@ -28,11 +28,12 @@ await step('注册建号', async () => {
   if (await page.isVisible('#personaCloseBtn')) await page.click('#personaCloseBtn').catch(() => {});
 });
 await step('从范文拆解 → 编辑器 → 保存', async () => {
-  await page.click('#fwLibBtn');
+  await page.click('[data-view="frameworks"]');
+  await page.waitForSelector('#frameworksView:not(.hidden)');
   await page.click('#fwExtractBtn');
   await page.fill('#fwSource', SOURCE);
   await page.click('#fwExtractRun');
-  await page.waitForSelector('#fwEditor:not(.hidden)');
+  await page.waitForSelector('#fwEditor');
   if (shot) await page.screenshot({ path: shot + '-extract.png' });
   const why = await page.textContent('#fwWhy');
   await page.click('#fwSave');
@@ -41,7 +42,8 @@ await step('从范文拆解 → 编辑器 → 保存', async () => {
   return `${why.trim()}；卡片：${tags.replace(/\s+/g, ' ').trim()}`;
 });
 await step('栏目设默认框架（用刚拆出来的）', async () => {
-  await page.click('#fwClose');
+  await page.click('[data-view="write"]');
+  await page.waitForSelector('#briefForm');
   await page.click('#manageSectionsBtn');
   await page.waitForSelector('#sectionModal:not(.hidden)');
   await page.selectOption('#sectionPreset', { index: 1 }).catch(() => {});

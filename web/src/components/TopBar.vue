@@ -6,6 +6,7 @@
       <button data-view="hot" :class="{ active: s.view === 'hot' }" @click="s.view = 'hot'">热点</button>
       <button data-view="speak" :class="{ active: s.view === 'speak' }" @click="s.view = 'speak'">口播</button>
       <button data-view="library" :class="{ active: s.view === 'library' }" @click="s.view = 'library'">素材库</button>
+      <button data-view="frameworks" :class="{ active: s.view === 'frameworks' }" @click="s.view = 'frameworks'">框架库</button>
     </nav>
     <div class="topbar-right">
       <span class="chip llm-chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle"><i class="dot" aria-hidden="true"></i>{{ llmText }}</span>

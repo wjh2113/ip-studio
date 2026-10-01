@@ -3,15 +3,16 @@
 
   <div id="app" class="app" :class="{ hidden: !s.user }">
     <TopBar />
-    <div class="layout" :class="{ 'no-side': s.view === 'library' }">
-      <!-- 素材库自带分类侧栏，不再叠账号设定 / 创作记录 -->
-      <Sidebar v-show="s.view !== 'library'" />
+    <div class="layout" :class="{ 'no-side': s.view === 'library' || s.view === 'frameworks' }">
+      <!-- 素材库 / 框架库自带管理界面，不再叠账号设定 / 创作记录 -->
+      <Sidebar v-show="s.view !== 'library' && s.view !== 'frameworks'" />
       <!-- 宽度按步骤走，见 .main[data-step] -->
       <main class="main" id="main" :data-step="s.view === 'write' ? s.step : undefined" :data-view="s.view">
         <WriteView />
         <HotView />
         <SpeakView />
         <MaterialsView />
+        <FrameworksView />
       </main>
     </div>
   </div>
@@ -23,7 +24,6 @@
   <QuickstartModal />
   <JobsModal />
   <TitleModal />
-  <FrameworkModal />
   <PersonaPage />
   <PlanModal />
   <MetricsModal />
@@ -43,6 +43,7 @@ import WriteView from './components/WriteView.vue';
 import HotView from './components/HotView.vue';
 import SpeakView from './components/SpeakView.vue';
 import MaterialsView from './components/MaterialsView.vue';
+import FrameworksView from './components/FrameworksView.vue';
 import SelMenu from './components/SelMenu.vue';
 import SlashMenu from './components/SlashMenu.vue';
 import AssistPop from './components/AssistPop.vue';
@@ -50,7 +51,6 @@ import SectionModal from './components/SectionModal.vue';
 import QuickstartModal from './components/QuickstartModal.vue';
 import JobsModal from './components/JobsModal.vue';
 import TitleModal from './components/TitleModal.vue';
-import FrameworkModal from './components/FrameworkModal.vue';
 import PersonaPage from './components/PersonaPage.vue';
 import PlanModal from './components/PlanModal.vue';
 import MetricsModal from './components/MetricsModal.vue';

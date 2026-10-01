@@ -11,7 +11,7 @@
       </button>
     </div>
     <div class="fw-pick-acts">
-      <button type="button" class="btn ghost small" id="fwLibBtn" @click="fw.libOpen = true"><Icon name="book" :size="14" />打开框架库</button>
+      <button type="button" class="btn ghost small" id="fwLibBtn" @click="s.view = 'frameworks'"><Icon name="book" :size="14" />打开框架库</button>
       <button type="button" class="btn ghost small fw-none" :class="{ on: !s.frameworkKey }" data-fw="" @click="fw.choose(null)">不套框架</button>
     </div>
   </div>

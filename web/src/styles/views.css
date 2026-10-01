@@ -410,6 +410,12 @@
 
 /* ---------- 弹窗尺寸 ---------- */
 .modal.wide { max-width: 980px; }
+#frameworksView { display: grid; gap: 18px; }
+#frameworksView.hidden { display: none; }
+.frameworks-card .fw-bar { margin-bottom: 14px; }
+.frameworks-card .fw-list { margin-top: 4px; }
+.main[data-view="frameworks"] { max-width: 960px; width: 100%; margin-inline: auto; }
+
 .modal.fw-modal { max-width: 820px; }
 .sections-label { font-size: 13px; color: var(--muted); }
 
