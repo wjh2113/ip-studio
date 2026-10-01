@@ -36,7 +36,6 @@ await step('切到热点：创作区藏起来', async () => {
   return `${(await page.textContent('#hotIntro')).trim().slice(0, 30)}…｜创作区隐藏=${write}`;
 });
 await step('手动粘一份榜单比对', async () => {
-  await page.click('.manual summary');
   await page.fill('#manualInput', ['打工人带饭成新潮流', '某地暴雨致多人伤亡', '周末备菜教程走红', '空气炸锅十分钟晚饭', '年轻人开始自己做早餐', '外卖涨价引热议']
     .map((t, i) => `${i + 1}. ${t}`).join('\n'));
   await page.click('#manualRun');
