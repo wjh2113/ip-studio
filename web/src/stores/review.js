@@ -20,7 +20,8 @@ export const useReviewStore = defineStore('review', () => {
   async function run({ silent = false } = {}) {
     const s = useStudioStore();
     const draft = s.draft;
-    if (!draft?.content?.trim()) return;
+    // 一次只查一遍：出稿后的自动检查还没回来时再点，别多花一次模型调用
+    if (!draft?.content?.trim() || running.value) return;
     await useEditorStore().flushSave();
     if (!silent) {
       open.value = true;

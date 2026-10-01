@@ -110,7 +110,8 @@ export const useEditorStore = defineStore('editor', () => {
     const draft = st.draft;
     const topic = draft?.topics?.[index];
     if (!topic || st.streaming) return;
-    setMode('read');
+    // 从编辑模式直接选方向：先把没存的改动存完，再开始生成——不然保存可能落在「生成中」之后，把状态搅乱
+    if (st.mode === 'edit') { stopVoice(); await flushSave(true); st.mode = 'read'; }
     closeAssist();
     st.streaming = true;
     useBriefStore().goStep(3);
@@ -121,6 +122,7 @@ export const useEditorStore = defineStore('editor', () => {
       await stream(`/drafts/${draft.id}/content`, { index }, (event, data) => {
         if (event === 'delta') live.text += data.text;
         else if (event === 'done') {
+          if (st.draft?.id !== draft.id) return;     // 生成期间被切走了（理论上会拦住，这里再兜一层）
           st.draft = data.draft;
           live.title = '';
           useBriefStore().goStep(3, { done: true, scroll: false });
@@ -372,15 +374,18 @@ export const useEditorStore = defineStore('editor', () => {
   async function submitVoice(blob) {
     const st = s();
     if (!st.draft) return;
+    const id = st.draft.id;
     voice.recognizing = true;
     try {
-      const res = await fetch(`/api/drafts/${st.draft.id}/voice-edit`, {
+      const res = await fetch(`/api/drafts/${id}/voice-edit`, {
         method: 'POST',
         headers: { 'Content-Type': blob.type || 'audio/webm', 'X-Filename': 'voice.webm' },
         body: blob,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `语音改稿失败（${res.status}）`);
+      // 识别期间换了稿子或离开了编辑：结果对不上了，不能写到现在这篇上
+      if (st.draft?.id !== id || st.mode !== 'edit') { toast('已经换了稿子，这次语音改稿没有应用'); return; }
       const note = {
         heard: data.transcript ? `听到：${data.transcript}` : '',
         understood: data.note ? `理解成：${data.note}` : '',

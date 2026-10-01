@@ -43,6 +43,7 @@ export const useAdminStore = defineStore('admin', () => {
   const loading = ref(false);
   const error = ref('');
   const days = ref('7');
+  const tick = ref(0);             // 每点一次「刷新」/换天数 +1：A/B、评测、支付这几块自己拉数据，靠它跟着一起刷
   let saved = null;
   try { saved = localStorage.getItem(SEC_KEY); } catch { /* 隐私模式 */ }
   const section = ref(ADMIN_SECTIONS.some((s) => s.key === saved) ? saved : 'overview');
@@ -71,6 +72,7 @@ export const useAdminStore = defineStore('admin', () => {
   }
 
   async function load() {
+    tick.value += 1;
     loading.value = true;
     error.value = '';
     try {
@@ -89,5 +91,5 @@ export const useAdminStore = defineStore('admin', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  return { admin, gate, overview, loading, error, days, section, boot, login, logout, load, show };
+  return { admin, gate, overview, loading, error, days, tick, section, boot, login, logout, load, show };
 });

@@ -109,13 +109,16 @@ export const useVersionsStore = defineStore('versions', () => {
     if (!picked.length) { toast('先勾几个平台'); return; }
     if (multi.running) return;
     multi.running = true;
+    const draftId = s.draft.id;
     let done = 0;
     try {
       for (const key of picked) {
+        if (s.draft?.id !== draftId) return;     // 换了稿子就停：剩下的别再花钱
         multi.hint = `正在改写「${s.platformLabel(key)}」…（${done + 1}/${picked.length}）`;
         try {
           // eslint-disable-next-line no-await-in-loop
-          const { variant } = await api(`/drafts/${s.draft.id}/variants`, { method: 'POST', body: { platform: key } });
+          const { variant } = await api(`/drafts/${draftId}/variants`, { method: 'POST', body: { platform: key } });
+          if (s.draft?.id !== draftId) return;
           s.draft.variants = { ...(s.draft.variants || {}), [key]: variant };
           done += 1;
         } catch (err) {
@@ -138,6 +141,15 @@ export const useVersionsStore = defineStore('versions', () => {
 
   const markCount = computed(() => markAts(text.value).length);
 
+  /* 改过画面提示词的配图位（`版本:序号`）：出图时才把改过的带过去 */
+  const edited = new Set();
+  function editPrompt(i, prompt) {
+    const item = illus.value?.items?.[i];
+    if (!item || item.prompt === prompt) return;
+    item.prompt = prompt;
+    edited.add(`${verKey.value}:${i}`);
+  }
+
   async function toggleIllus() {
     if (!text.value) { toast('这一版还没有正文'); return; }
     ill.open = !ill.open;
@@ -150,10 +162,13 @@ export const useVersionsStore = defineStore('versions', () => {
   async function planIllus() {
     const s = useStudioStore();
     if (ill.planning || !s.draft) return;
+    const draft = s.draft;
+    const key = verKey.value;
     ill.planning = true;
     try {
-      const { illus: plan, image } = await api(`/drafts/${s.draft.id}/illus`, { method: 'POST', body: { version: current.value } });
-      s.draft.illus = { ...(s.draft.illus || {}), [verKey.value]: plan };
+      const { illus: plan, image } = await api(`/drafts/${draft.id}/illus`, { method: 'POST', body: { version: current.value } });
+      if (s.draft?.id !== draft.id) return;      // 排版位期间换了稿子
+      s.draft.illus = { ...(s.draft.illus || {}), [key]: plan };
       if (image) ill.info = image;
     } catch (err) { toast(err.message); } finally { ill.planning = false; }
   }
@@ -184,11 +199,14 @@ export const useVersionsStore = defineStore('versions', () => {
     const tag = `${version || MAIN}:${i}`;
     ill.making.add(tag);
     try {
-      // 配图栏里改过的画面提示词随请求带上，服务端存下来再出图
-      const prompt = s.draft.illus?.[version || MAIN]?.items?.[i]?.prompt;
-      const { job } = await jobs.start(`/drafts/${draftId}/illus/${i}/image`, { version, prompt });
+      // 配图栏里改过画面提示词的，随请求带上，服务端存下来再出图；没改过就不带
+      const item = s.draft.illus?.[version || MAIN]?.items?.[i];
+      const body = item && edited.has(`${version || MAIN}:${i}`) ? { version, prompt: item.prompt } : { version };
+      const { job } = await jobs.start(`/drafts/${draftId}/illus/${i}/image`, body);
+      edited.delete(`${version || MAIN}:${i}`);
       const { image } = await jobs.wait(job);
       placeImage({ draftId, version, index: i, image });
+      if (!ill.runningAll) ill.hint = '';       // 回到「N 张 · 已出 M」
       return true;
     } catch (err) {
       ill.hint = `第 ${i + 1} 张：${err.message}`;
@@ -211,9 +229,9 @@ export const useVersionsStore = defineStore('versions', () => {
         // eslint-disable-next-line no-await-in-loop
         if (!await makeIllus(it.i)) { toast(`第 ${it.i + 1} 张失败，先停下了`); return; }
       }
-      ill.hint = '';
     } finally {
       ill.runningAll = false;
+      if (/^正在出/.test(ill.hint)) ill.hint = '';
     }
   }
 
@@ -225,6 +243,6 @@ export const useVersionsStore = defineStore('versions', () => {
   return {
     current, verKey, text, label, illus, imageCount, html, tabs, switchTo, reset,
     multi, multiOptions, openMulti, runMulti,
-    ill, markCount, toggleIllus, planIllus, imageRunning, makeIllus, runAllIllus,
+    ill, markCount, editPrompt, toggleIllus, planIllus, imageRunning, makeIllus, runAllIllus,
   };
 });

@@ -34,10 +34,10 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import BusyBtn from '../components/common/BusyBtn.vue';
 import { ask, toast } from '../lib/feedback.js';
-import { adminApi } from './store.js';
+import { adminApi, useAdminStore } from './store.js';
 
 const data = ref(null);
 const error = ref('');
@@ -77,4 +77,7 @@ async function check() {
 }
 
 load();
+
+// 顶栏「刷新」/换天数时跟着重拉（第一次 load 由上面自己触发，这里只管之后的）
+watch(() => useAdminStore().tick, () => load());
 </script>

@@ -30,7 +30,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useStudioStore } from '../stores/studio.js';
 import { fmtRevTime, lineDiff, useEditorStore } from '../stores/editor.js';
 import { toast } from '../lib/feedback.js';
@@ -45,6 +45,7 @@ watch(() => s.draft?.content, (v) => {
   clearTimeout(timer);
   timer = setTimeout(() => { body.value = v || ''; }, 200);
 });
+onBeforeUnmount(() => clearTimeout(timer));
 
 const diff = computed(() => {
   const d = lineDiff((s.revText || '').split('\n'), body.value.split('\n'));

@@ -166,6 +166,8 @@ export const useBriefStore = defineStore('brief', () => {
   /* 打开一篇稿子（新出的方向、历史里点的、任务中心跳过来的）：直接落到它已经走到的那一步 */
   function setDraft(draft) {
     const s = useStudioStore();
+    // 正在流式生成：切走的话生成结果会落到别的稿子上
+    if (s.streaming) { toast('正在生成这一篇，写完再切换'); return false; }
     leaveDraft();
     s.revOpen = false;
     s.revId = null;
@@ -175,6 +177,7 @@ export const useBriefStore = defineStore('brief', () => {
     fillFrom(draft);
     if (draft.content) goStep(3, { done: true });
     else goStep(draft.topics?.length ? 2 : 1);
+    return true;
   }
 
   function fillFrom(d) {
@@ -200,6 +203,7 @@ export const useBriefStore = defineStore('brief', () => {
   /* 回到空白简报（新建、换账号、删掉当前稿时） */
   function reset() {
     const s = useStudioStore();
+    if (s.streaming) { toast('正在生成这一篇，写完再新建'); return false; }
     leaveDraft();
     s.draft = null;
     goStep(1);
@@ -212,6 +216,7 @@ export const useBriefStore = defineStore('brief', () => {
     useSectionsStore().load(s.personaId);
     reloadIdeas();
     loadPool();
+    return true;
   }
 
   /* 选定题材（可能挂着一条热点，一起带进创作） */
@@ -237,6 +242,7 @@ export const useBriefStore = defineStore('brief', () => {
     ideas.list = [];
     ideas.message = '';
     ideas.error = false;
+    ideas.loading = false;
     if (!persona) return;
     try {
       const { ideas: got } = await api(`/personas/${persona.id}/subjects`);
@@ -256,10 +262,12 @@ export const useBriefStore = defineStore('brief', () => {
     }
   }
 
+  let ideasFor = null;      // 正在补推荐的账号：同一个号连点只发一次；换了号要能重新发
   async function refreshIdeas({ auto = false } = {}) {
     const s = useStudioStore();
     const persona = s.currentPersona;
-    if (!persona || ideas.loading) return;
+    if (!persona || ideasFor === persona.id) return;
+    ideasFor = persona.id;
     ideas.loading = true;
     ideas.message = '';
     ideas.error = false;
@@ -269,11 +277,13 @@ export const useBriefStore = defineStore('brief', () => {
       if (s.personaId === persona.id) ideas.list = got;
     } catch (err) {
       if (auto) s.ideaFailed.add(persona.id);
-      ideas.list = [];
-      ideas.message = err.message;
-      ideas.error = true;
+      if (s.personaId === persona.id) {
+        ideas.list = [];
+        ideas.message = err.message;
+        ideas.error = true;
+      }
     } finally {
-      ideas.loading = false;
+      if (ideasFor === persona.id) { ideasFor = null; ideas.loading = false; }
     }
   }
 

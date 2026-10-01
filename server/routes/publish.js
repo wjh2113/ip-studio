@@ -256,9 +256,13 @@ export async function handleIllusImage(req, res, body, params, url) {
   const edited = typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : '';
   if (edited && edited !== item.prompt) {
     item = { ...item, prompt: edited };
-    const now = draft.illus[verKey(v)];
-    const next = { ...now, items: now.items.map((it, i) => (i === idx ? item : it)) };
-    await Drafts.setIllus(draft.id, user.id, { ...draft.illus, [verKey(v)]: next });
+    // 写之前重读一次：同一稿可能有别的图刚出完（任务队列在写 image），拿开头读到的旧 illus 整个覆盖会把它冲掉
+    const fresh = await Drafts.byId(draft.id, user.id);
+    const now = fresh?.illus?.[verKey(v)];
+    if (now?.items?.[idx]) {
+      const next = { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, prompt: edited } : it)) };
+      await Drafts.setIllus(draft.id, user.id, { ...fresh.illus, [verKey(v)]: next });
+    }
   }
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
   // 额度不够当场告诉，别等排到了才失败

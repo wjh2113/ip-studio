@@ -47,10 +47,11 @@ export const useHotStore = defineStore('hot', () => {
     result.value = null;
     try {
       const { hotspots } = await api(`/personas/${persona.id}/hotspots`, { method: 'POST', body });
+      if (useStudioStore().personaId !== persona.id) return;    // 比对期间换了号：结果是上一个号的
       result.value = hotspots;
       if (!body.manual) loadBoards();
     } catch (err) {
-      runError.value = err.message;
+      if (useStudioStore().personaId === persona.id) runError.value = err.message;
     } finally {
       running.value = '';
     }

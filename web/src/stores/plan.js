@@ -8,6 +8,7 @@ import { ref } from 'vue';
 import { api } from '../lib/api.js';
 import { on } from '../lib/bus.js';
 import { toast } from '../lib/feedback.js';
+import { useStudioStore } from './studio.js';
 
 export const usePlanStore = defineStore('plan', () => {
   const data = ref(null);          // /api/plan：{ quota, explain, breakdown, plans }
@@ -25,6 +26,7 @@ export const usePlanStore = defineStore('plan', () => {
   async function open(toPlans = false) {
     focus.value = toPlans;
     show.value = true;
+    closePay();          // 重新打开面板 = 重新选套餐，之前没付完的单不再盯
     await load();
   }
 
@@ -96,13 +98,13 @@ export const usePlanStore = defineStore('plan', () => {
     }, 3000);
   }
 
+  /* 关上面板时订单还在盯：付完了会自动开通、重新打开面板告诉他 */
   function close() {
     show.value = false;
-    closePay();
   }
 
   // 花过点数就刷新余额；撞到 402 把面板顶出来——这一刻正是最愿意付费的时候，得把选项摆在面前
-  on('spent', () => { if (quota.value || show.value) load(); });
+  on('spent', () => { if (useStudioStore().user) load(); });
   on('quota', (d) => {
     toast(d?.message || '额度不够了');
     open(true);

@@ -35,7 +35,7 @@
           <div class="body">
             <div class="where">插在「{{ it.anchor.slice(0, 16) }}…」之后<template v-if="it.alt"> · 图注：{{ it.alt }}</template></div>
             <!-- 改提示词只改本地，点出图时才带过去——避免每敲一下就打一次接口 -->
-            <textarea :data-ill="it.i" rows="2" v-model.lazy="it.prompt"></textarea>
+            <textarea :data-ill="it.i" rows="2" :value="it.prompt" @change="v.editPrompt(it.i, $event.target.value)"></textarea>
           </div>
           <button v-if="v.imageRunning(it.i)" class="mini" :data-illimg="it.i" disabled>出图中…</button>
           <button v-else class="mini" :data-illimg="it.i" @click="v.makeIllus(it.i)">{{ it.image ? '重出' : '出这张' }}</button>

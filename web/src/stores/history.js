@@ -7,6 +7,7 @@ import { ask, toast } from '../lib/feedback.js';
 import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
 import { useSpeakStore } from './speak.js';
+import { useFrameworksStore } from './frameworks.js';
 
 export const DRAFT_STATUS = { topics: '待选方向', writing: '生成中', done: '已完成' };
 
@@ -66,7 +67,10 @@ export const useHistoryStore = defineStore('history', () => {
       await api(`/drafts/${id}`, { method: 'DELETE' });
     } catch (err) { toast(err.message); return; }
     const s = useStudioStore();
-    if (s.draft?.id === id && !s.streaming) useBriefStore().reset();
+    if (s.draft?.id === id && !s.streaming) {
+      useBriefStore().reset();
+      useFrameworksStore().choose(null);     // 和「＋ 新建」一样，回到不套框架
+    }
     load();
   }
 
