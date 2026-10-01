@@ -9,6 +9,14 @@ body.docs { background: var(--bg); color: var(--ink); }
 .docs-head h1 { font-size: 20px; margin: 0; }
 .docs-head .sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 .docs-head a { margin-left: auto; }
+.docs-head-acts { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.docs-head-acts a { margin-left: 0; }
+.docs-edit-on {
+  font-size: 12.5px; color: var(--ok); background: var(--ok-soft);
+  padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+}
+.prompt-lock { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.prompt-lock a { color: var(--accent-ink); }
 
 .docs-body { max-width: 1180px; margin: 0 auto; padding: 24px; display: flex; gap: 28px; align-items: flex-start; }
 

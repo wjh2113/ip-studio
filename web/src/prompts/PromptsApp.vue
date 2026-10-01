@@ -6,7 +6,11 @@
         <h1>提示词说明书</h1>
         <p class="sub">自媒体助手 —— 每一条提示词的产品定位、价值与功能逻辑</p>
       </div>
-      <a class="btn ghost small" href="/">回到产品</a>
+      <div class="docs-head-acts">
+        <span v-if="d?.canEdit" class="docs-edit-on">已登录管理员 · 可改可存</span>
+        <a v-else class="btn primary small" href="/admin" id="promptAdminLogin">管理后台登录后可编辑</a>
+        <a class="btn ghost small" href="/">回到产品</a>
+      </div>
     </div>
   </header>
 
@@ -21,6 +25,11 @@
     <main class="docs-main">
       <p v-if="error" class="pd">{{ error }}</p>
       <template v-if="d">
+        <section v-if="!d.canEdit" class="principle prompt-lock" id="promptLock">
+          <h2>改提示词需要管理员身份</h2>
+          <p>说明书谁都能看；<strong>保存、切版本只有管理后台登录后才能做</strong>（全站共用，改了会影响所有用户）。
+            请先打开 <a href="/admin">/admin</a> 用管理员账号登录，再回到本页刷新——展开「实际发给模型的 system 提示词」即可改并保存为新版本。</p>
+        </section>
         <section class="principle" id="principle"><h2>{{ d.principle.title }}</h2><p v-html="md(d.principle.body)"></p></section>
         <!-- user 消息怎么拼——比任何单条提示词都更能解释这个产品 -->
         <section v-if="d.assembly" class="principle assembly" id="assembly">
@@ -65,7 +74,7 @@
               </template>
               <template v-else>
                 <pre>{{ drafts[p.key] ?? p.system }}</pre>
-                <p class="hint">登录产品之后，可以在这里改。每次保存都留一版，不会盖掉以前的。</p>
+                <p class="hint">只读。要改请先<a href="/admin">登录管理后台</a>，再刷新本页。</p>
               </template>
               <div v-if="p.history?.length" class="prompt-hist">
                 <div v-for="h in p.history" :key="h.id" class="hist-row" :class="{ on: h.active }">
@@ -83,8 +92,9 @@
         </div>
       </template>
       <footer class="docs-foot">
-        这里显示的是<strong>当前实际发给模型的那一版</strong>。登录后可以直接改，每次保存都留档；
-        代码里的提示词更新时也会记一版，不会盖掉你改过的内容。结构约束（JSON Schema）仍由代码固定，这里不改。
+        这里显示的是<strong>当前实际发给模型的那一版</strong>。
+        管理员登录后可以直接改，每次保存都留档；代码里的提示词更新时也会记一版，不会盖掉你改过的内容。
+        结构约束（JSON Schema）仍由代码固定，这里不改。
       </footer>
     </main>
   </div>
@@ -93,7 +103,8 @@
 </template>
 
 <script setup>
-/* 提示词说明书：读 /api/prompt-docs；登录了产品的人可以直接改，每次保存都留一版 */
+/* 提示词说明书：读 /api/prompt-docs；管理员登录后可改，每次保存都留一版。
+ * 产品账号登录不够——提示词全站共用，只有 /admin 的管理员会话能写。 */
 import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue';
 import Toast from '../components/common/Toast.vue';
 import AskDialog from '../components/common/AskDialog.vue';
@@ -127,7 +138,7 @@ let observer = null;
 
 async function load() {
   try {
-    const res = await fetch('/api/prompt-docs');
+    const res = await fetch('/api/prompt-docs', { credentials: 'same-origin' });
     d.value = await res.json();
     for (const k of Object.keys(drafts)) delete drafts[k];
   } catch {
@@ -147,11 +158,17 @@ async function save(p) {
   saving.value = p.key;
   try {
     const res = await fetch(`/api/prompt-docs/${p.key}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ system: drafts[p.key] ?? p.system }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) { msgs[p.key] = body.error || '没有保存成功'; return; }
+    if (!res.ok) {
+      msgs[p.key] = body.error || (res.status === 401 ? '请先登录管理后台' : '没有保存成功');
+      if (res.status === 401) toast('请先打开 /admin 登录管理员');
+      return;
+    }
     msgs[p.key] = '';
     toast('已保存为新版本');
     await load();
@@ -162,7 +179,10 @@ async function save(p) {
 
 async function activate(p, h) {
   if (!await ask.confirm({ title: '之后的生成改用这一版？', body: '当前正在用的那一版会留在历史里，可以再切回去。', ok: '使用' })) return;
-  const res = await fetch(`/api/prompt-docs/${p.key}/revisions/${h.id}/activate`, { method: 'POST' });
+  const res = await fetch(`/api/prompt-docs/${p.key}/revisions/${h.id}/activate`, {
+    method: 'POST',
+    credentials: 'same-origin',
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) { toast(body.error || '没有切换成功'); return; }
   await load();

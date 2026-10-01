@@ -253,6 +253,41 @@ test('管理后台：设置列表、保存设置报错、Eval 运行', async () 
   assert.equal(r.data.variants, 2);
 });
 
+test('提示词说明书：未登录只读；管理员可保存并切回', async () => {
+  const guest = client();
+  let r = await guest.call('GET', '/api/prompt-docs');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.canEdit, false);
+  const original = r.data.prompts.find((p) => p.key === 'topics')?.system || '';
+  assert.ok(original.length > 20, 'topics 提示词应有正文');
+
+  r = await guest.call('PUT', '/api/prompt-docs/topics', { system: `${original}\n\n（访客不该能存）` });
+  assert.equal(r.status, 401, `未登录保存应 401：${r.text}`);
+
+  const admin = client();
+  r = await admin.call('POST', '/api/admin/login', { username: 'boss', password: 'adminpass9' });
+  if (r.status === 401) {
+    r = await admin.call('POST', '/api/admin/setup', { username: 'boss', password: 'adminpass9' });
+  }
+  assert.equal(r.status, 200, r.text);
+
+  r = await admin.call('GET', '/api/prompt-docs');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.canEdit, true);
+
+  const edited = `${original}\n\n（接口测试手改 ${Date.now()}）`;
+  r = await admin.call('PUT', '/api/prompt-docs/topics', { system: edited });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.data.history?.some((h) => h.active && h.source === 'edit'));
+  assert.equal(r.data.system, edited);
+
+  const codeRev = r.data.history.find((h) => h.source === 'code');
+  assert.ok(codeRev, '应有代码版可切回');
+  r = await admin.call('POST', `/api/prompt-docs/topics/revisions/${codeRev.id}/activate`, {});
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.system, codeRev.system);
+});
+
 test('重复注册回 409，不是 500', async () => {
   const r = await client().call('POST', '/api/auth/register', { username: `rt${process.pid}`, password: 'secret123' });
   assert.equal(r.status, 409, r.text);

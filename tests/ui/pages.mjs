@@ -26,10 +26,11 @@ await step('/start 营销页，投放参数带到登录链接上', async () => {
   const hrefs = await page.$$eval('a[href*="utm_source=wx"]', (as) => as.map((a) => a.getAttribute('href')));
   return `${await page.title()}｜${hrefs.length} 个链接带上了来源`;
 });
-await step('/prompts 说明书：目录和条目', async () => {
+await step('/prompts 说明书：目录和条目（未登录管理员时只读）', async () => {
   await page.goto(B + '/prompts');
   await page.waitForSelector('#list .pd');
-  return `${(await page.$$('#nav a')).length} 个目录项｜${(await page.$$('#list .pd')).length} 条`;
+  await page.waitForSelector('#promptLock, #promptAdminLogin');
+  return `${(await page.$$('#nav a')).length} 个目录项｜${(await page.$$('#list .pd')).length} 条｜锁=${await page.isVisible('#promptLock')}`;
 });
 await step('/admin 首次设置管理员（或登录）→ 进后台', async () => {
   await page.goto(B + '/admin');
@@ -40,6 +41,24 @@ await step('/admin 首次设置管理员（或登录）→ 进后台', async () 
   await page.click('#gateSubmit');
   await page.waitForSelector('#panel #stats .stat');
   return `${sub.slice(0, 16)}｜${(await page.$$('#stats .stat')).length} 个统计`;
+});
+await step('管理员登录后 /prompts 可编辑并保存', async () => {
+  await page.goto(B + '/prompts');
+  await page.waitForSelector('.docs-edit-on');
+  await page.click('#list .pd details summary');
+  await page.waitForSelector('.prompt-edit');
+  const key = await page.getAttribute('.prompt-edit', 'data-prompt');
+  const before = await page.inputValue('.prompt-edit');
+  const next = `${before}\n\n（UI 测试手改）`;
+  await page.fill('.prompt-edit', next);
+  await page.click(`[data-save-prompt="${key}"]`);
+  await page.waitForFunction(() => /已手改/.test(document.querySelector('#list')?.textContent || ''));
+  return key;
+});
+await step('回到后台继续测分区', async () => {
+  await page.goto(B + '/admin');
+  await page.waitForSelector('#panel #stats .stat');
+  return 'ok';
 });
 await step('后台各分区都能切过去', async () => {
   const keys = await page.$$eval('#adminNav [data-sec]', (bs) => bs.map((b) => b.dataset.sec));

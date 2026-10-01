@@ -14,7 +14,7 @@
       <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><Icon name="crown" /><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
       <span class="user-chip"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span></span>
       <a class="top-link" href="/prompts" target="_blank" rel="noopener"
-         title="每条提示词的产品定位、价值与功能逻辑"><Icon name="book" />说明书</a>
+         title="提示词说明书；要改内容需先登录管理后台"><Icon name="book" />说明书</a>
       <button class="top-link" id="logoutBtn" @click="session.logout()"><Icon name="logout" />退出</button>
     </div>
   </header>
