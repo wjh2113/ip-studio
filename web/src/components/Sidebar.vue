@@ -66,7 +66,7 @@
 
       <!-- 口播记录：点开一遍跳到那篇的口播模式；稿子已经不在的，就地展开当时的总评 -->
       <div class="history" id="speakHistory" v-show="s.historyMode === 'speaks'">
-        <div v-if="!sp.history.length" class="empty">还没有口播记录<br />生成口播提示后上传录音</div>
+        <div v-if="!sp.history.length" class="empty">还没有录音评测<br />「重新生成」只是口播提示，仍在这篇成稿里<br />上传音视频后才会出现在这里</div>
         <div v-for="x in sp.history" :key="x.id" class="history-item" :class="{ active: s.focusSpeakId === x.id }" :data-speak="x.id"
           @click="sp.openRecord(x.id)">
           <div class="acts">

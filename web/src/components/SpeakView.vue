@@ -67,7 +67,7 @@
         <div v-else-if="!rows.length" class="pool-empty">
           <Icon name="mic" :size="28" />
           <b>{{ sp.history.length ? '没有符合筛选的记录' : '还没有口播记录' }}</b>
-          <span>生成口播提示后上传音视频；转写和总评在后台做，好了会出现在这里。</span>
+          <span>生成口播提示后还要上传音视频；转写和总评在后台做，好了会出现在这里。提示本身仍在创作页那篇成稿里。</span>
           <button type="button" class="btn primary small" @click="sp.pageTab = 'practice'">去选一篇练 →</button>
         </div>
         <div v-else class="library-body speak-page-body">
