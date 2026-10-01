@@ -3,83 +3,177 @@
     <section class="card library-card">
       <div class="library-head">
         <div>
-          <h2><Icon name="inbox" />素材与选题</h2>
-          <p class="hint">素材挂在账号下，写作时按题材自动召回；选题池攒着想写还没写的。热点请走顶栏「热点」。</p>
+          <h2><Icon name="inbox" />素材库</h2>
+          <p class="hint">真实经历、数据、案例存这里；写作时按题材召回。选题灵感进「选题池」，蹭热点走顶栏「热点」。</p>
         </div>
         <div class="library-tabs" role="tablist">
           <button type="button" role="tab" :aria-selected="lib.tab === 'materials'" :class="{ on: lib.tab === 'materials' }"
-            @click="lib.tab = 'materials'">素材库<span class="n">{{ lib.list.length || '' }}</span></button>
+            id="libTabMaterials" @click="lib.tab = 'materials'">素材<span class="n">{{ lib.list.length || '' }}</span></button>
           <button type="button" role="tab" :aria-selected="lib.tab === 'pool'" :class="{ on: lib.tab === 'pool' }"
-            @click="lib.tab = 'pool'">选题池<span class="n">{{ openPool || '' }}</span></button>
+            id="libTabPool" @click="lib.tab = 'pool'">选题池<span class="n">{{ openPool || '' }}</span></button>
         </div>
       </div>
 
       <!-- —— 素材 —— -->
       <template v-if="lib.tab === 'materials'">
-        <div class="library-toolbar">
-          <div class="library-kinds">
-            <button type="button" class="chip-btn" :class="{ on: !lib.kind }" @click="lib.kind = ''">全部 {{ counts[''] || 0 }}</button>
-            <button v-for="k in lib.kinds" :key="k" type="button" class="chip-btn" :class="{ on: lib.kind === k }"
-              @click="lib.kind = k">{{ k }} {{ counts[k] || 0 }}</button>
-          </div>
-          <div class="library-actions">
-            <label class="search">
-              <Icon name="search" :size="14" />
-              <input v-model="lib.q" type="search" placeholder="搜标题、正文、标签" maxlength="80" />
-            </label>
-            <button type="button" class="btn primary small" id="libNewBtn" @click="lib.startCreate()">
-              <Icon name="plus" :size="14" />新建素材
-            </button>
-          </div>
-        </div>
-
         <p v-if="!s.personas.length" class="hot-note">
           还没有账号。素材必须挂在账号下——先在左侧「＋ 新账号」，或去<a href="#" @click.prevent="goWrite">创作</a>里快速建号。
         </p>
         <p v-else-if="lib.error" class="hot-note bad">{{ lib.error }}</p>
-        <p v-else-if="lib.loading" class="hint">加载中…</p>
-        <div v-else-if="!rows.length" class="pool-empty">
-          <Icon name="inbox" :size="28" />
-          <b>{{ lib.list.length ? '没有符合筛选的素材' : '还没有素材' }}</b>
-          <span>把真实经历、数据、案例存进来；写作时会按题材召回，模型不能编造之外的事。</span>
-          <button v-if="s.personas.length" type="button" class="btn primary small" @click="lib.startCreate()">＋ 新建素材</button>
-        </div>
 
-        <div v-else class="library-body">
-          <div class="library-table">
-            <div class="library-th"><span>类型</span><span>标题 / 摘要</span><span>标签</span><span>用过</span><span>操作</span></div>
-            <div v-for="m in rows" :key="m.id" class="library-row" :class="{ on: lib.selectedId === m.id }"
-              @click="lib.selectedId = m.id">
-              <span class="mat-kind">{{ m.kind }}</span>
-              <div class="library-main">
-                <b>{{ m.title }}</b>
-                <p>{{ clip(m.body) }}</p>
-                <em v-if="personaName(m.persona_id)" class="persona-tag">{{ personaName(m.persona_id) }}</em>
+        <div v-else class="library-layout">
+          <!-- 左：分类 -->
+          <aside class="library-kinds-nav" aria-label="素材分类">
+            <div class="library-kinds-title">素材分类</div>
+            <button type="button" class="kind-nav" :class="{ on: !lib.kind }" @click="lib.kind = ''">
+              <span class="kind-ico" data-kind="all"><Icon name="layers" :size="15" /></span>
+              <span class="grow">全部</span>
+              <i>{{ counts[''] || 0 }}</i>
+            </button>
+            <button v-for="k in lib.kinds" :key="k" type="button" class="kind-nav" :class="{ on: lib.kind === k }"
+              @click="lib.kind = k">
+              <span class="kind-ico" :data-kind="k"><Icon :name="kindIcon(k)" :size="15" /></span>
+              <span class="grow">{{ k }}</span>
+              <i>{{ counts[k] || 0 }}</i>
+            </button>
+            <button type="button" class="kind-nav pool-link" @click="lib.tab = 'pool'">
+              <span class="kind-ico" data-kind="pool"><Icon name="bulb" :size="15" /></span>
+              <span class="grow">选题灵感</span>
+              <i>{{ openPool || 0 }}</i>
+            </button>
+          </aside>
+
+          <!-- 中：工具条 + 列表/卡片 -->
+          <div class="library-center">
+            <div class="library-toolbar">
+              <label class="search wide">
+                <Icon name="search" :size="14" />
+                <input id="libSearch" v-model="lib.q" type="search" placeholder="搜索标题、正文或标签…" maxlength="80" />
+              </label>
+              <div class="library-view-toggle" role="group" aria-label="视图">
+                <button type="button" :class="{ on: lib.viewMode === 'list' }" title="列表" @click="lib.viewMode = 'list'">
+                  <Icon name="list" :size="14" />列表
+                </button>
+                <button type="button" :class="{ on: lib.viewMode === 'card' }" title="卡片" @click="lib.viewMode = 'card'">
+                  <Icon name="layers" :size="14" />卡片
+                </button>
               </div>
-              <div class="mat-tags">
-                <span v-for="(t, i) in tagList(m.tags)" :key="i">{{ t }}</span>
+              <select id="libSort" v-model="lib.sort" aria-label="排序">
+                <option value="used">按使用次数</option>
+                <option value="recent">按最近更新</option>
+              </select>
+              <div class="library-actions">
+                <button type="button" class="btn ghost small" id="libClipboardBtn" @click="lib.importClipboard()">
+                  <Icon name="copy" :size="14" />从剪贴板导入
+                </button>
+                <button type="button" class="btn primary small" id="libNewBtn" @click="lib.startCreate()">
+                  <Icon name="plus" :size="14" />新建素材
+                </button>
               </div>
-              <span class="mat-used">{{ m.used_count || 0 }}</span>
-              <span class="library-acts" @click.stop>
-                <button type="button" class="mini" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="14" /></button>
-                <button type="button" class="mini rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="14" /></button>
-              </span>
             </div>
+
+            <p v-if="lib.loading" class="hint">加载中…</p>
+            <div v-else-if="!rows.length" class="pool-empty">
+              <Icon name="inbox" :size="28" />
+              <b>{{ lib.list.length ? '没有符合筛选的素材' : '还没有素材' }}</b>
+              <span>把真实经历、数据、案例存进来；写作时会按题材召回，模型不能编造之外的事。</span>
+              <button v-if="s.personas.length" type="button" class="btn primary small" @click="lib.startCreate()">＋ 新建素材</button>
+            </div>
+
+            <template v-else>
+              <!-- 列表 -->
+              <div v-if="lib.viewMode === 'list'" class="library-table rich" id="libList">
+                <div class="library-th">
+                  <span></span><span>类型</span><span>标题 / 摘要</span><span>标签</span><span>用过</span><span>更新</span><span>操作</span>
+                </div>
+                <div v-for="m in rows" :key="m.id" class="library-row" :class="{ on: lib.selectedId === m.id }"
+                  :data-mat="m.id" @click="lib.selectedId = m.id">
+                  <span class="mat-thumb" :data-kind="m.kind"><Icon :name="kindIcon(m.kind)" :size="16" /></span>
+                  <span class="mat-kind" :data-kind="m.kind">{{ m.kind }}</span>
+                  <div class="library-main">
+                    <b>{{ m.title }}</b>
+                    <p>{{ clip(m.body) }}</p>
+                    <em v-if="personaName(m.persona_id)" class="persona-tag">{{ personaName(m.persona_id) }}</em>
+                  </div>
+                  <div class="mat-tags">
+                    <span v-for="(t, i) in tagList(m.tags).slice(0, 4)" :key="i">{{ t }}</span>
+                  </div>
+                  <span class="mat-used">{{ m.used_count || 0 }}</span>
+                  <span class="mat-when">{{ stamp(m.updated_at || m.created_at) }}</span>
+                  <span class="library-acts" @click.stop>
+                    <button type="button" class="mini" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="14" /></button>
+                    <button type="button" class="mini rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="14" /></button>
+                  </span>
+                </div>
+              </div>
+
+              <!-- 卡片 -->
+              <div v-else class="library-cards" id="libCards">
+                <article v-for="m in rows" :key="m.id" class="mat-card" :class="{ on: lib.selectedId === m.id }"
+                  :data-mat="m.id" @click="lib.selectedId = m.id">
+                  <div class="mat-card-top">
+                    <span class="mat-kind" :data-kind="m.kind">{{ m.kind }}</span>
+                    <span class="mat-used">用过 {{ m.used_count || 0 }}</span>
+                  </div>
+                  <h4>{{ m.title }}</h4>
+                  <p>{{ clip(m.body, 120) }}</p>
+                  <div class="mat-tags">
+                    <span v-for="(t, i) in tagList(m.tags).slice(0, 5)" :key="i">{{ t }}</span>
+                  </div>
+                  <div class="mat-card-foot">
+                    <em>{{ personaName(m.persona_id) || '未绑账号' }}</em>
+                    <span>{{ stamp(m.updated_at || m.created_at) }}</span>
+                  </div>
+                </article>
+              </div>
+
+              <div class="library-foot">
+                <span>共 {{ rows.length }} 条素材<template v-if="lib.kind || lib.q">（筛选自 {{ lib.list.length }} 条）</template></span>
+                <span class="hint">素材只作参考，不会编造</span>
+              </div>
+            </template>
           </div>
 
-          <aside v-if="detail" class="library-detail">
+          <!-- 右：详情 -->
+          <aside v-if="detail" class="library-detail rich" id="libDetail">
             <div class="library-detail-head">
-              <span class="mat-kind">{{ detail.kind }}</span>
-              <h3>{{ detail.title }}</h3>
+              <div>
+                <span class="mat-kind" :data-kind="detail.kind">{{ detail.kind }}</span>
+                <h3>{{ detail.title }}</h3>
+              </div>
               <button type="button" class="icon-btn" title="关闭" @click="lib.selectedId = null"><Icon name="x" /></button>
             </div>
-            <p class="library-detail-body">{{ detail.body }}</p>
-            <div v-if="tagList(detail.tags).length" class="mat-tags">
-              <span v-for="(t, i) in tagList(detail.tags)" :key="i">{{ t }}</span>
+
+            <div class="lib-detail-block">
+              <div class="lib-detail-label">
+                <b>正文</b>
+                <button type="button" class="mini" title="复制" @click="copyBody(detail.body)"><Icon name="copy" :size="13" /></button>
+                <button type="button" class="mini" title="编辑" @click="lib.startEdit(detail)"><Icon name="pen" :size="13" /></button>
+              </div>
+              <p class="library-detail-body">{{ detail.body }}</p>
             </div>
-            <p class="hint">所属账号：{{ personaName(detail.persona_id) || '未绑定' }} · 用过 {{ detail.used_count || 0 }} 次</p>
+
+            <div v-if="tagList(detail.tags).length" class="lib-detail-block">
+              <div class="lib-detail-label"><b>标签</b></div>
+              <div class="mat-tags">
+                <span v-for="(t, i) in tagList(detail.tags)" :key="i">{{ t }}</span>
+              </div>
+            </div>
+
+            <div class="lib-detail-block">
+              <div class="lib-detail-label"><b>所属账号</b></div>
+              <div class="lib-persona-chip">
+                <span class="lib-persona-av">{{ (personaName(detail.persona_id) || '·')[0] }}</span>
+                <div>
+                  <b>{{ personaName(detail.persona_id) || '未绑定' }}</b>
+                  <span>用过 {{ detail.used_count || 0 }} 次 · 更新于 {{ stamp(detail.updated_at || detail.created_at) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="lib-disclaimer">素材仅作参考，写作时召回真东西；模型不能编造之外的事。</p>
             <div class="library-detail-foot">
-              <button type="button" class="btn ghost small" @click="lib.startEdit(detail)">编辑</button>
+              <button type="button" class="btn primary small" @click="lib.startEdit(detail)">编辑</button>
               <button type="button" class="btn danger ghost small" @click="lib.remove(detail)">删除</button>
             </div>
           </aside>
@@ -153,7 +247,7 @@
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" @click="lib.cancelForm()">取消</button>
-          <BusyBtn class="btn primary" :busy="saving.busy.value" @click="save">保存</BusyBtn>
+          <BusyBtn class="btn primary" :busy="saving.busy.value" @click="save">{{ lib.form.id ? '保存' : '存进素材库' }}</BusyBtn>
         </div>
       </div>
     </div>
@@ -167,6 +261,8 @@ import BusyBtn from './common/BusyBtn.vue';
 import { useStudioStore } from '../stores/studio.js';
 import { useLibraryStore } from '../stores/library.js';
 import { useBusy } from '../lib/busy.js';
+import { stamp } from '../lib/text.js';
+import { toast } from '../lib/feedback.js';
 
 const s = useStudioStore();
 const lib = useLibraryStore();
@@ -181,12 +277,15 @@ watch(() => [s.view, s.personaId], ([view]) => {
   if (view === 'library') lib.open();
 });
 
+const KIND_ICON = { 经历: 'user', 数据: 'chart', 案例: 'file', 金句: 'sparkles', 观察: 'search' };
+function kindIcon(k) { return KIND_ICON[k] || 'inbox'; }
+
 function tagList(tags) {
   return String(tags || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean);
 }
-function clip(s) {
+function clip(s, n = 80) {
   const t = String(s || '').replace(/\s+/g, ' ').trim();
-  return t.length > 80 ? `${t.slice(0, 80)}…` : t;
+  return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 function personaName(id) {
   if (id == null) return '';
@@ -197,6 +296,14 @@ function statusLabel(st) {
 }
 function goWrite() {
   s.view = 'write';
+}
+async function copyBody(text) {
+  try {
+    await navigator.clipboard.writeText(String(text || ''));
+    toast('已复制正文');
+  } catch {
+    toast('复制失败');
+  }
 }
 async function save() {
   await saving.run(() => lib.saveForm());

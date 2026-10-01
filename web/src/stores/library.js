@@ -11,6 +11,8 @@ export const useLibraryStore = defineStore('library', () => {
   const tab = ref('materials'); // materials | pool
   const kind = ref('');         // '' = 全部种类
   const q = ref('');
+  const sort = ref('used');     // used | recent
+  const viewMode = ref('list'); // list | card
   const loading = ref(false);
   const list = ref([]);
   const kinds = ref([]);
@@ -66,11 +68,15 @@ export const useLibraryStore = defineStore('library', () => {
 
   function filtered() {
     const needle = q.value.trim().toLowerCase();
-    return list.value.filter((m) => {
+    const rows = list.value.filter((m) => {
       if (kind.value && m.kind !== kind.value) return false;
       if (!needle) return true;
       return `${m.title} ${m.body} ${m.tags}`.toLowerCase().includes(needle);
     });
+    if (sort.value === 'used') {
+      return [...rows].sort((a, b) => (b.used_count || 0) - (a.used_count || 0) || b.id - a.id);
+    }
+    return [...rows].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')) || b.id - a.id);
   }
 
   function selected() {
@@ -90,6 +96,28 @@ export const useLibraryStore = defineStore('library', () => {
     form.title = '';
     form.body = '';
     form.tags = '';
+  }
+
+  /* 从剪贴板起草稿：第一行当标题，其余当正文 */
+  async function importClipboard() {
+    const s = useStudioStore();
+    if (!s.personas.length) {
+      toast('先建一个账号，素材要挂在账号下');
+      return;
+    }
+    let text = '';
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      toast('读不到剪贴板，请允许权限或手动新建后粘贴');
+      return;
+    }
+    if (!text) { toast('剪贴板是空的'); return; }
+    startCreate();
+    const lines = text.split(/\r?\n/);
+    form.title = lines[0].trim().slice(0, 80);
+    form.body = (lines.length > 1 ? lines.slice(1).join('\n') : text).trim().slice(0, 4000);
+    toast('已从剪贴板填入，核对后保存');
   }
 
   function startEdit(m) {
@@ -192,9 +220,9 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    tab, kind, q, loading, list, kinds, selectedId, pool, error, form, poolForm,
+    tab, kind, q, sort, viewMode, loading, list, kinds, selectedId, pool, error, form, poolForm,
     open, loadMaterials, loadPool, filtered, selected, countsByKind,
-    startCreate, startEdit, cancelForm, saveForm, remove,
+    startCreate, importClipboard, startEdit, cancelForm, saveForm, remove,
     addPool, datePool, removePool, writePool,
   };
 });
