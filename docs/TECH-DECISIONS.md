@@ -53,6 +53,7 @@
 ### 3.1 前端：Vue 迁移进行中
 
 - Vue 3 挂载页面，Pinia store 就是旧代码里的 `state`（同一个对象）。
+- **进度：还没迁完，大约完成一成。** `web/src/components/` 里有 18 个 `.vue` 文件，但其中 16 个只是把原来的 HTML 结构原样搬进模板（没有任何数据绑定），内容和交互仍由 `public/js` 填写；真正由数据驱动的只有 `TopBar.vue` 和 `Sidebar.vue`。也就是说「页面由 Vue 挂载」≠「界面由 Vue 渲染」。
 - **已由 Vue 渲染**：顶栏（模型标识、余额、任务数角标）、左侧创作记录列表和计数（`TopBar.vue`、`Sidebar.vue`）。
 - **仍由 `public/js` 按 id 改 DOM**：账号列表、选题方向、成稿流、编辑器、口播、配图、热点、框架库、各个弹窗（`public/js` 里约 110 处 `innerHTML`）。
 - 迁移规则（必须遵守）：
@@ -137,6 +138,14 @@
 | 3 | React Native | 只复用后端接口 | App 成为主打、有专人负责时 |
 
 面向公众上线生成式 AI 服务（尤其小程序、应用商店）有备案、内容安全等合规要求，立项前先确认。
+
+PWA 是什么、能做什么，见 [NEW-PROJECT-TECH-GUIDE.md §8.1](NEW-PROJECT-TECH-GUIDE.md)。本项目**目前还不是 PWA**（没有 manifest 和 Service Worker），做第 1 阶段时要补：
+
+1. `web/public/manifest.webmanifest`：名称「自媒体助手」、图标（192 / 512 px）、`display: standalone`、主题色；`web/index.html` 里加 `<link rel="manifest">` 和 `apple-touch-icon`。
+2. Service Worker 只缓存静态资源（`/`、`/assets/*`、图标），**不缓存任何 `/api/*`**：接口涉及额度、登录态和流式输出，缓存会出错。离线时显示「没有网络」页即可，不做离线写稿。
+3. 版本更新：`/assets/*` 文件名带哈希，SW 用「先网络、失败再缓存」处理 `/`，避免用户卡在旧版本。
+4. 窄屏检查：创作记录侧栏改抽屉、弹窗全屏、编辑器工具栏收起；提词器加屏幕常亮（Wake Lock）。
+5. 推送（任务完成、数据回填提醒）：安卓 Chrome 可用；iPhone 要 iOS 16.4+ 且先「添加到主屏幕」；**微信内置浏览器不支持安装和推送**——国内用户多从微信打开链接，所以提醒还要有站内消息兜底。
 
 ### 6.2 功能范围
 
