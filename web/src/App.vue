@@ -3,8 +3,9 @@
 
   <div id="app" class="app" :class="{ hidden: !s.user }">
     <TopBar />
-    <div class="layout">
-      <Sidebar />
+    <div class="layout" :class="{ 'no-side': s.view === 'library' }">
+      <!-- 素材库自带分类侧栏，不再叠账号设定 / 创作记录 -->
+      <Sidebar v-show="s.view !== 'library'" />
       <!-- 宽度按步骤走，见 .main[data-step] -->
       <main class="main" id="main" :data-step="s.view === 'write' ? s.step : undefined" :data-view="s.view">
         <WriteView />

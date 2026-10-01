@@ -50,6 +50,10 @@
                 <Icon name="search" :size="14" />
                 <input id="libSearch" v-model="lib.q" type="search" placeholder="搜索标题、正文或标签…" maxlength="80" />
               </label>
+              <select id="libPersona" :value="s.personaId ?? ''" aria-label="按账号筛选" @change="onPersona">
+                <option value="">全部账号</option>
+                <option v-for="p in s.personas" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
               <div class="library-view-toggle" role="group" aria-label="视图">
                 <button type="button" :class="{ on: lib.viewMode === 'list' }" title="列表" @click="lib.viewMode = 'list'">
                   <Icon name="list" :size="14" />列表
@@ -296,6 +300,10 @@ function statusLabel(st) {
 }
 function goWrite() {
   s.view = 'write';
+}
+function onPersona(ev) {
+  const v = ev.target.value;
+  s.personaId = v === '' ? null : Number(v);
 }
 async function copyBody(text) {
   try {

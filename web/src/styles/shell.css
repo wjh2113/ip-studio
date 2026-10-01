@@ -123,6 +123,7 @@
 
 /* ---------- 布局 ---------- */
 .layout { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); align-items: start; }
+.layout.no-side { grid-template-columns: minmax(0, 1fr); }
 
 .sidebar {
   border-right: 1px solid var(--border);
