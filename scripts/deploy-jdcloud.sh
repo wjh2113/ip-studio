@@ -21,6 +21,11 @@ rsync -az \
   --exclude '.env' \
   --exclude 'data' \
   --exclude '.DS_Store' \
+  --exclude 'export' \
+  --exclude 'export.zip' \
+  --exclude 'mobile/node_modules' \
+  --exclude 'mobile/dist' \
+  --exclude 'mobile/unpackage' \
   "${ROOT}/" "${REMOTE}:${STAGING}/"
 
 echo "==> Install into ${REMOTE_DIR}, nginx, pm2"

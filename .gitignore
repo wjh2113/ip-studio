@@ -4,3 +4,6 @@ data/
 .DS_Store
 dist/
 unpackage/
+# Lovart / 设计导出的大图，不进仓库
+export/
+export.zip
