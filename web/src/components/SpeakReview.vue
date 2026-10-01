@@ -23,7 +23,9 @@
         <button v-else-if="audioOnly(speak)" type="button" class="btn ghost small" :data-speak-look="speak.id" disabled title="这一遍只有声音、没有画面，不做出镜评测">视频测评</button>
         <button v-else type="button" class="btn ghost small" :data-speak-look="speak.id" @click.stop="sp.runCheck(speak.id, 'video')">{{ speak.review.checks?.video ? '重新视频测评' : '视频测评' }}</button>
       </div>
-      <audio v-if="speak.audio" controls preload="none" :src="speak.audio"></audio>
+      <!-- 视频用 video，纯音频用 audio；两者都带 controls，方便在口播页直接回看 -->
+      <video v-if="speak.audio && !audioOnly(speak)" class="speak-media" controls preload="metadata" :src="speak.audio"></video>
+      <audio v-else-if="speak.audio" class="speak-media" controls preload="none" :src="speak.audio"></audio>
     </template>
   </div>
 </template>

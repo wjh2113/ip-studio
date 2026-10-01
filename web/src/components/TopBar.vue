@@ -4,6 +4,7 @@
     <nav class="tabs-nav" id="viewNav">
       <button data-view="write" :class="{ active: s.view === 'write' }" @click="s.view = 'write'">创作</button>
       <button data-view="hot" :class="{ active: s.view === 'hot' }" @click="s.view = 'hot'">热点</button>
+      <button data-view="speak" :class="{ active: s.view === 'speak' }" @click="s.view = 'speak'">口播</button>
       <button data-view="library" :class="{ active: s.view === 'library' }" @click="s.view = 'library'">素材库</button>
     </nav>
     <div class="topbar-right">

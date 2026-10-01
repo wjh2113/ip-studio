@@ -304,7 +304,9 @@
 .speak-lifts li { margin: 4px 0; }
 .speak-next { margin: 8px 0; }
 .speak-fail { color: var(--warn); margin-bottom: 8px; }
-.speak-detail audio, .speak-review audio { width: 100%; margin-top: 8px; }
+.speak-detail audio, .speak-review audio,
+.speak-detail video, .speak-review video,
+.speak-media { width: 100%; margin-top: 8px; max-height: 360px; background: #000; border-radius: 8px; }
 .speak-extra { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .speak-orphan { margin-top: 8px; }
 

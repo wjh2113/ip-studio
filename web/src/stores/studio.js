@@ -10,7 +10,7 @@ export const useStudioStore = defineStore('studio', {
     user: null,
     meta: null,          // /api/meta：平台、调性、登录方式等
     llm: null,           // /api/meta 的 llm：{ live, label, model, provider }
-    view: 'write',       // write 创作 | hot 热点 | library 素材库（含选题池）
+    view: 'write',       // write 创作 | hot 热点 | speak 口播 | library 素材库（含选题池）
 
     personas: [],
     personaId: null,     // null = 全部创作

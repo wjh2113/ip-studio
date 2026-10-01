@@ -1,7 +1,8 @@
 /* 口播：口播提示（语气 / 重读 / 停顿 / 表情 / 动作，单独一层，正文保持干净）、口播记录与评测、提词器。
  *
  * 上传录音（或在提词器里直接录）→ 后台任务转写并总评 → 留档。改稿不会清掉这些记录。
- * 语音测评、视频测评要点开某一遍再做（也是后台任务，刷新页面不丢）。 */
+ * 语音测评、视频测评要点开某一遍再做（也是后台任务，刷新页面不丢）。
+ * 顶栏「口播」一级页：待练列表 + 全部评测记录（含音视频回看）。 */
 import { defineStore } from 'pinia';
 import { computed, reactive, ref } from 'vue';
 import { api, upload } from '../lib/api.js';
@@ -73,11 +74,26 @@ export const useSpeakStore = defineStore('speak', () => {
 
   /* ---------- 这篇的口播记录 ---------- */
   const list = ref([]);              // 当前稿子的口播记录
-  const history = ref([]);           // 侧栏「口播」筛选下的全部记录
+  const history = ref([]);           // 侧栏「口播」筛选 / 口播页的全部记录
   const orphan = ref(null);          // 稿子已经不在的那一遍：在侧栏那条下面展开它的总评
   const uploading = ref(false);
   const checking = reactive(new Set());   // `${id}:voice` / `${id}:video`
   const retrying = reactive(new Set());
+
+  /* ---------- 顶栏口播页 ---------- */
+  const pageTab = ref('records');    // practice | records
+  const todo = ref([]);              // 有提示、还没合格录音的稿子
+  const readyCues = ref([]);         // 成稿且已有口播提示，可再练
+  const detail = ref(null);          // 当前展开的一遍（完整：review + audio）
+  const pageLoading = ref(false);
+  const pageError = ref('');
+  const q = ref('');
+
+  function personaQuery() {
+    const st = s();
+    if (st.personaId == null) return '';
+    return `?persona=${st.personaId}`;
+  }
 
   async function loadDraftSpeaks() {
     const st = s();
@@ -98,10 +114,38 @@ export const useSpeakStore = defineStore('speak', () => {
     } catch { /* 未登录时静默 */ }
   }
 
+  async function loadPage() {
+    pageLoading.value = true;
+    pageError.value = '';
+    try {
+      const [today, speaksRes] = await Promise.all([
+        api(`/today${personaQuery()}`),
+        api('/speaks'),
+      ]);
+      todo.value = today.speakTodo || [];
+      readyCues.value = (today.ready || []).filter((x) => x.hasCues);
+      history.value = Array.isArray(speaksRes.speaks) ? speaksRes.speaks : [];
+      s().speakCount = history.value.length;
+      if (detail.value && !history.value.some((x) => x.id === detail.value.id)) detail.value = null;
+      else if (detail.value) {
+        // 任务刚跑完：用列表摘要刷新分数，完整总评再拉一次
+        const hit = history.value.find((x) => x.id === detail.value.id);
+        if (hit && (hit.score !== detail.value.score || hit.status !== detail.value.status)) {
+          await selectSpeak(hit.id, { silent: true });
+        }
+      }
+    } catch (err) {
+      pageError.value = err.message;
+    } finally {
+      pageLoading.value = false;
+    }
+  }
+
   function refreshLists() {
     const st = s();
     if (st.draft && st.mode === 'cue') loadDraftSpeaks();
     if (st.historyMode === 'speaks') loadHistory();
+    if (st.view === 'speak') loadPage();
   }
 
   function replace(speak) {
@@ -110,6 +154,10 @@ export const useSpeakStore = defineStore('speak', () => {
       ? list.value.map((x) => (x.id === speak.id ? speak : x))
       : [speak, ...list.value];
     if (orphan.value?.id === speak.id) orphan.value = speak;
+    if (detail.value?.id === speak.id) detail.value = speak;
+    history.value = history.value.some((x) => x.id === speak.id)
+      ? history.value.map((x) => (x.id === speak.id ? { ...x, score: speak.score, status: speak.status, next: speak.next, error: speak.error, mime: speak.mime, audio: speak.audio } : x))
+      : history.value;
   }
 
   /* 上传一遍（文件或提词器里录的），转写和总评在后台做 */
@@ -124,7 +172,8 @@ export const useSpeakStore = defineStore('speak', () => {
       if (data.job) useJobsStore().track(data.job);
       if (st.mode !== 'cue') useEditorStore().setMode('cue');
       else await loadDraftSpeaks();
-      if (st.historyMode === 'speaks') loadHistory();
+      if (st.historyMode === 'speaks' || st.view === 'speak') loadHistory();
+      if (st.view === 'speak') loadPage();
       toast('录音已上传，正在转写和总评。可以先去做别的，好了会提示');
       return true;
     } catch (err) {
@@ -166,7 +215,8 @@ export const useSpeakStore = defineStore('speak', () => {
       const { speak } = await useJobsStore().start(`/speaks/${id}/retry`);
       s().focusSpeakId = speak.id;
       await loadDraftSpeaks();
-      if (s().historyMode === 'speaks') loadHistory();
+      if (s().historyMode === 'speaks' || s().view === 'speak') loadHistory();
+      if (s().view === 'speak') await selectSpeak(id, { silent: true });
     } catch (err) { toast(err.message); } finally { retrying.delete(id); }
   }
 
@@ -177,9 +227,11 @@ export const useSpeakStore = defineStore('speak', () => {
       const st = s();
       if (st.focusSpeakId === id) st.focusSpeakId = null;
       if (orphan.value?.id === id) orphan.value = null;
+      if (detail.value?.id === id) detail.value = null;
       toast('已删除这遍口播');
       await loadDraftSpeaks();
       loadHistory();
+      if (st.view === 'speak') loadPage();
     } catch (err) { toast(err.message); }
   }
 
@@ -199,16 +251,57 @@ export const useSpeakStore = defineStore('speak', () => {
     st.focusSpeakId = id;
     if (!speak.draftId || speak.draftGone) {
       orphan.value = speak;
+      if (st.view === 'speak') {
+        detail.value = speak;
+        pageTab.value = 'records';
+      }
       toast(speak.draftGone ? '稿子已经不在了，这是当时的总评' : '这遍口播还在');
       return;
     }
     orphan.value = null;
+    if (st.view === 'speak') {
+      detail.value = speak;
+      pageTab.value = 'records';
+      return;
+    }
     if (st.draft?.id !== speak.draftId) {
       const { draft } = await api(`/drafts/${speak.draftId}`);
       useBriefStore().setDraft(draft);
     }
     if (st.mode !== 'cue') useEditorStore().setMode('cue');
     else loadDraftSpeaks();
+  }
+
+  /* 口播页点开一条记录：拉完整总评 + 音视频地址 */
+  async function selectSpeak(id, { silent = false } = {}) {
+    try {
+      const { speak } = await api(`/speaks/${id}`);
+      detail.value = speak;
+      s().focusSpeakId = id;
+      pageTab.value = 'records';
+    } catch (err) {
+      if (!silent) toast(err.message);
+    }
+  }
+
+  /* 选一篇成稿去练：切到创作 · 口播模式（提词器、上传都在那儿） */
+  async function practiceDraft(draftId) {
+    const st = s();
+    if (st.streaming) { toast('正在出稿，先等这一轮结束'); return; }
+    try {
+      const { draft } = await api(`/drafts/${draftId}`);
+      useBriefStore().setDraft(draft);
+      st.view = 'write';
+      useEditorStore().setMode('cue');
+      if (!draft.cues?.cues?.length) {
+        toast('这篇还没有口播提示，正在生成…');
+        await runCues();
+      } else {
+        toast('已打开口播区，可以提词或上传音视频');
+      }
+    } catch (err) {
+      toast(err.message);
+    }
   }
 
   function reset() {
@@ -225,5 +318,6 @@ export const useSpeakStore = defineStore('speak', () => {
     cues, cuesRunning, cuesError, runCues, copyCues,
     list, history, orphan, uploading, loadDraftSpeaks, loadHistory, submitTake,
     isChecking, runCheck, retry, retrying, remove, toggleOpen, openRecord, reset,
+    pageTab, todo, readyCues, detail, pageLoading, pageError, q, loadPage, selectSpeak, practiceDraft,
   };
 });
