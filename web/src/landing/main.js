@@ -1,0 +1,7 @@
+/* 落地页入口 */
+import { createApp } from 'vue';
+import '../styles/app.css';
+import '../styles/landing.css';
+import LandingApp from './LandingApp.vue';
+
+createApp(LandingApp).mount('#cw');

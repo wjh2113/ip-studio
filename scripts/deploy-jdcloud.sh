@@ -163,8 +163,9 @@ else
   pm2 start "\${REMOTE_DIR}/ecosystem.config.cjs"
 fi
 pm2 save
-# 以前前端构建产物放在 public/ 下，现在在 dist/。新服务起来以后再删，删早了旧服务在重启前会白屏
-rm -rf "\${REMOTE_DIR}/public/assets" "\${REMOTE_DIR}/public/index.html"
+# 页面、样式、脚本以前在 public/，现在全部由 Vite 构建进 dist/，public/ 已经没有用了。
+# 新服务起来以后再删：删早了旧服务在重启前会白屏
+rm -rf "\${REMOTE_DIR}/public"
 
 # 每日备份（幂等：已装过就不重复加）
 sudo mkdir -p /opt/ip-studio-backups && sudo chown ubuntu:ubuntu /opt/ip-studio-backups

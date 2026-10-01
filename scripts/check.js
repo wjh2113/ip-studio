@@ -14,15 +14,13 @@ import { join, relative } from 'node:path';
 import { ROOT } from '../server/paths.js';
 import { checkAsync } from './check-async.js';
 
-const DIRS = ['server', 'shared', 'public', 'tests', 'scripts', 'web'];
+const DIRS = ['server', 'shared', 'tests', 'scripts', 'web'];
 const files = [];
 const vueFiles = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (name === 'node_modules') continue;
-    // 构建产物不查（vite 输出的压缩代码）
-    if ((name === 'assets' || name === 'app') && dir.endsWith('/public')) continue;
     if (statSync(p).isDirectory()) walk(p);
     else if (name.endsWith('.js')) files.push(p);
     else if (name.endsWith('.vue')) vueFiles.push(p);

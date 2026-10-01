@@ -8,9 +8,8 @@
 ```mermaid
 flowchart LR
   subgraph 浏览器
-    A[Vue 3 组件 web/src<br/>挂载后加载 public/app.js] --> C[public/js/core.js<br/>el · Pinia state · api]
-    A --> F[public/js/*.js<br/>17 个功能模块]
-    F --> C
+    A[Vue 3 组件 web/src/components] --> F[Pinia stores<br/>web/src/stores · 按业务拆]
+    F --> C[web/src/lib<br/>api · bus · toast / ask]
   end
   subgraph Node 服务
     I[server/index.js<br/>Fastify · 路由表 · 静态文件] --> R[server/routes.js<br/>聚合导出]
@@ -36,7 +35,7 @@ flowchart LR
 
 | 部分 | 用的是 | 说明 |
 |---|---|---|
-| 前端 | Vue 3 组件（`web/src/components`）+ Pinia + `public/js` | Vite 构建进 `dist/`（不进 git）。多数界面和交互仍在 `public/js`（按 id 改 DOM），顶栏的模型标识和余额已由 Vue 渲染；两边读写同一份 Pinia state。样式是 `public/styles.css` |
+| 前端 | Vue 3 + Pinia（`web/`） | Vite 构建进 `dist/`（不进 git），应用、后台、说明书、落地页、营销页五个入口。样式在 `web/src/styles/` |
 | 后端 | Node.js ≥ 22.5（ESM），Fastify | 路由仍是原来的处理函数；请求在读 body 前交给它们，上传和流式输出不经过框架解析 |
 | 队列 | Redis + BullMQ | 任务状态在 PostgreSQL。`REDIS_URL` 默认 `redis://127.0.0.1:6379` |
 | 数据库 | PostgreSQL + Drizzle | `DATABASE_URL`，默认 `postgres://127.0.0.1:5432/ip_studio`。表在 `server/schema.js`，变更只在 `server/migrations.js` 末尾追加 |
@@ -78,23 +77,37 @@ flowchart LR
 | `frameworks.js` | 写法框架库、从范文拆解 |
 | `jobs.js` | 任务中心：长任务的进度、取消、重试 |
 
-## 前端模块（public/js/）
+## 前端（web/）
 
-页面由 Vue 3 挂载（`web/src/main.js` → `App.vue`，标记和原来的页面一致）。挂载完成后才加载 `public/app.js`：先加载 `core.js`，再加载各功能模块，最后启动。改页面结构改 `web/src/components/*.vue`，改完执行 `npm run build:web`（输出到 `dist/`）。
+全部是 Vue 3 + Pinia，Vite 构建进 `dist/`（不进 git）。五个页面各自一个入口：
 
-**迁移到 Vue 的规则**：一个节点要么归 Vue 管（模板里有绑定），要么归 `public/js` 管（模块按 id 改它），不能两边都管——Vue 重新渲染时会把模块写进去的内容抹掉，模块手里的 `el` 也会指向已经被换掉的旧节点。迁一块的步骤：
+| 页面 | 地址 | 入口 |
+|---|---|---|
+| 应用 | `/`、`/app` | `web/index.html` → `src/main.js` → `App.vue` |
+| 管理后台 | `/admin` | `web/admin.html` → `src/admin/` |
+| 提示词说明书 | `/prompts` | `web/prompts.html` → `src/prompts/` |
+| 落地页 | `/about`（未登录访问 `/` 也是它） | `web/landing.html` → `src/landing/` |
+| 营销页 | `/start` | `web/promo.html` → `src/promo/` |
 
-1. 在 `web/src/stores/studio.js` 加字段，组件里用 `{{ }}` / `v-if` / `v-for` 读它；
-2. 模块里原来改 DOM 的地方改成只写 store（参考 `plan.js` 的 `renderCreditChip`、`app.js` 的 `showLlm`）；
-3. 删掉 `core.js` 里 `el` 的对应项；点击这类事件，按钮本身不会被 Vue 换掉的可以先留在模块里。
+应用的目录：
 
-已迁移：顶栏模型标识、余额、任务数角标（`TopBar.vue`）；左侧创作记录列表、筛选计数、「把已完成的收起来」（`Sidebar.vue`，口播记录拆到单独的 `#speakHistory` 仍归 `speak.js`）。建议顺序：账号列表 → 三个方向 → 各个弹窗 → 任务中心、配图列表 → 口播 → 编辑器和成稿流（最难，放最后）。同一个容器里有两种内容、只迁一种时，先拆成两个容器。
+- `src/components/`：界面。`App.vue` 拼骨架；`TopBar`、`Sidebar`、`WriteView`（步骤条 + `BriefCard` / `TopicsCard` / `ContentCard`）、`HotView`；各个浮层（`*Modal.vue`）；`common/` 是通用件（`Modal` 浮层壳、`AskDialog` 应用内确认框、`Toast`、`BusyBtn`）。
+- `src/stores/`：数据和动作，一个业务一个 store。`studio` 是各块共用的（登录用户、站点信息、当前账号、当前稿子、第几步、模式）；其余按业务拆：
+  `session` 登录与启动 · `account` 账号设定（含素材库、语气样本、快速建号）· `brief` 简报与方向（含推荐题材、选题池）· `history` 创作记录 ·
+  `sections` 栏目 · `frameworks` 写法框架 · `hot` 热点 · `editor` 成稿区（流式成稿、保存、改写、正文历史、语音改稿、导出）·
+  `versions` 多平台与配图 · `review` 成稿检查 · `speak` 口播 · `prompter` 提词器 · `plan` 用量与支付 · `jobs` 后台任务 · `titles` 标题 · `insights` 回填与复盘。
+- `src/lib/`：不依赖界面的小工具。`api.js`（请求、流式、上传、下载）、`bus.js`（模块间通知）、`feedback.js`（`toast`、`ask`）、`busy.js`（提交中的锁）、`text.js`（Markdown、转义、日期）、`caret.js`（编辑框光标坐标）、`escape.js`（Esc 只关最上层）、`reveal.js`（营销页渐入）。
+- `src/styles/`：`app.css`（开头是设计令牌，各页面共用）和落地页、营销页、说明书各自的样式。`web/public/` 里的图标原样拷到 `dist/` 根目录。
+- `shared/place.js`：插图位置算法，前端阅读区和服务端导出 Word 共用一份。
 
-- `core.js` 放所有模块共享的东西：DOM 引用 `el`、全局状态 `state`、`api()`、`esc`、`toast`、`markdown` 等。
-  **它不 import 任何功能模块**，所以永远最先执行完，别的模块在加载时读 `el` / `state` 不会出错。
-- 功能模块之间可以互相 import 函数（ES 模块里函数声明会提前可用）。
-- 需要「通知」而不是「调用」的地方用 window 事件：`cw-spent`（花了点数，刷新余额）、`cw-quota`（额度不够，弹用量面板）、
-  `cw-enter`（登录后进了应用）、`cw-job-done`（后台任务做完，`detail` 是任务）。
+约定：
+
+- **组件只管界面，数据和动作放 store**。组件之间要用同一份数据就放进 store，不要层层传 props、也不要按 id 去找别的组件的 DOM。
+- 模板里的 `{{ }}` 会自动转义；只有 Markdown 正文、带高亮的口播句子这种要 `v-html` 的，HTML 必须来自 `lib/text.js` 的 `markdown()` / `highlightStress()`（先转义再加标签）。
+- 确认、填表用 `lib/feedback.js` 的 `ask.confirm` / `ask.form`，提示用 `toast`，不用浏览器原生弹窗。
+- 浮层用 `common/Modal.vue`（`v-model:open`，Esc 只关最上面一层）。开关用 `hidden` 类：关上再开里面的输入不丢，浏览器测试也按 `.hidden` 判断。
+- 「通知」而不是「调用」的地方用 `lib/bus.js`：`spent`（花了点数，刷新余额）、`quota`（额度不够，弹用量面板）、`enter`（登录后进了应用）、`job-done`（后台任务做完）。
+- 模板最外层不要以注释开头（注释算一个根节点，`v-show` 和传进来的 `class` 会失效），`scripts/check.js` 会拦。
 
 ## 数据
 
@@ -122,10 +135,10 @@ flowchart LR
 | 哪个功能用哪个档的模型 | `server/llm.js` 的 `FEATURE_TIER`；快档模型用 `ANTHROPIC_MODEL_FAST` / `OPENAI_MODEL_FAST` / `LLM_CAPABILITY_JSON` |
 | 套餐、点数、单价 | `server/plans.js`、`server/pricing.js` |
 | 新接口 | `server/index.js` 的 `ROUTES` 加一行 + 对应 `server/routes/<域>.js` 里 export 处理函数 |
-| 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `jobs.js` 的 `startJob` / `waitJob` |
+| 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `stores/jobs.js` 的 `start` / `wait` |
 | 表结构 | `server/schema.js` 改字段，并在 `server/migrations.js` 末尾加一个编号迁移 |
-| 页面结构 / 样式 | `web/src/App.vue` / `public/styles.css`（开头是设计令牌）。改完 `npm run build:web` |
-| 页面行为 | `public/js/<模块>.js` |
+| 页面结构 / 样式 | `web/src/components/*.vue` / `web/src/styles/app.css`（开头是设计令牌）。改完 `npm run build:web` |
+| 页面行为、数据 | `web/src/stores/<业务>.js` |
 
 ## 本地开发
 

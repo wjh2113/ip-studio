@@ -22,7 +22,7 @@
 
 | 层 | 用的 | 为什么选它 | 放弃了什么 |
 |---|---|---|---|
-| 语言 | JavaScript（Node.js ≥ 22），前后端一种语言 | 一个人能前后端通吃；部分代码前后端共用（`public/place.js`）；流式输出天生擅长 | Python 的 AI / 数据生态（需要时另起小服务，见 §5） |
+| 语言 | JavaScript（Node.js ≥ 22），前后端一种语言 | 一个人能前后端通吃；部分代码前后端共用（`shared/place.js`）；流式输出天生擅长 | Python 的 AI / 数据生态（需要时另起小服务，见 §5） |
 | 前端 | Vue 3 + Pinia + Vite | 国内最主流、最好招人；模板写法和原来的 HTML 最接近，迁移成本最低；将来能用 uni-app 出小程序 | React 更大的全球生态、React Native |
 | 后端框架 | Fastify 5 | 轻、快、自带参数校验和日志；从原生 `node:http` 迁过来改动最小 | NestJS 的严格分层（团队大了再考虑） |
 | 数据库 | PostgreSQL + Drizzle ORM | 多进程并发、事务、全文检索、将来的 pgvector；Drizzle 轻，SQL 可控 | SQLite 的零运维（单进程时它很好，但扩不了） |
@@ -50,18 +50,12 @@
 
 ## 3. 现状与已知取舍（2026-10）
 
-### 3.1 前端：Vue 迁移进行中
+### 3.1 前端：已全部是 Vue
 
-- Vue 3 挂载页面，Pinia store 就是旧代码里的 `state`（同一个对象）。
-- **进度：还没迁完，大约完成一成。** `web/src/components/` 里有 18 个 `.vue` 文件，但其中 16 个只是把原来的 HTML 结构原样搬进模板（没有任何数据绑定），内容和交互仍由 `public/js` 填写；真正由数据驱动的只有 `TopBar.vue` 和 `Sidebar.vue`。也就是说「页面由 Vue 挂载」≠「界面由 Vue 渲染」。
-- **已由 Vue 渲染**：顶栏（模型标识、余额、任务数角标）、左侧创作记录列表和计数（`TopBar.vue`、`Sidebar.vue`）。
-- **仍由 `public/js` 按 id 改 DOM**：账号列表、选题方向、成稿流、编辑器、口播、配图、热点、框架库、各个弹窗（`public/js` 里约 110 处 `innerHTML`）。
-- 迁移规则（必须遵守）：
-  1. 一个节点只能归一方管。归 Vue 的，功能模块只改 store 数据，不许 `innerHTML` / `classList`；归 `public/js` 的，不许加 Vue 绑定。
-  2. 同一个容器里有两种内容、只迁一种时，拆成两个容器（例：创作记录 `#history` 归 Vue，口播记录 `#speakHistory` 仍归 `speak.js`）。
-  3. 会改按钮 `innerHTML` 的 `busy()` 不要用在 Vue 管的按钮上，改成 store 里的一个「进行中」标记。
-  4. 迁一块的步骤：store 加字段 → 组件模板读它 → 模块里改 DOM 的代码换成写 store → 删 `core.js` 里 `el` 的对应项 → 在 `tests/ui/` 补浏览器测试。
-- 剩余顺序（从易到难）：账号列表 → 三个方向 → 各个弹窗（标题、框架、用量、洞察）→ 任务中心、配图列表 → 口播 → 编辑器和成稿流。管理后台、说明书、落地页是独立页面，暂不进 Vue 应用。
+- 2026-10 迁完：应用、管理后台、提示词说明书、落地页、营销页都是 Vue 3 + Pinia，Vite 多入口构建；原来 `public/` 下按 id 拼 HTML 的脚本（约 4700 行、110 处 `innerHTML`）已删除。目录和约定见 `docs/ARCHITECTURE.md` 的「前端」。
+- 数据按业务拆成十几个 store（账号、简报、成稿区、口播、配图……），组件只管界面。插图位置算法 `shared/place.js` 前后端共用一份。
+- 迁移顺手修掉的线上问题：`#cw > *` 样式把浮层、提示条、提词器的 `position: fixed` 压成了 relative（浮层会跑到页面最底下）；配图栏里改过的画面提示词出图时没带上；离开一篇稿子时没存的改动可能写到下一篇。
+- 回归测试：`tests/ui/` 下 13 个浏览器流程（`npm run test:ui`），覆盖登录、账号设定、简报、成稿区、口播、配图、多平台、导出、任务中心、用量与支付、后台、独立页面。
 
 ### 3.2 单实例假设
 
@@ -83,7 +77,6 @@
 | 管理后台只认 `ADMIN_PASSWORD`，不用访问密码兜底 | 后台权限和访问门禁分开 | `.env` 配 `ADMIN_USERNAME` / `ADMIN_PASSWORD`（≥ 8 位）；没有管理员时启动日志会提示 |
 | 部署脚本在生产环境把注册关了（设 `REGISTER_OPEN=0`；代码默认是开的） | 先内部使用 | 开放时设 `REGISTER_OPEN=1`（同时没有 `ACCESS_PASSWORD`） |
 | 正文历史：自动保存 10 分钟一版、每篇最多 50 版 | 控制库大小 | `REVISION_GAP_MIN`、`REVISION_MAX` |
-| Vite 构建时提示 `dialog.js` 没有 `type="module"`、`/styles.css` 运行时解析 | 这两个文件和后台、落地页共用，由 Node 从 `public/` 直接提供，不进打包 | 不影响功能，可忽略 |
 
 ### 3.4 命名
 

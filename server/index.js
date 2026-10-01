@@ -31,8 +31,7 @@ setUsageSink((e) => {
   void Usage.record(e).catch((err) => console.warn('[usage]', err.message));
 });
 
-const PUBLIC_DIR = fromRoot('public');
-// Vue 前端的构建产物（npm run build:web → dist/）。手写的页面、样式、后台还在 public/
+// 前端的构建产物（npm run build:web → dist/）：应用、后台、说明书、落地页、营销页都在这里
 const DIST_DIR = fromRoot('dist');
 const PORT = Number(process.env.PORT) || 5177;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -370,39 +369,43 @@ async function serveOwned(path, prefix, dir, req, res) {
   }
 }
 
-async function serveStatic(path, res) {
-  // 后台和提示词说明书都是独立入口，不走单页应用那套回落
-  if (path === '/admin' || path === '/admin/') path = '/admin.html';
-  if (path === '/prompts' || path === '/prompts/') path = '/prompts.html';
-  if (path === '/app' || path === '/app/') path = '/index.html';
-  if (path === '/about' || path === '/about/') path = '/landing.html';
-  // 营销落地页。走单独入口，投放链接指这里；/ 上那版是产品说明，两套动线互不影响
-  if (path === '/start' || path === '/start/') path = '/promo.html';
+/* 页面都是 Vite 构建出来的（npm run build:web → dist/），各页面一个 HTML：
+ *   /、/app → index.html（应用）　/admin → admin.html　/prompts → prompts.html
+ *   /about → landing.html（产品说明，未登录访问 / 也是它）　/start → promo.html（营销页，投放链接指这里）
+ * 页面不缓存（换版本立刻生效），/assets/* 带哈希可以长期缓存，其余根目录文件（图标）短缓存。 */
+const PAGES = {
+  '/': 'index.html', '/index.html': 'index.html', '/app': 'index.html',
+  '/admin': 'admin.html', '/admin.html': 'admin.html',
+  '/prompts': 'prompts.html', '/prompts.html': 'prompts.html',
+  '/about': 'landing.html', '/landing.html': 'landing.html',
+  '/start': 'promo.html', '/promo.html': 'promo.html',
+};
 
-  // 应用首页和构建出来的 js 在 dist/
-  if (path === '/' || path === '/index.html') { await serveAppShell(res); return; }
+async function serveStatic(path, res) {
+  const page = PAGES[path.length > 1 ? path.replace(/\/$/, '') : path];
+  if (page) { await servePage(page, res); return; }
   if (path.startsWith('/assets/')) { await serveBuilt(path, res); return; }
 
   const rel = normalize(path).replace(/^(\.\.[/\\])+/, '');
-  const file = join(PUBLIC_DIR, rel);
-  if (!file.startsWith(PUBLIC_DIR)) { res.writeHead(403).end('Forbidden'); return; }
+  const file = join(DIST_DIR, rel);
+  if (!file.startsWith(DIST_DIR) || extname(file) === '.html') { await servePage('index.html', res); return; }
   try {
     const data = await readFile(file);
     res.writeHead(200, {
       'Content-Type': MIME[extname(file)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'public, max-age=3600',
     });
     res.end(data);
   } catch {
     // 单页应用：未知路径回落到首页
-    await serveAppShell(res);
+    await servePage('index.html', res);
   }
 }
 
-/* 应用首页（dist/index.html）。没构建过就明说，不要给一个白屏 */
-async function serveAppShell(res) {
+/* 构建出来的页面。没构建过就明说，不要给一个白屏 */
+async function servePage(name, res) {
   try {
-    const html = await readFile(join(DIST_DIR, 'index.html'));
+    const html = await readFile(join(DIST_DIR, name));
     res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
     res.end(html);
   } catch {

@@ -156,7 +156,7 @@ npm start              # http://localhost:5177
 ### 标志
 
 原来三个入口各挂一个 emoji（✍️ / 🛠️），在不同系统上长得不一样，也和整套视觉没关系。
-换成 [public/mark.svg](public/mark.svg)：**一块"正在写的文本" + 一个信号色光标**——
+换成 [web/public/mark.svg](web/public/mark.svg)：**一块"正在写的文本" + 一个信号色光标**——
 三条白色横线（第三条短），紧跟一个比行高略高的红色光标块，底是主色的斜向渐变圆角方块。
 
 一个画出来才发现的问题：**光标和第三行之间留了 1.7 个单位的空**，放大看就是"列表旁边一个红点"，
@@ -546,8 +546,8 @@ system 负责"怎么做"，八个上下文块（账号定位 / 个人人设 / �
 - 有些浏览器会给出"阻止此页面再弹出对话框"，勾了之后**功能就静默失效**；
 - 它是**同步阻塞**的，弹着的时候页面上别的东西全停了。
 
-[public/dialog.js](public/dialog.js) 是一份两个页面共用的组件，**自己建 DOM**，不依赖任何 HTML 结构。
-接口做成 await 的，调用处基本原样：
+[web/src/lib/feedback.js](web/src/lib/feedback.js) 里的 `ask`（界面是 `components/common/AskDialog.vue`），应用、后台、说明书共用。
+接口做成 await 的：
 
 ```js
 if (!await ask.confirm({ title: '删掉这条素材？', ok: '删除', danger: true })) return;
@@ -937,13 +937,16 @@ server/
   quota.js · plans.js · pricing.js   额度、套餐、单价
   speak.js        转写、口播总评、网关发音 / 出镜评测
   images.js · hotspots.js · pay.js · docx.js · settings.js · secrets.js · auth.js · limit.js · security.js
-public/
-  index.html · styles.css             主应用页面与样式（设计令牌在 styles.css 开头）
-  app.js                              前端入口：加载 js/ 下的模块并启动
-  js/core.js                          共享的 el / state / api / 小工具
-  js/*.js                             13 个功能模块（账号、简报、成稿、编辑器、口播、热点、素材……）
-  admin.* · prompts.* · landing.* · promo.*   后台、提示词说明书、落地页、投放页
-tests/            node:test 单测（npm test）
+shared/
+  place.js        插图位置算法（阅读区和 Word 导出共用）
+web/              前端（Vue 3 + Pinia，Vite 构建到 dist/）
+  index.html · admin.html · prompts.html · landing.html · promo.html   五个页面入口
+  src/components/ 应用的界面组件（common/ 是浮层、确认框、提示条这些通用件）
+  src/stores/     按业务拆的数据与动作（账号、简报、成稿区、口播、配图、热点、用量……）
+  src/lib/        api、通知、提示与确认框、文本工具
+  src/admin/ · src/prompts/ · src/landing/ · src/promo/   后台、提示词说明书、落地页、投放页
+  src/styles/     样式（设计令牌在 app.css 开头）
+tests/            node:test 单测（npm test）；tests/ui/ 浏览器回归（npm run test:ui）
 scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdcloud.sh 部署
 ```
 

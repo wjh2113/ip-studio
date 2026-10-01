@@ -29,14 +29,14 @@
 
 ## 前端
 
-- 现状（2026-10）：Vue 3 挂载页面，但**大部分界面还是 `public/js` 里的模块按 id 找元素、拼 HTML**。已由 Vue 渲染的：顶栏（模型标识、余额、任务数角标，`TopBar.vue`）和左侧创作记录列表与计数（`Sidebar.vue`）。口播记录另有容器 `#speakHistory`，仍归 `speak.js`。
-- **一个节点只能归一方管**：归 Vue 管的（有 `{{ }}`、`v-if`、`v-for`、`:class`），功能模块只改 store 里的数据，不要再 `innerHTML` / `classList` 去碰它；归 `public/js` 管的节点，不要在上面加 Vue 绑定。把一块迁到 Vue 时，同时删掉 `core.js` 里 `el` 的对应项和模块里改 DOM 的代码。
-- 页面结构在 `web/src/components/*.vue`，由 `web/src/App.vue` 拼起来。`public/app.js` 在挂载之后加载模块并启动；功能写在 `public/js/<模块>.js`。
-- 构建：`npm run build:web` 输出到 `dist/`（每次清空，不进 git），服务端从 `dist/` 出首页和 `/assets/*`，其余静态文件还在 `public/`。没构建过时首页会提示先构建。本地看界面：先 `npm run dev`，再 `npm run dev:web`（http://127.0.0.1:5180，改 `.vue` 后要整页刷新，因为 `public/js` 在加载时就记住了元素）。
-- 共享的 `el`、`state`、`api` 在 `public/js/core.js`。`state` 是 Pinia store（`web/src/stores/studio.js`）的 `$state`。`core.js` 不能 import 功能模块。
-- 模块之间要「通知」而不是「调用」时，用 window 事件（现有：`cw-spent`、`cw-quota`、`cw-enter`、`cw-job-done`）。
-- 拼 HTML 一律先 `esc()`；Markdown 用 `markdown()`（先转义再加标签）。
-- 不用浏览器原生 `alert` / `confirm`，用 `public/dialog.js` 的应用内浮层。
+- 全部是 Vue 3 + Pinia（`web/`），结构见 `docs/ARCHITECTURE.md` 的「前端」。应用、后台、说明书、落地页、营销页各一个入口（`web/*.html`），不要再往 `public/` 加手写页面或脚本。
+- **组件只管界面，数据和动作放 `web/src/stores/<业务>.js`**。组件之间共用数据走 store，不要按 id 去找别的组件的 DOM，也不要 `innerHTML`。
+- 要 `v-html` 的只有 Markdown 正文和带高亮的口播句子，HTML 只能来自 `lib/text.js` 的 `markdown()` / `highlightStress()`（先转义再加标签）。
+- 请求走 `lib/api.js`（`api` / `stream` / `upload`），它会在花过点数时发 `spent`、撞到额度时发 `quota`；模块之间要「通知」而不是「调用」时用 `lib/bus.js`（现有：`spent`、`quota`、`enter`、`job-done`）。
+- 确认和填表用 `lib/feedback.js` 的 `ask.confirm` / `ask.form`，提示用 `toast`；不用浏览器原生 `alert` / `confirm`。浮层用 `components/common/Modal.vue`。
+- 模板最外层不要以注释开头（会变成多根节点），`scripts/check.js` 会把所有 `.vue` 编译一遍并检查这一条。
+- 构建：`npm run build:web` 输出到 `dist/`（每次清空，不进 git），服务端所有页面和静态文件都从 `dist/` 出；没构建过时页面会提示先构建。本地看界面：先 `npm run dev`，再 `npm run dev:web`（http://127.0.0.1:5180，`/admin`、`/prompts`、`/about`、`/start` 也能直接打开）。
+- 界面改动要在 `tests/ui/` 里有覆盖：元素 id 是测试的抓手，改名要同步改测试。
 
 ## 提示词
 

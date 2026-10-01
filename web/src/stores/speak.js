@@ -85,15 +85,16 @@ export const useSpeakStore = defineStore('speak', () => {
     const id = st.draft.id;
     try {
       const { speaks } = await api(`/drafts/${id}/speaks`);
-      if (st.draft?.id === id) list.value = speaks;
+      // 响应体读坏了（连接中途断开）时 api() 会给空对象：别把列表弄成 undefined
+      if (st.draft?.id === id) list.value = Array.isArray(speaks) ? speaks : [];
     } catch (err) { toast(err.message); }
   }
 
   async function loadHistory() {
     try {
       const { speaks } = await api('/speaks');
-      history.value = speaks;
-      s().speakCount = speaks.length;
+      history.value = Array.isArray(speaks) ? speaks : [];
+      s().speakCount = history.value.length;
     } catch { /* 未登录时静默 */ }
   }
 
