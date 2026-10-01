@@ -1,82 +1,96 @@
 <template>
   <div id="hotView" :class="{ hidden: s.view !== 'hot' }">
-    <section class="card">
-      <div class="card-head">
-        <h2>可蹭的热点</h2>
-        <div class="card-actions">
+    <section class="card hot-card">
+      <div class="hot-head">
+        <div class="hot-title">
+          <h2><Icon name="flame" :size="22" />可蹭的热点</h2>
+          <p class="hot-intro" id="hotIntro">
+            <template v-if="persona">抓取全网榜单，和「{{ persona.name }}」的定位逐条比对，只留下这个号真能接得住的，并给出蹭点和选题建议。</template>
+            <template v-else>抓取全网榜单，和当前账号的定位逐条比对，只留下这个号真能接得住的，并给出蹭点和选题建议。</template>
+            <em>比对只看得到榜单标题，看不到原文——动笔前请点开原文核实。伤亡、灾难、点名到个人的争议一律不推荐。</em>
+          </p>
+        </div>
+        <div class="hot-run">
+          <BusyBtn class="btn primary" id="hotRun" :busy="h.running === 'auto'" :disabled="!persona || Boolean(h.running)"
+            @click="h.run({})"><Icon name="refresh" :size="15" />抓取并比对</BusyBtn>
           <span class="counter" id="hotMeta">{{ boardsAt }}</span>
-          <BusyBtn class="btn primary small" id="hotRun" :busy="h.running === 'auto'" :disabled="!persona || Boolean(h.running)"
-            @click="h.run({})">抓取并比对</BusyBtn>
         </div>
       </div>
-      <p class="hot-intro" id="hotIntro">
-        <template v-if="persona">抓取全网榜单，和「{{ persona.name }}」的定位逐条比对，只留下这个号真能接得住的，并给出蹭点和选题建议。</template>
-        <template v-else>抓取全网榜单，和当前账号的定位逐条比对，只留下这个号真能接得住的，并给出蹭点和选题建议。</template>
-        <em>比对只看得到榜单标题，看不到原文——动笔前请点开原文核实。伤亡、灾难、点名到个人的争议一律不推荐。</em>
-      </p>
       <div class="sources" id="hotSources">
         <span v-for="x in sources" :key="x.label" class="source-pill" :class="x.ok ? 'ok' : 'bad'" :title="x.error || ''">
-          {{ x.ok ? '●' : '○' }} {{ x.label }}{{ x.ok ? ` ${x.count}` : ' 抓取失败' }}
+          <b>{{ x.label }}</b><i>{{ x.ok ? '成功' : '失败' }}</i><span>{{ x.ok ? `${x.count} 条` : '抓取失败' }}</span>
         </span>
       </div>
-      <div class="matches" id="hotMatches">
-        <div v-if="!persona" class="hot-note">先在左边选一个账号，热点才有比对的对象。</div>
-        <template v-else-if="h.running"><div class="idea-skeleton"></div><div class="idea-skeleton"></div></template>
-        <div v-else-if="h.runError" class="hot-note">{{ h.runError }}</div>
+      <div class="matches-wrap" id="hotMatches">
+        <div v-if="!persona" class="hot-note"><Icon name="user" :size="18" />先在左边选一个账号，热点才有比对的对象。</div>
+        <div v-else-if="h.running" class="matches"><div v-for="i in 3" :key="i" class="idea-skeleton tall"></div></div>
+        <div v-else-if="h.runError" class="hot-note bad">{{ h.runError }}</div>
         <template v-else-if="r">
-          <div class="hint" style="margin-bottom:4px">{{ when(r.at) }} 比对了 {{ r.total }} 条热点<template v-if="r.screened">　·　已挡掉 {{ r.screened }} 条不适合蹭的<span class="screened-peek" :title="screenedTip">（看类型）</span></template></div>
+          <div class="matches-title">匹配结果<em>（共 {{ r.matches.length }} 条）</em>
+            <span class="hint">{{ when(r.at) }} 比对了 {{ r.total }} 条热点<template v-if="r.screened">　·　已挡掉 {{ r.screened }} 条不适合蹭的<span class="screened-peek" :title="screenedTip">（看类型）</span></template></span>
+          </div>
           <div v-if="!r.matches.length" class="hot-note">{{ r.note || '这一轮榜单里没有适合这个号蹭的热点。硬蹭不如不蹭，等下一轮。' }}</div>
-          <article v-for="(m, idx) in r.matches" :key="idx" class="match" :class="{ strong: m.strength === '强' }">
-            <div class="match-top">
-              <span class="badge">{{ m.origin?.platform || '' }}</span>
-              <span class="badge" :class="`s-${m.strength}`">关联度 {{ m.strength }}</span>
-              <span v-if="m.origin?.heat" class="badge">热度 {{ heat(m.origin.heat) }}</span>
-            </div>
-            <div class="match-block">
-              <b>原文章</b>
-              <p><a v-if="m.origin?.url" :href="m.origin.url" target="_blank" rel="noopener noreferrer">{{ m.origin.title }}</a><template v-else>{{ m.origin?.title }}</template></p>
-              <p v-if="m.origin?.summary" class="origin-summary">{{ m.origin.summary }}<em>{{ SUMMARY_SOURCE[m.origin.summarySource] || '' }}</em></p>
+          <div class="matches">
+            <article v-for="(m, idx) in r.matches" :key="idx" class="match" :class="{ strong: m.strength === '强' }">
+              <div class="match-top">
+                <span class="match-no">{{ idx + 1 }}</span>
+                <span class="plat-name">{{ m.origin?.platform || '' }}</span>
+                <span class="grow"></span>
+                <span class="badge" :class="`s-${m.strength}`">关联度 {{ m.strength }}</span>
+                <span v-if="m.origin?.heat" class="heat-tag"><Icon name="flame" :size="12" />{{ heat(m.origin.heat) }}</span>
+              </div>
+              <h4 class="match-title"><a v-if="m.origin?.url" :href="m.origin.url" target="_blank" rel="noopener noreferrer">{{ m.origin.title }}<Icon name="link" :size="12" /></a><template v-else>{{ m.origin?.title }}</template></h4>
+              <p v-if="m.origin?.summary" class="origin-summary"><b>原文概要：</b>{{ m.origin.summary }}<em>{{ SUMMARY_SOURCE[m.origin.summarySource] || '' }}</em></p>
               <p v-else class="origin-summary muted">抓不到原文概要（平台反爬或需要 JS），动笔前请点开原文核实</p>
-            </div>
-            <div class="match-block"><b>蹭热点的点</b><p>{{ m.angle }}</p></div>
-            <div class="match-block"><b>选题建议</b><p>{{ m.subject }}</p></div>
-            <div v-if="m.caution" class="match-block caution"><b>注意分寸</b><p>{{ m.caution }}</p></div>
-            <button class="btn primary small" :data-match="idx" @click="useMatch(m)">用这个题材去创作</button>
-          </article>
+              <div class="match-block"><b>蹭点</b><p>{{ m.angle }}</p></div>
+              <div class="match-block"><b>选题建议</b><p>{{ m.subject }}</p></div>
+              <div v-if="m.caution" class="match-block caution"><b>注意分寸</b><p>{{ m.caution }}</p></div>
+              <button class="btn primary block" :data-match="idx" @click="useMatch(m)"><Icon name="pen" :size="14" />用这个题材去创作</button>
+            </article>
+          </div>
         </template>
+        <div v-else class="hot-note"><Icon name="flame" :size="18" />还没比对过。点右上「抓取并比对」，或者在下面手动粘一份榜单。</div>
       </div>
     </section>
 
-    <section class="card">
+    <section class="card board-card">
       <div class="card-head">
-        <h2>抓到的原始榜单</h2>
-        <div class="card-actions">
-          <select id="boardFilter" v-model="pick">
-            <option value="">全部平台（{{ h.boards?.items.length || 0 }} 条）</option>
-            <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
-          </select>
-          <button class="btn ghost small" id="boardRefresh" @click="h.loadBoards(true)">重新抓取</button>
-        </div>
+        <h2><Icon name="chart" :size="20" />抓到的原始榜单</h2>
+        <span class="grow"></span>
+        <span class="counter">{{ boardsAt }}</span>
+        <button class="btn ghost small" id="boardRefresh" @click="h.loadBoards(true)"><Icon name="refresh" :size="14" />重新抓取</button>
+      </div>
+      <div class="board-filter">
+        <button type="button" :class="{ on: !pick }" @click="pick = ''">全部<i>{{ h.boards?.items.length || 0 }}</i></button>
+        <button v-for="g in groups" :key="g" type="button" :class="{ on: pick === g }" @click="pick = g">{{ g }}</button>
+        <!-- 平台多时下拉更省地方；按钮和下拉是同一个筛选 -->
+        <select id="boardFilter" v-model="pick" aria-label="平台筛选">
+          <option value="">全部平台（{{ h.boards?.items.length || 0 }} 条）</option>
+          <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
+        </select>
       </div>
       <div class="board" id="boardList">
         <div v-if="h.boardsLoading" class="ideas-state">正在抓取榜单…</div>
         <div v-else-if="h.boardsError" class="ideas-state error">{{ h.boardsError }}</div>
         <template v-else>
-        <div v-for="(it, i) in rows" :key="i" class="board-row">
-          <span class="no">{{ i + 1 }}</span>
-          <span class="plat">{{ it.platform }}</span>
-          <a v-if="it.url" :href="it.url" target="_blank" rel="noopener noreferrer">{{ it.title }}</a>
-          <span v-else style="flex:1">{{ it.title }}</span>
-          <span class="heat">{{ heat(it.heat) }}</span>
-        </div>
+          <div v-if="rows.length" class="board-row head"><span class="no">序号</span><span class="plat">平台</span><span class="ttl">标题</span><span class="heat">热度</span></div>
+          <div v-for="(it, i) in rows" :key="i" class="board-row">
+            <span class="no">{{ i + 1 }}</span>
+            <span class="plat">{{ it.platform }}</span>
+            <a v-if="it.url" class="ttl" :href="it.url" target="_blank" rel="noopener noreferrer">{{ it.title }}</a>
+            <span v-else class="ttl">{{ it.title }}</span>
+            <span class="heat">{{ heat(it.heat) }}</span>
+          </div>
         </template>
       </div>
       <details class="manual">
-        <summary>榜单抓不到？手动粘一份</summary>
+        <summary><Icon name="doc" :size="15" />榜单抓不到？手动粘一份</summary>
         <p class="hint">一行一条，可以直接从任何热榜页面复制粘贴，前面的序号会自动去掉。</p>
-        <textarea id="manualInput" rows="5" v-model="manual" placeholder="1. 某某热点&#10;2. 另一个热点&#10;3. ..."></textarea>
-        <BusyBtn class="btn ghost small" id="manualRun" :busy="h.running === 'manual'" :disabled="!persona || Boolean(h.running)"
-          @click="runManual">用这份榜单比对</BusyBtn>
+        <div class="manual-row">
+          <textarea id="manualInput" rows="4" v-model="manual" placeholder="1. 某某热点&#10;2. 另一个热点&#10;3. ..."></textarea>
+          <BusyBtn class="btn primary" id="manualRun" :busy="h.running === 'manual'" :disabled="!persona || Boolean(h.running)"
+            @click="runManual">用这份榜单比对</BusyBtn>
+        </div>
       </details>
     </section>
   </div>
@@ -85,6 +99,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
+import Icon from './common/Icon.vue';
 import { useHotStore } from '../stores/hot.js';
 import { useStudioStore } from '../stores/studio.js';
 import { toast } from '../lib/feedback.js';

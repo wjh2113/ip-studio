@@ -5,7 +5,7 @@ import './styles/base.css';
 import './styles/shell.css';
 import './styles/create.css';
 import './styles/workbench.css';
-import './styles/app.css';
+import './styles/views.css';
 import App from './App.vue';
 import { useSessionStore } from './stores/session.js';
 

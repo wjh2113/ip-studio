@@ -47,6 +47,7 @@ const ICONS = {
   mic: ['M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0z', 'M5 11a7 7 0 0 0 14 0', 'M12 18v3'],
   video: ['M5 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z', 'M16 10l5-3v10l-5-3'],
   play: ['M7 4.5l12 7.5-12 7.5z'],
+  pause: ['M7 5h3.5v14H7zM13.5 5H17v14h-3.5z'],
   download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
   copy: ['M9 9h10v11H9z', 'M5 15V4h10'],
   archive: ['M3 4h18v4H3z', 'M5 8v11h14V8', 'M10 12h4'],
@@ -76,7 +77,7 @@ const ICONS = {
   key: [c(8, 15, 4), 'M11 12l9-9M17 6l2 2M15 8l2 2'],
 };
 // 实心的：播放、录制点
-const filled = new Set(['play', 'record', 'dots']);
+const filled = new Set(['play', 'pause', 'record', 'dots']);
 
 const paths = computed(() => ICONS[props.name] || []);
 </script>

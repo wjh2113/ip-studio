@@ -3,48 +3,64 @@
     :sub="q ? `${q.period} · 下月 1 号重置` : ''" :mask-close="false" @close="p.close()">
     <div ref="body">
       <template v-if="d">
-        <div class="plan-now" id="planNow">
-          <div class="row">
-            <span class="big">{{ q.left.toLocaleString() }}</span>
-            <span class="of">/ {{ q.total.toLocaleString() }} 点剩余</span>
-            <span class="grow"></span>
-            <span class="of">{{ q.label }}{{ q.price ? ` · ${q.price} 元/月` : '' }}</span>
+        <!-- 左边：现在还剩多少、花在哪了；右边：套餐对比。说明书原话：写稿便宜，出图是大头 -->
+        <div class="plan-grid">
+          <div class="plan-left">
+            <div class="plan-now" id="planNow">
+              <span class="plan-ic"><Icon name="crown" :size="20" /></span>
+              <div class="plan-now-main">
+                <div class="row">
+                  <b class="plan-name">{{ q.label }}</b><span class="of">当前套餐{{ q.price ? ` · ${q.price} 元/月` : '' }}</span>
+                </div>
+                <div class="row">
+                  <span class="big">{{ q.left.toLocaleString() }}</span>
+                  <span class="of">/ {{ q.total.toLocaleString() }} 点剩余</span>
+                </div>
+                <div class="plan-bar" :class="{ low: pct < 15 }"><div :style="{ width: `${pct}%` }"></div></div>
+                <p class="eq">
+                  <template v-if="d.explain.length">还能写
+                    <template v-for="(x, i) in d.explain" :key="i"><template v-if="i">，或 </template><b>{{ x.n }} {{ x.what }}</b></template>（各是全部额度都用在这一项上）
+                  </template>
+                  <template v-else>额度已经用完，下月 1 号重置。</template>
+                </p>
+              </div>
+            </div>
+            <div class="plan-use">
+              <h3 class="plan-h">本月消耗明细</h3>
+              <div id="planBreakdown">
+                <div v-if="d.breakdown.length" class="use-row head"><span class="f">功能</span><span class="amt">次数 / 用量</span><span class="cr">点数</span></div>
+                <div v-for="r in d.breakdown" :key="r.feature" class="use-row">
+                  <span class="f">{{ r.feature }}</span>
+                  <span class="amt">{{ r.calls }} 次 · {{ r.units.toLocaleString() }} {{ r.unit }}</span>
+                  <span class="cr">{{ r.credits.toLocaleString() }} 点</span>
+                </div>
+                <p v-if="!d.breakdown.length" class="hint">这个月还没有消耗。</p>
+              </div>
+            </div>
+            <p class="hint plan-note" id="planNote"><Icon name="info" :size="14" />点数按实际消耗扣。写稿很便宜，出图是大头——明细里能看出钱花在哪。</p>
           </div>
-          <div class="plan-bar" :class="{ low: pct < 15 }"><div :style="{ width: `${pct}%` }"></div></div>
-          <p class="eq">
-            <template v-if="d.explain.length">还能写
-              <template v-for="(x, i) in d.explain" :key="i"><template v-if="i">，或 </template><b>{{ x.n }} {{ x.what }}</b></template>（各是全部额度都用在这一项上）
-            </template>
-            <template v-else>额度已经用完，下月 1 号重置。</template>
-          </p>
-        </div>
-        <h3 class="plan-h">本月花在哪了</h3>
-        <div id="planBreakdown">
-          <div v-for="r in d.breakdown" :key="r.feature" class="use-row">
-            <span class="f">{{ r.feature }}</span>
-            <span class="amt">{{ r.calls }} 次 · {{ r.units.toLocaleString() }} {{ r.unit }}</span>
-            <span class="cr">{{ r.credits.toLocaleString() }} 点</span>
-          </div>
-          <p v-if="!d.breakdown.length" class="hint">这个月还没有消耗。</p>
-        </div>
-        <h3 class="plan-h">套餐</h3>
-        <div class="plan-cards" id="planCards">
-          <div v-for="x in d.plans" :key="x.key" class="plan-card" :class="{ on: x.key === q.plan }">
-            <h4>{{ x.label }}</h4>
-            <div class="price"><template v-if="x.price">{{ x.price }}<em> 元/月</em></template><template v-else>免费</template></div>
-            <div class="cr">{{ x.credits.toLocaleString() }} 点</div>
-            <p class="note">{{ x.note || '' }}</p>
-            <button v-if="x.key === q.plan" class="btn ghost small" disabled>当前套餐</button>
-            <button v-else class="btn primary small" :data-plan="x.key" @click="p.startPay('plan', x.key, x.label)">换到这档</button>
+          <div class="plan-right">
+            <h3 class="plan-h">套餐权益对比</h3>
+            <div class="plan-cards" id="planCards">
+              <div v-for="x in d.plans" :key="x.key" class="plan-card" :class="{ on: x.key === q.plan }">
+                <span v-if="x.key === q.plan" class="plan-flag">当前</span>
+                <h4>{{ x.label }}</h4>
+                <div class="price"><template v-if="x.price">¥{{ x.price }}<em> / 月</em></template><template v-else>0<em> 元 / 月</em></template></div>
+                <div class="cr"><Icon name="check" :size="13" />每月 {{ x.credits.toLocaleString() }} 点</div>
+                <p class="note">{{ x.note || '' }}</p>
+                <button v-if="x.key === q.plan" class="btn ghost small" disabled>当前套餐</button>
+                <button v-else class="btn primary small" :data-plan="x.key" @click="p.startPay('plan', x.key, x.label)">换到这档</button>
+              </div>
+            </div>
           </div>
         </div>
-        <p class="hint" id="planNote">点数按实际消耗扣。写稿很便宜，出图是大头——明细里能看出钱花在哪。</p>
       </template>
       <div v-else class="idea-skeleton"></div>
 
       <!-- 支付：扫码 + 轮询订单状态 -->
       <div v-if="pay" class="paybox" id="payBox">
         <div class="pay-head">
+          <span class="plan-ic sm"><Icon name="card" :size="16" /></span>
           <b id="payTitle">{{ pay.title }}</b>
           <span class="grow"></span>
           <button class="icon-btn" id="payCancel" title="取消" @click="p.closePay()">×</button>
@@ -82,6 +98,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import Modal from './common/Modal.vue';
+import Icon from './common/Icon.vue';
 import { usePlanStore } from '../stores/plan.js';
 
 const p = usePlanStore();

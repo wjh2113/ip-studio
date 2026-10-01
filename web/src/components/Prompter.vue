@@ -1,26 +1,38 @@
 <template>
 <div class="prompter" id="prompter" :class="{ hidden: !p.show, 'no-cues': !p.cfg.cues, mirrored: p.cfg.mirror }">
   <div class="prompter-bar">
-    <button class="pbtn" id="pPlay" title="空格" @click="toggle">{{ playing ? '❚❚ 暂停' : '▶ 开始' }}</button>
-    <button class="pbtn" id="pRec" :class="{ rec: recording }" title="录这一遍，停下来就去总评" @click="toggleRec">{{ recording ? '■ 停止' : '● 录' }}</button>
+    <button class="pbtn primary" id="pPlay" title="空格" @click="toggle"><Icon :name="playing ? 'pause' : 'play'" :size="14" />{{ playing ? '暂停' : '开始' }}<small>（空格）</small></button>
+    <button class="pbtn" id="pRec" :class="{ rec: recording }" title="录这一遍，停下来就去总评" @click="toggleRec"><i class="rec-ball"></i>{{ recording ? '停止' : '录' }}<small>（录完去总评）</small></button>
+    <span class="psep"></span>
     <div class="pgroup">
-      <span>速度</span>
-      <button class="pbtn sm" data-speed="-1" title="[" @click="bump('speed', -5)">−</button>
-      <b id="pSpeedVal">{{ p.cfg.speed }}</b>
-      <button class="pbtn sm" data-speed="1" title="]" @click="bump('speed', 5)">＋</button>
+      <span class="plabel">滚动速度</span>
+      <div class="pctl">
+        <button class="pbtn sm" data-speed="-1" title="[" @click="bump('speed', -5)">−</button>
+        <b id="pSpeedVal">{{ p.cfg.speed }}</b>
+        <button class="pbtn sm" data-speed="1" title="]" @click="bump('speed', 5)">＋</button>
+      </div>
     </div>
     <div class="pgroup">
-      <span>字号</span>
-      <button class="pbtn sm" data-size="-1" title="减号" @click="bump('size', -4)">−</button>
-      <b id="pSizeVal">{{ p.cfg.size }}</b>
-      <button class="pbtn sm" data-size="1" title="加号" @click="bump('size', 4)">＋</button>
+      <span class="plabel">字号</span>
+      <div class="pctl">
+        <button class="pbtn sm" data-size="-1" title="减号" @click="bump('size', -4)">A−</button>
+        <b id="pSizeVal">{{ p.cfg.size }}</b>
+        <button class="pbtn sm" data-size="1" title="加号" @click="bump('size', 4)">A+</button>
+      </div>
     </div>
-    <button class="pbtn" id="pCues" :class="{ on: p.cfg.cues }" title="C" @click="flip('cues')">{{ p.cfg.cues ? '提示 开' : '提示 关' }}</button>
-    <button class="pbtn" id="pMirror" :class="{ on: p.cfg.mirror }" title="M" @click="flip('mirror')">镜像</button>
-    <button class="pbtn" id="pRestart" title="R" @click="restart">⟲ 重来</button>
-    <span class="pgrow"></span>
-    <span class="pprogress" id="pProgress">{{ progress }}%</span>
-    <button class="pbtn" id="pClose" title="Esc" @click="close">✕ 退出</button>
+    <div class="pgroup">
+      <span class="plabel">提示</span>
+      <button class="pswitch" id="pCues" :class="{ on: p.cfg.cues }" title="C" :aria-pressed="String(p.cfg.cues)" @click="flip('cues')"><i></i><span class="sr">{{ p.cfg.cues ? '提示 开' : '提示 关' }}</span></button>
+    </div>
+    <span class="psep"></span>
+    <button class="pbtn" id="pMirror" :class="{ on: p.cfg.mirror }" title="M" @click="flip('mirror')"><Icon name="mirror" :size="14" />镜像</button>
+    <button class="pbtn" id="pRestart" title="R" @click="restart"><Icon name="refresh" :size="14" />重来</button>
+    <span class="psep"></span>
+    <div class="pgroup pgrow">
+      <span class="plabel">进度 <em id="pProgress">{{ progress }}%</em></span>
+      <div class="pbar"><i :style="{ width: `${progress}%` }"></i></div>
+    </div>
+    <button class="pbtn" id="pClose" title="Esc" @click="close"><Icon name="x" :size="14" />退出</button>
   </div>
 
   <!-- 点画面本身也能播放 / 暂停，录制时不用去够按钮；滚轮也能挪 -->
@@ -46,6 +58,7 @@
 <script setup>
 /* 提词器的画面：按速度匀速往上滚，上下键随时挪（念快了往回一点，念慢了往前赶一点），录完直接去总评 */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import Icon from './common/Icon.vue';
 import { usePrompterStore } from '../stores/prompter.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useSpeakStore } from '../stores/speak.js';

@@ -3,7 +3,7 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import '../styles/base.css';
 import '../styles/shell.css';
-import '../styles/app.css';
+import '../styles/admin.css';
 import AdminApp from './AdminApp.vue';
 
 createApp(AdminApp).use(createPinia()).mount('#cw');

@@ -14,6 +14,7 @@
     <p class="form-error" id="quickError">{{ q.error }}</p>
     <div class="modal-foot">
       <span class="grow"></span>
+      <button type="button" class="btn ghost" @click="q.open = false">取消</button>
       <BusyBtn class="btn primary" id="quickRun" :busy="q.running" @click="a.runQuick()">帮我填好</BusyBtn>
     </div>
   </Modal>
