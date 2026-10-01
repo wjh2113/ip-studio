@@ -12,11 +12,7 @@
  *   speak.js     口播提示、口播记录与评测、提词器
  *   versions.js  多平台版本与图文配图
  *   library.js   素材库与选题池
- *   insights.js  发布数据回填与复盘
- *   plan.js      用量、套餐与支付
  *   frameworks.js 写法框架：简报里的推荐与选择、框架库的浏览与编辑
- *   titles.js    标题候选
- *   jobs.js      长任务（出图、口播转写与评测）的轮询和任务中心
  *   quickstart.js 快速建号：贴自我介绍和旧文章，先把账号设定填出来
  * 这里先按顺序加载它们（core 最先），最后启动。 */
 import { api, el, esc, state, syncLength, toast } from './js/core.js';
@@ -31,11 +27,7 @@ import './js/review.js';
 import './js/speak.js';
 import './js/versions.js';
 import './js/library.js';
-import './js/insights.js';
-import './js/plan.js';
 import './js/frameworks.js';
-import './js/titles.js';
-import './js/jobs.js';
 import './js/quickstart.js';
 
 /* ---------------- 启动 ---------------- */

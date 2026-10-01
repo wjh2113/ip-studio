@@ -5,8 +5,9 @@ import { loadHistory, readSSE } from './compose.js';
 import { currentLabel, downloadAs, updateActionLabels } from './export.js';
 import { loadDraftSpeaks, renderCues } from './speak.js';
 import { illOf, renderIllusBar, renderMultiBar, renderVersionTabs, showVersion, ver, withIllus } from './versions.js';
-import { openMetrics } from './insights.js';
-import { openTitles } from './titles.js';
+import { useInsightsStore } from '../../web/src/stores/insights.js';
+import { useTitlesStore } from '../../web/src/stores/titles.js';
+import { legacy } from '../../web/src/lib/legacy.js';
 
 /* ==================================================================
  * 成稿编辑器：阅读/编辑双模式、划词改 AI、/ 唤起续写
@@ -118,6 +119,8 @@ export async function flushSave(snapshot = false) {
 }
 
 el.saveBtn.addEventListener('click', () => flushSave(true));
+
+legacy.flushSave = flushSave;
 
 window.addEventListener('beforeunload', (e) => {
   if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
@@ -467,8 +470,8 @@ el.confirmMenu.addEventListener('click', async (e) => {
   if (act === 'illus') { el.illusBtn.click(); return; }
   if (act === 'learn') { el.learnBtn.click(); return; }
   if (act === 'review') { el.reviewBtn.click(); return; }
-  if (act === 'metrics') { openMetrics(); return; }
-  if (act === 'titles') { openTitles(); return; }
+  if (act === 'metrics') { useInsightsStore().openMetrics(); return; }
+  if (act === 'titles') { useTitlesStore().open(); return; }
   if (act === 'archive') await archiveCurrent();
 });
 

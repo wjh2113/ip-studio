@@ -4,7 +4,7 @@ import { loadPersonas, loadSections } from './account.js';
 import { applyPersonaDefaults, loadIdeas } from './brief.js';
 import { loadHistory } from './compose.js';
 import { loadPool } from './library.js';
-import { loadPlan } from './plan.js';
+import { usePlanStore } from '../../web/src/stores/plan.js';
 
 /* ---------------- 登录 / 注册 ---------------- */
 let authMode = 'login';
@@ -59,7 +59,7 @@ export async function enterApp(user) {
   loadHistory();
   loadIdeas();
   loadPool();          // 侧栏一进来就该看到攒了多少选题
-  loadPlan();
+  usePlanStore().load();
   // 进了应用再通知：任务中心这类要登录才能拉数据的模块听这个，不在未登录时白打接口
   window.dispatchEvent(new Event('cw-enter'));
 }

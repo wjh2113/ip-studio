@@ -6,6 +6,7 @@ import { renderContent, setMode } from './editor.js';
 import { renderCues } from './speak.js';
 import { renderIllusBar, renderMultiBar, renderVersionTabs, ver } from './versions.js';
 import { addPool, loadMaterials, mat } from './library.js';
+import { legacy } from '../../web/src/lib/legacy.js';
 
 /* ---------------- 简报参数：默认跟账号走 ---------------- */
 
@@ -371,6 +372,8 @@ el.newBtn.addEventListener('click', () => {
 });
 
 /* ---------------- 渲染方向 ---------------- */
+legacy.setDraft = (d) => setDraft(d);
+
 export function setDraft(draft) {
   state.revOpen = false;
   state.revId = null;

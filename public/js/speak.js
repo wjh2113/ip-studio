@@ -2,7 +2,14 @@
 import { api, busy, el, esc, state, toast } from './core.js';
 import { setDraft } from './brief.js';
 import { flushSave, setMode } from './editor.js';
-import { activeJob, startJob, trackJob, waitJob } from './jobs.js';
+import { useJobsStore } from '../../web/src/stores/jobs.js';
+import { legacy } from '../../web/src/lib/legacy.js';
+
+const jobsStore = useJobsStore();
+const startJob = (path, body) => jobsStore.start(path, body);
+const waitJob = (job) => jobsStore.wait(job);
+const activeJob = (kind, match) => jobsStore.active(kind, match);
+const trackJob = (job) => jobsStore.track(job);
 
 /* ==================================================================
  * 口播提示：语气 / 重读 / 停顿 / 表情 / 动作
@@ -216,6 +223,8 @@ export async function loadSpeakHistory() {
       </div>`).join('');
   } catch { /* 未登录时静默 */ }
 }
+
+legacy.openSpeakRecord = (id) => openSpeakRecord(id);
 
 export async function openSpeakRecord(id) {
   let speak = (state.speaks || []).find((s) => s.id === id)

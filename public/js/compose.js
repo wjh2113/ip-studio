@@ -5,6 +5,7 @@ import { renderTopics, setDraft } from './brief.js';
 import { closeAssist, renderContent, setMode } from './editor.js';
 import { runReview } from './review.js';
 import { loadDraftSpeaks, loadSpeakHistory, onSpeakCheck, openSpeakRecord } from './speak.js';
+import { legacy } from '../../web/src/lib/legacy.js';
 
 /* ---------------- 第二步：流式成稿 ---------------- */
 export async function generate(index) {
@@ -99,6 +100,8 @@ export async function readSSE(res, onEvent) {
 }
 
 /* ---------------- 历史 ---------------- */
+legacy.loadHistory = () => loadHistory();
+
 export async function loadHistory() {
   if (state.historyMode === 'speaks') return loadSpeakHistory();
   try {

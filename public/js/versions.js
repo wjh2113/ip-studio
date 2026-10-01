@@ -3,7 +3,12 @@ import { markAts, placeCuts } from '../place.js';
 import { api, busy, el, esc, markdown, state, toast } from './core.js';
 import { platformLabel } from './compose.js';
 import { currentText, updateActionLabels } from './export.js';
-import { activeJob, startJob, waitJob } from './jobs.js';
+import { useJobsStore } from '../../web/src/stores/jobs.js';
+
+const jobsStore = useJobsStore();
+const startJob = (path, body) => jobsStore.start(path, body);
+const waitJob = (job) => jobsStore.wait(job);
+const activeJob = (kind, match) => jobsStore.active(kind, match);
 
 /* ==================================================================
  * 多平台版本

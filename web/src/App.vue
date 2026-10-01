@@ -26,7 +26,8 @@
   <InsightsModal />
   <Prompter />
 
-  <div class="toast hidden" id="toast"></div>
+  <Toast />
+  <AskDialog />
 </template>
 
 <script setup>
@@ -48,4 +49,6 @@ import PlanModal from './components/PlanModal.vue';
 import MetricsModal from './components/MetricsModal.vue';
 import InsightsModal from './components/InsightsModal.vue';
 import Prompter from './components/Prompter.vue';
+import Toast from './components/common/Toast.vue';
+import AskDialog from './components/common/AskDialog.vue';
 </script>

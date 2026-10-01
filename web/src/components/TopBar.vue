@@ -6,12 +6,10 @@
       <button data-view="hot">热点</button>
     </nav>
     <div class="topbar-right">
-      <!-- 模型标识和余额由 Vue 渲染：数据在 store 的 llm / quota，功能模块只改数据 -->
       <span class="chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle">{{ llmText }}</span>
-      <!-- 任务数角标归 Vue（store 的 jobsActive）；按钮的点击仍由 jobs.js 处理 -->
-      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" :class="{ busy: s.jobsActive > 0 }" title="出图、口播转写与评测这类要等的活，关掉页面也会接着做">任务<span class="jobs-badge" :class="{ hidden: !s.jobsActive }">{{ s.jobsActive || '' }}</span></button>
-      <!-- id 留着：plan.js 在这个按钮上挂了点击打开用量面板。按钮本身不会被 Vue 换掉，只换里面的字 -->
-      <button class="credit-chip" id="creditChip" :class="{ hidden: !s.quota, low }" :title="creditTitle"><template v-if="s.quota">{{ s.quota.label }} · 剩 <b>{{ s.quota.left.toLocaleString() }}</b></template></button>
+      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
+        title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()">任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
+      <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
       <span class="user-name" id="userName"></span>
       <a class="btn ghost small" href="/prompts" target="_blank" rel="noopener"
          title="每条提示词的产品定位、价值与功能逻辑">说明书</a>
@@ -23,8 +21,13 @@
 <script setup>
 import { computed } from 'vue';
 import { useStudioStore } from '../stores/studio.js';
+import { usePlanStore } from '../stores/plan.js';
+import { useJobsStore } from '../stores/jobs.js';
 
 const s = useStudioStore();
+const plan = usePlanStore();
+const jobs = useJobsStore();
+const quota = computed(() => plan.quota);
 
 const llmText = computed(() => {
   const l = s.llm;
@@ -42,7 +45,7 @@ const llmTitle = computed(() => {
 
 // 低于 15% 变红——这时候提醒还来得及，撞到 402 才说就晚了
 const low = computed(() => {
-  const q = s.quota;
+  const q = quota.value;
   return Boolean(q && (q.total ? q.left / q.total : 0) < 0.15);
 });
 

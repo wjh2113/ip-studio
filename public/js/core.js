@@ -1,6 +1,13 @@
 /* 前端 · core：全局共享：DOM 引用 el、状态 state、接口封装 api、通用小工具（转义、提示、Markdown 渲染等）。
  * state 就是 Pinia 里的那一份，组件和这些模块改的是同一份数据。 */
 import { useStudioStore } from '../../web/src/stores/studio.js';
+import { api } from '../../web/src/lib/api.js';
+import { toast } from '../../web/src/lib/feedback.js';
+import { countChars, esc, markdown } from '../../web/src/lib/text.js';
+import { lock } from '../../web/src/lib/busy.js';
+
+// 网络、提示、文本小工具已经搬到 web/src/lib/，这里转一手，旧模块的 import 不用改
+export { api, toast, countChars, esc, markdown };
 
 /* 前端逻辑：登录 → 简报 → 三个方向 → 流式成稿 → 历史 */
 
@@ -15,7 +22,7 @@ export const el = {
   topicsCard: $('topicsCard'), topics: $('topics'), retopicsBtn: $('retopicsBtn'),
   contentCard: $('contentCard'), content: $('content'), contentTitle: $('contentTitle'),
   counter: $('counter'), copyBtn: $('copyBtn'), downloadBtn: $('downloadBtn'),
-  steps: $('steps'), toast: $('toast'), briefCard: $('briefCard'), inheritNote: $('inheritNote'),
+  steps: $('steps'), briefCard: $('briefCard'), inheritNote: $('inheritNote'),
   personaList: $('personaList'), personaMoreBtn: $('personaMoreBtn'), personaSummary: $('personaSummary'),
   newPersonaBtn: $('newPersonaBtn'),
   personaModal: $('personaModal'), personaForm: $('personaForm'), personaError: $('personaError'),
@@ -39,16 +46,8 @@ export const el = {
   markBtn: $('markBtn'), markHint: $('markHint'), markDock: $('markDock'),
   voiceBtn: $('voiceBtn'), voiceNote: $('voiceNote'),
   briefCard: $('briefCard'), main: $('main'),
-  creditChip: $('creditChip'), planModal: $('planModal'), planClose: $('planClose'),
-  planPeriod: $('planPeriod'), planNow: $('planNow'), planBreakdown: $('planBreakdown'),
-  planCards: $('planCards'), planNote: $('planNote'),
-  payBox: $('payBox'), payTitle: $('payTitle'), payCancel: $('payCancel'), payQr: $('payQr'),
-  payChannels: $('payChannels'), payHint: $('payHint'),
   poolBox: $('poolBox'), poolNote: $('poolNote'), poolToggle: $('poolToggle'), poolList: $('poolList'),
-  metricsModal: $('metricsModal'), metricsClose: $('metricsClose'), metricsDate: $('metricsDate'),
-  metricsFields: $('metricsFields'), metricsNote: $('metricsNote'), metricsSave: $('metricsSave'),
-  insightsModal: $('insightsModal'), insightsClose: $('insightsClose'),
-  insightsBody: $('insightsBody'), insightsNote: $('insightsNote'), insightsLink: $('insightsLink'), headStick: document.querySelector('.head-stick'),
+  headStick: document.querySelector('.head-stick'),
   editBtn: $('editBtn'), backReadBtn: $('backReadBtn'), modeNow: $('modeNow'), toolHint: $('toolHint'),
   revBtn: $('revBtn'), revPane: $('revPane'), revClose: $('revClose'), revList: $('revList'),
   revLeft: $('revLeft'), revRight: $('revRight'), revLeftLabel: $('revLeftLabel'),
@@ -108,28 +107,6 @@ export function creatorLine(p) {
     .filter(Boolean).join(' · ');
 }
 
-/* ---------------- 网络 ---------------- */
-export async function api(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // 402 = 额度/套餐拦下来了。这一刻正是最愿意付费的时候，
-    // 所以不只是抛错，还广播出去把用量面板顶到人面前
-    if (res.status === 402) {
-      window.dispatchEvent(new CustomEvent('cw-quota', { detail: { message: data.error, quota: data.quota } }));
-    }
-    throw new Error(data.error || `请求失败（${res.status}）`);
-  }
-  // 花过钱的请求顺手刷新余额，不用等下次开面板
-  // 用事件通知余额面板刷新，而不是直接调 loadPlan：网络层不依赖具体功能模块
-  if (options.method && options.method !== 'GET') window.dispatchEvent(new Event('cw-spent'));
-  return data;
-}
-
 export function syncLength() {
   const opt = el.platformSel.selectedOptions[0];
   if (opt) el.briefForm.length.value = opt.dataset.length;
@@ -182,66 +159,13 @@ export function hint(text, isError = false) {
   el.briefHint.classList.toggle('error', isError);
 }
 
-let toastTimer;
-
-export function toast(message) {
-  el.toast.textContent = message;
-  el.toast.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.toast.classList.add('hidden'), 2600);
-}
-
 /* 同一时刻只允许一个提交在飞行中，防止重复点击生成重复记录 */
+/* 和 Vue 那边（web/src/lib/busy.js）共用一把锁 */
 export async function busy(btn, fn) {
-  if (state.busy) return;
-  state.busy = true;
+  if (lock.value) return;
+  lock.value = true;
   const label = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 处理中';
-  try { await fn(); } finally { state.busy = false; btn.disabled = false; btn.innerHTML = label; }
+  try { await fn(); } finally { lock.value = false; btn.disabled = false; btn.innerHTML = label; }
 }
-
-export const countChars = (s) => s.replace(/\s/g, '').length;
-
-export const esc = (s) => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-/* 极简 Markdown 渲染：先转义再套标签，够用且安全 */
-export function markdown(src) {
-  const lines = esc(src).split('\n');
-  const out = [];
-  let list = null;
-
-  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
-  const openList = (tag) => { if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; } };
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (!line.trim()) { closeList(); continue; }
-
-    const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${inline(h[2])}</h${n}>`); continue; }
-
-    if (/^(---|\*\*\*|___)\s*$/.test(line)) { closeList(); out.push('<hr />'); continue; }
-
-    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
-    if (ul) { openList('ul'); out.push(`<li>${inline(ul[1])}</li>`); continue; }
-
-    const ol = line.match(/^\s*\d+[.、)]\s+(.*)$/);
-    if (ol) { openList('ol'); out.push(`<li>${inline(ol[1])}</li>`); continue; }
-
-    const bq = line.match(/^&gt;\s?(.*)$/);
-    if (bq) { closeList(); out.push(`<blockquote>${inline(bq[1])}</blockquote>`); continue; }
-
-    closeList();
-    out.push(`<p>${inline(line)}</p>`);
-  }
-  closeList();
-  return out.join('');
-}
-
-const inline = (s) => s
-  .replace(/`([^`]+)`/g, '<code>$1</code>')
-  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
