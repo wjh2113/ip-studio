@@ -297,7 +297,7 @@ export const useAccountStore = defineStore('account', () => {
     mat.error = '';
     if (!body.title || !body.body) { mat.error = '标题和内容都要填'; return false; }
     try {
-      await api(`/personas/${page.id}/materials`, { method: 'POST', body });
+      await api('/materials', { method: 'POST', body });
       await loadMaterials(page.id);
       toast('已存进素材库');
       return true;

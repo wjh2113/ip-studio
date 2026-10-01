@@ -277,8 +277,9 @@ test('日历：每天一格，发布日 / 排期 / 成稿日落位，状态可�
 test('收件箱：按 key 去重、单条出错不影响整批、图片只给本人看、拒绝路径穿越', async () => {
   const items = [
     { key: 'pool-key-0001', kind: 'pool', personaId: null, subject: '地铁上想到的题', note: '记一下' },
-    { key: 'mat-key-0001', kind: 'material', personaId: ids.persona, title: '楼下早餐店', body: '老板五点开门', materialKind: '经历', tags: '观察', image: `data:image/png;base64,${PNG}` },
-    { key: 'mat-key-0002', kind: 'material', personaId: null, title: '没选账号' },
+    { key: 'mat-key-0001', kind: 'material', personaId: ids.persona, title: '楼下早餐店', body: '老板五点开门', materialKind: '文章', tags: '观察', image: `data:image/png;base64,${PNG}` },
+    { key: 'mat-key-0002', kind: 'material', personaId: null, title: '不挂账号也能存', body: '素材归用户' },
+    { key: 'mat-key-empty', kind: 'material', title: '' },
     { key: 'short', kind: 'pool', subject: 'key 太短' },
     { key: 'pool-key-0002', kind: 'pool', subject: '坏图片', image: 'data:image/gif;base64,R0lGODlh' },
     { key: 'pool-key-0003', kind: 'pool', subject: '假 PNG', image: `data:image/png;base64,${Buffer.from('not png').toString('base64')}` },
@@ -286,10 +287,11 @@ test('收件箱：按 key 去重、单条出错不影响整批、图片只给本
   ];
   let r = await app.call('POST', '/api/inbox', { items });
   assert.equal(r.status, 200, r.text);
-  const [pool, mat, noPersona, short, gif, fake, kind] = r.data.results;
+  const [pool, mat, freeMat, emptyTitle, short, gif, fake, kind] = r.data.results;
   assert.deepEqual({ ...pool, id: 0 }, { key: 'pool-key-0001', ok: true, kind: 'pool', id: 0 });
   assert.equal(mat.ok, true, JSON.stringify(mat));
-  for (const bad of [noPersona, short, gif, fake, kind]) {
+  assert.equal(freeMat.ok, true, JSON.stringify(freeMat)); // 素材不挂账号
+  for (const bad of [emptyTitle, short, gif, fake, kind]) {
     assert.equal(bad.ok, false);
     assert.ok(bad.error, JSON.stringify(bad));
   }
@@ -308,7 +310,7 @@ test('收件箱：按 key 去重、单条出错不影响整批、图片只给本
   assert.equal(r.data.results[1].id, r.data.results[0].id);
 
   const material = (await app.call('GET', `/api/personas/${ids.persona}/materials`)).data.materials.find((m) => m.id === mat.id);
-  assert.equal(material.kind, '经历');
+  assert.equal(material.kind, '文章');
   const url = material.body.match(/图片：(\S+)/)?.[1];
   assert.match(url, /^\/api\/inbox\/files\/u\d+-[0-9a-f]+\.png$/);
   r = await app.call('GET', url);
@@ -354,7 +356,7 @@ test('对标速存：粘贴文本、抓链接（跟跳转）、拒绝 http 以�
 
   r = await app.call('POST', `/api/benchmarks/${fetched.id}/save`, { to: 'material' });
   assert.equal(r.status, 200, r.text);
-  assert.equal(r.data.material.kind, '案例');
+  assert.equal(r.data.material.kind, '对标账号');
   assert.equal(r.data.material.title, '对标：三步搞定周末备菜');
   assert.equal(r.data.material.body, `先列清单\n集中处理\n分装冷藏\n来源：${page}/article`);
 

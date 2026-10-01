@@ -205,28 +205,29 @@ test('语气样本：加一篇就重建语气档案（以前 .map is not a funct
   assert.equal(r.data.added, 1);
 });
 
-test('素材库一级页：全量列表、按账号筛、增删改', async () => {
-  let r = await api.call('GET', '/api/personas');
-  const pid = r.data.personas[0].id;
-  r = await api.call('POST', `/api/personas/${pid}/materials`, {
-    kind: '经历', title: '第一次带队翻车', body: '把人带走一半之后才学会复盘。', tags: '管理,复盘',
+test('素材库：用户级创建、列表、链接提取、增删改（不挂账号）', async () => {
+  let r = await api.call('POST', '/api/materials', {
+    kind: '文章', title: '第一次带队翻车', body: '把人带走一半之后才学会复盘。', tags: '管理,复盘',
   });
   assert.equal(r.status, 200, r.text);
   const mid = r.data.material.id;
+  assert.equal(r.data.material.persona_id, null);
+  assert.equal(r.data.material.kind, '文章');
 
   r = await api.call('GET', '/api/materials');
   assert.equal(r.status, 200, r.text);
   assert.ok(r.data.materials.some((m) => m.id === mid));
-  assert.ok(r.data.kinds.includes('经历'));
-
-  r = await api.call('GET', `/api/materials?persona=${pid}`);
-  assert.ok(r.data.materials.some((m) => m.id === mid));
+  assert.ok(r.data.kinds.includes('文章'));
+  assert.ok(r.data.kinds.includes('链接'));
 
   r = await api.call('PUT', `/api/materials/${mid}`, {
-    kind: '案例', title: '第一次带队翻车', body: '复盘写进了新人手册。', tags: '管理',
+    kind: '对标账号', title: '第一次带队翻车', body: '复盘写进了新人手册。', tags: '管理',
   });
   assert.equal(r.status, 200, r.text);
-  assert.equal(r.data.material.kind, '案例');
+  assert.equal(r.data.material.kind, '对标账号');
+
+  r = await api.call('POST', '/api/materials/extract-url', { url: '' });
+  assert.equal(r.status, 400);
 
   r = await api.call('DELETE', `/api/materials/${mid}`);
   assert.equal(r.status, 200, r.text);

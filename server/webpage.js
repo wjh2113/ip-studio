@@ -16,6 +16,7 @@ import { isIP, isIPv4, isIPv6 } from 'node:net';
 export const FETCH_LIMITS = { timeoutMs: 8000, maxBytes: 2 * 1024 * 1024, redirects: 3 };
 export const OUTLINE_MAX = 12;
 const EXCERPT_CHARS = 300;
+const BODY_CHARS = 15000; // 素材库存正文用；对标速存仍只用 excerpt
 const ITEM_CHARS = 60;
 
 const allowPrivate = () => process.env.NODE_ENV === 'test' && process.env.BENCHMARK_ALLOW_PRIVATE === '1';
@@ -244,7 +245,7 @@ export function extractHtml(html) {
     outline = uniqueItems(from.map(firstSentence));
   }
   const text = squash(blockText(body));
-  return { title, outline, excerpt: clip(text, EXCERPT_CHARS) };
+  return { title, outline, excerpt: clip(text, EXCERPT_CHARS), text: clip(text, BODY_CHARS) };
 }
 
 /* 块级标签换成换行再去标签，段落边界留下来 */
@@ -277,5 +278,6 @@ export function extractText(text, title = '') {
     const paras = lines.filter((l) => title || l !== first).map((l) => l.replace(/^#+\s*/, '')).filter((p) => p.length >= 4);
     outline = uniqueItems(paras.map(firstSentence).filter((p) => p !== name));
   }
-  return { title: name, outline, excerpt: clip(squash(src.replace(/^#+\s*/gm, '')), EXCERPT_CHARS) };
+  const plain = squash(src.replace(/^#+\s*/gm, ''));
+  return { title: name, outline, excerpt: clip(plain, EXCERPT_CHARS), text: clip(plain, BODY_CHARS) };
 }

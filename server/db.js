@@ -490,13 +490,15 @@ export const Evals = {
   },
 };
 
-export const MATERIAL_KINDS = ['经历', '数据', '案例', '金句', '观察'];
+/* 设计稿分类：文章/图片/视频/链接/语音/框架参考/对标账号。旧「经历/数据/金句/观察」已迁到文章，「案例」迁到对标账号。 */
+export const MATERIAL_KINDS = ['文章', '图片', '视频', '链接', '语音', '框架参考', '对标账号'];
 
 export const Materials = {
-  async create(userId, personaId, m) {
+  /* 素材归用户，不挂账号；persona_id 一律写 null（列保留兼容旧数据与召回）。 */
+  async create(userId, m) {
     const t = now();
     return one(orm().insert(materials).values({
-      user_id: userId, persona_id: personaId, kind: m.kind, title: m.title,
+      user_id: userId, persona_id: null, kind: m.kind, title: m.title,
       body: m.body || '', tags: m.tags || '', created_at: t, updated_at: t,
     }).returning());
   },
@@ -509,11 +511,8 @@ export const Materials = {
   async byId(id, userId) {
     return one(orm().select().from(materials).where(and(eq(materials.id, id), eq(materials.user_id, userId))));
   },
-  /* personaId 省略 = 该用户全部；传 null = 未绑账号的；传数字 = 指定账号 */
-  async list(userId, personaId) {
-    const where = [eq(materials.user_id, userId)];
-    if (personaId !== undefined) where.push(same(materials.persona_id, personaId));
-    return orm().select().from(materials).where(and(...where)).orderBy(desc(materials.id));
+  async list(userId) {
+    return orm().select().from(materials).where(eq(materials.user_id, userId)).orderBy(desc(materials.id));
   },
   async remove(id, userId) {
     const rows = await orm().delete(materials).where(and(eq(materials.id, id), eq(materials.user_id, userId))).returning({ id: materials.id });

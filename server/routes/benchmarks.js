@@ -89,8 +89,8 @@ export async function handleBenchmarkSave(req, res, body, params) {
   if (to === 'material') {
     const source = `来源：${b.url || '粘贴的文本'}`;
     const outline = b.outline.join('\n').slice(0, 4000 - source.length - 1);
-    const material = await Materials.create(user.id, b.persona_id, {
-      kind: '案例',
+    const material = await Materials.create(user.id, {
+      kind: '对标账号',
       title: `对标：${b.title}`.slice(0, 80),
       body: outline ? `${outline}\n${source}` : source,
       tags: '对标',

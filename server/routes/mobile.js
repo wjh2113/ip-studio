@@ -218,13 +218,12 @@ async function cleanItem(user, it) {
     return { kind, personaId, image, subject, note: text(it.note, 500), source: text(it.source || '灵感', 20) || '灵感' };
   }
   if (kind === 'material') {
-    if (personaId === null) throw new ItemError('素材要选一个账号');
     const title = text(it.title, 80);
     if (!title) throw new ItemError('给这条素材起个标题');
     return {
       kind, personaId, image, title,
-      body: text(it.body, 4000),
-      materialKind: MATERIAL_KINDS.includes(it.materialKind) ? it.materialKind : '观察',
+      body: text(it.body, 15000),
+      materialKind: MATERIAL_KINDS.includes(it.materialKind) ? it.materialKind : '文章',
       tags: tagsOf(it.tags),
     };
   }
@@ -264,7 +263,7 @@ async function inboxOne(user, it) {
       }
       const row = c.kind === 'pool'
         ? await Pool.create(user.id, c.personaId, { subject: c.subject, note: withImageLine(c.note, url), source: c.source })
-        : await Materials.create(user.id, c.personaId, { kind: c.materialKind, title: c.title, body: withImageLine(c.body, url), tags: c.tags });
+        : await Materials.create(user.id, { kind: c.materialKind, title: c.title, body: withImageLine(c.body, url), tags: c.tags });
       await Inbox.setRef(user.id, key, row.id);
       return { key, ok: true, kind: c.kind, id: row.id };
     });

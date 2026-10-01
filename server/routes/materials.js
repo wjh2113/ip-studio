@@ -1,6 +1,7 @@
 /* 路由 · materials：素材库与选题池。从原 routes.js 原样拆出。 */
 import { MATERIAL_KINDS, Materials, Personas, Pool } from '../db.js';
 import { HttpError } from '../auth.js';
+import { extractHtml, extractText, fetchPage, FetchError } from '../webpage.js';
 import { json, requireUser } from './common.js';
 
 /* ==================================================================
@@ -9,17 +10,18 @@ import { json, requireUser } from './common.js';
  * 产品里最硬的一条规则是"栏目素材是全篇唯一可信的事实来源，不许编造"。
  * 但素材原来每篇现填、填完就丢。存下来之后：写作时按题材召回相关的几条，
  * 拼进 user 消息——素材越厚，能写的真东西越多，编造的余地越小。
+ * 素材归用户、不挂账号；写作召回看该用户全部素材。
  * ================================================================== */
 
+const BODY_MAX = 15000;
 
 /* 按题材召回素材。
  *
  * 刻意**不做向量检索**：素材是几十到几百条的量级，标题/标签/正文的字面重合
  * 已经够用，而且结果可解释——用户能看懂"为什么是这几条"。
  * 上限 6 条：再多会挤占正文该占的上下文，模型也开始硬塞。 */
-export async function recallMaterials(userId, personaId, text, limit = 6) {
-  if (!personaId) return [];
-  const all = await Materials.list(userId, personaId);
+export async function recallMaterials(userId, _personaId, text, limit = 6) {
+  const all = await Materials.list(userId);
   if (!all.length) return [];
 
   // 中文没有空格分词，按 2 字滑窗取词——够粗但对"AI组织变革"这类词组够用
@@ -43,7 +45,7 @@ export async function recallMaterials(userId, personaId, text, limit = 6) {
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.m);
 }
 
-/* 账号范围：不传 = 全部；none = 未绑账号；数字 = 该账号。和 /api/drafts、/api/today 同一口径 */
+/* 账号范围（选题池仍按账号筛）：不传 = 全部；none = 未绑账号；数字 = 该账号 */
 function personaScope(url) {
   const raw = url?.searchParams.get('persona');
   if (raw === null || raw === undefined || raw === '') return undefined;
@@ -52,30 +54,37 @@ function personaScope(url) {
   return Number(raw);
 }
 
-/* 素材库一级页：GET /api/materials?persona= */
-export async function handleMaterialsIndex(req, res, body, params, url) {
+/* 素材库一级页：GET /api/materials（全量，不按账号） */
+export async function handleMaterialsIndex(req, res) {
   const user = await requireUser(req);
-  const personaId = personaScope(url);
-  if (typeof personaId === 'number' && !await Personas.byId(personaId, user.id)) {
-    throw new HttpError(404, '账号不存在');
-  }
-  json(res, 200, { materials: await Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
+  json(res, 200, { materials: await Materials.list(user.id), kinds: MATERIAL_KINDS });
 }
 
+/* 兼容旧路径：仍按用户全量返回 */
 export async function handleMaterialList(req, res, body, params) {
   const user = await requireUser(req);
   const personaId = Number(params.id);
   if (!await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
-  json(res, 200, { materials: await Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
+  json(res, 200, { materials: await Materials.list(user.id), kinds: MATERIAL_KINDS });
 }
 
 const cleanMaterial = (b) => ({
   kind: MATERIAL_KINDS.includes(b?.kind) ? b.kind : MATERIAL_KINDS[0],
   title: String(b?.title || '').trim().slice(0, 80),
-  body: String(b?.body || '').trim().slice(0, 4000),
+  body: String(b?.body || '').trim().slice(0, BODY_MAX),
   tags: String(b?.tags || '').trim().slice(0, 200),
 });
 
+/* POST /api/materials —— 不挂账号 */
+export async function handleMaterialCreateUser(req, res, body) {
+  const user = await requireUser(req);
+  const m = cleanMaterial(body);
+  if (!m.title) throw new HttpError(400, '给这条素材起个标题');
+  if (!m.body) throw new HttpError(400, '素材内容不能为空——空的素材帮不上写作');
+  json(res, 200, { material: await Materials.create(user.id, m) });
+}
+
+/* 兼容：POST /api/personas/:id/materials —— 仍创建，但不绑 persona */
 export async function handleMaterialCreate(req, res, body, params) {
   const user = await requireUser(req);
   const personaId = Number(params.id);
@@ -83,7 +92,7 @@ export async function handleMaterialCreate(req, res, body, params) {
   const m = cleanMaterial(body);
   if (!m.title) throw new HttpError(400, '给这条素材起个标题');
   if (!m.body) throw new HttpError(400, '素材内容不能为空——空的素材帮不上写作');
-  json(res, 200, { material: await Materials.create(user.id, personaId, m) });
+  json(res, 200, { material: await Materials.create(user.id, m) });
 }
 
 export async function handleMaterialUpdate(req, res, body, params) {
@@ -99,6 +108,32 @@ export async function handleMaterialDelete(req, res, body, params) {
   const user = await requireUser(req);
   if (!await Materials.remove(Number(params.mid), user.id)) throw new HttpError(404, '素材不存在');
   json(res, 200, { ok: true });
+}
+
+/* POST /api/materials/extract-url —— 抓链接正文，前端再确认存库 */
+export async function handleMaterialExtractUrl(req, res, body) {
+  await requireUser(req);
+  const url = String(body?.url || '').trim();
+  if (!url) throw new HttpError(400, '请贴一个链接');
+  let page;
+  try {
+    page = await fetchPage(url);
+  } catch (err) {
+    if (err instanceof FetchError) throw new HttpError(422, err.message);
+    throw err;
+  }
+  const parsed = page.type === 'html' ? extractHtml(page.body) : extractText(page.body, '');
+  const title = (parsed.title || url).slice(0, 80);
+  const text = String(parsed.text || parsed.excerpt || '').trim();
+  if (!title && !text) throw new HttpError(422, '没从这个网页里读出正文（可能要登录或是动态加载的）');
+  const source = `来源：${page.url || url}`;
+  const bodyText = text ? `${text}\n\n${source}` : source;
+  json(res, 200, {
+    title,
+    body: bodyText.slice(0, BODY_MAX),
+    url: page.url || url,
+    excerpt: parsed.excerpt || '',
+  });
 }
 
 /* ==================================================================

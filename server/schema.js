@@ -142,7 +142,7 @@ export const materials = pgTable('materials', {
   id: id(),
   user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   persona_id: integer('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull().default('经历'),
+  kind: text('kind').notNull().default('文章'),
   title: text('title').notNull(),
   body: text('body').notNull().default(''),
   tags: text('tags').notNull().default(''),

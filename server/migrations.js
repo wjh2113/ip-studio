@@ -71,6 +71,19 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_benchmarks_persona ON benchmarks(user_id, persona_id, id DESC);
     `);
   } },
+  { version: 5, name: '素材库：设计稿分类、与账号解绑', up: async (db) => {
+    // 旧种类对到设计稿：经历/数据/金句/观察 → 文章；案例 → 对标账号。之后素材不再挂账号。
+    await db.run(`UPDATE materials SET kind = CASE kind
+      WHEN '经历' THEN '文章'
+      WHEN '数据' THEN '文章'
+      WHEN '金句' THEN '文章'
+      WHEN '观察' THEN '文章'
+      WHEN '案例' THEN '对标账号'
+      ELSE kind
+    END`);
+    await db.run(`UPDATE materials SET persona_id = NULL WHERE persona_id IS NOT NULL`);
+    await db.run(`ALTER TABLE materials ALTER COLUMN kind SET DEFAULT '文章'`);
+  } },
 ];
 
 function toPg(text) {

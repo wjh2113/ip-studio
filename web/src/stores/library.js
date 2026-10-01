@@ -1,11 +1,14 @@
-/* 素材库一级页：素材 CRUD + 选题池管理。挂在顶栏「素材库」，不钻进账号设定。
- * 数据按左侧选中的账号筛选（与创作记录同一套 personaId；「全部」看所有账号）。 */
+/* 素材库一级页：素材 CRUD + 选题池管理。挂在顶栏「素材库」。
+ * 素材归当前用户，不挂账号；选题池仍可按左侧账号筛。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
 import { ask, toast } from '../lib/feedback.js';
 import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
+
+const BODY_MAX = 15000;
+const FOLDER_FILE_CAP = 2000; // 目录树最多列这么多文件，防炸
 
 export const useLibraryStore = defineStore('library', () => {
   const tab = ref('materials'); // materials | pool
@@ -23,11 +26,11 @@ export const useLibraryStore = defineStore('library', () => {
   const form = reactive({
     open: false,
     id: null,
-    personaId: null,
     kind: '',
     title: '',
     body: '',
     tags: '',
+    sourceUrl: '',
   });
 
   const poolForm = reactive({ subject: '', note: '', plan_date: '' });
@@ -42,7 +45,7 @@ export const useLibraryStore = defineStore('library', () => {
     loading.value = true;
     error.value = '';
     try {
-      const data = await api(`/materials${personaQuery()}`);
+      const data = await api('/materials');
       list.value = data.materials || [];
       kinds.value = data.kinds || [];
       if (selectedId.value && !list.value.some((m) => m.id === selectedId.value)) selectedId.value = null;
@@ -83,28 +86,19 @@ export const useLibraryStore = defineStore('library', () => {
     return list.value.find((m) => m.id === selectedId.value) || null;
   }
 
-  function startCreate() {
-    const s = useStudioStore();
-    if (!s.personas.length) {
-      toast('先建一个账号，素材要挂在账号下');
-      return;
-    }
+  function startCreate(preset = {}) {
     form.open = true;
     form.id = null;
-    form.personaId = s.personaId || s.personas[0].id;
-    form.kind = kinds.value[0] || '经历';
-    form.title = '';
-    form.body = '';
-    form.tags = '';
+    form.kind = preset.kind || kinds.value[0] || '文章';
+    form.title = preset.title || '';
+    form.body = preset.body || '';
+    form.tags = preset.tags || '';
+    form.sourceUrl = preset.sourceUrl || '';
+    error.value = '';
   }
 
   /* 从剪贴板起草稿：第一行当标题，其余当正文 */
   async function importClipboard() {
-    const s = useStudioStore();
-    if (!s.personas.length) {
-      toast('先建一个账号，素材要挂在账号下');
-      return;
-    }
     let text = '';
     try {
       text = (await navigator.clipboard.readText()).trim();
@@ -113,22 +107,82 @@ export const useLibraryStore = defineStore('library', () => {
       return;
     }
     if (!text) { toast('剪贴板是空的'); return; }
-    startCreate();
     const lines = text.split(/\r?\n/);
-    form.title = lines[0].trim().slice(0, 80);
-    form.body = (lines.length > 1 ? lines.slice(1).join('\n') : text).trim().slice(0, 4000);
+    startCreate({
+      title: lines[0].trim().slice(0, 80),
+      body: (lines.length > 1 ? lines.slice(1).join('\n') : text).trim().slice(0, BODY_MAX),
+    });
     toast('已从剪贴板填入，核对后保存');
+  }
+
+  /* 粘贴链接 → 服务端抓正文 → 打开表单核对 */
+  async function importFromUrl() {
+    const filled = await ask.form({
+      title: '从链接提取',
+      fields: [
+        { key: 'url', label: '网页链接', placeholder: 'https://…', required: true },
+      ],
+      ok: '提取正文',
+    });
+    if (!filled) return;
+    const url = String(filled.url || '').trim();
+    if (!url) { toast('请贴一个链接'); return; }
+    try {
+      const data = await api('/materials/extract-url', { method: 'POST', body: { url } });
+      startCreate({
+        kind: '链接',
+        title: data.title || url,
+        body: data.body || '',
+        tags: '链接',
+        sourceUrl: data.url || url,
+      });
+      toast('已提取，核对后保存');
+    } catch (err) {
+      toast(err.message || '提取失败');
+    }
+  }
+
+  /* 选本地文件夹：浏览器读出相对路径，拼成目录树存成一条素材 */
+  async function importFolder(fileList) {
+    const files = [...(fileList || [])].filter((f) => f && f.webkitRelativePath);
+    if (!files.length) { toast('没有读到文件夹内容'); return; }
+    const root = files[0].webkitRelativePath.split('/')[0] || '本地文件夹';
+    const paths = files
+      .map((f) => f.webkitRelativePath)
+      .filter((p) => !p.split('/').some((seg) => seg === '.DS_Store' || seg === 'Thumbs.db'))
+      .sort((a, b) => a.localeCompare(b, 'zh'));
+    const capped = paths.slice(0, FOLDER_FILE_CAP);
+    const tree = formatDirTree(capped.map((p) => p.split('/').slice(1).filter(Boolean)));
+    const omitted = paths.length > FOLDER_FILE_CAP
+      ? `\n…另有 ${paths.length - FOLDER_FILE_CAP} 个文件未列出\n`
+      : '';
+    const body = [
+      `文件夹：${root}`,
+      `共 ${paths.length} 个文件`,
+      '',
+      tree || '(空文件夹)',
+      omitted,
+    ].join('\n').trim().slice(0, BODY_MAX);
+
+    startCreate({
+      kind: '文章',
+      title: `本地目录 · ${root}`.slice(0, 80),
+      body,
+      tags: '本地文件夹,目录',
+    });
+    toast(`已读入「${root}」共 ${paths.length} 个文件，核对后保存`);
   }
 
   function startEdit(m) {
     form.open = true;
     form.id = m.id;
-    form.personaId = m.persona_id;
     form.kind = m.kind;
     form.title = m.title;
     form.body = m.body;
     form.tags = m.tags || '';
+    form.sourceUrl = '';
     selectedId.value = m.id;
+    error.value = '';
   }
 
   function cancelForm() {
@@ -149,8 +203,7 @@ export const useLibraryStore = defineStore('library', () => {
         await api(`/materials/${form.id}`, { method: 'PUT', body });
         toast('已更新');
       } else {
-        if (!form.personaId) { error.value = '请选择账号'; return; }
-        await api(`/personas/${form.personaId}/materials`, { method: 'POST', body });
+        await api('/materials', { method: 'POST', body });
         toast('已存进素材库');
       }
       form.open = false;
@@ -222,7 +275,35 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     tab, kind, q, sort, viewMode, loading, list, kinds, selectedId, pool, error, form, poolForm,
     open, loadMaterials, loadPool, filtered, selected, countsByKind,
-    startCreate, importClipboard, startEdit, cancelForm, saveForm, remove,
+    startCreate, importClipboard, importFromUrl, importFolder, startEdit, cancelForm, saveForm, remove,
     addPool, datePool, removePool, writePool,
   };
 });
+
+/* 把相对路径片段列表排成缩进树。paths: string[][]，不含根目录名 */
+function formatDirTree(segmentsList) {
+  const root = { name: '', kids: new Map(), file: false };
+  for (const segs of segmentsList) {
+    let node = root;
+    segs.forEach((name, i) => {
+      const isFile = i === segs.length - 1;
+      if (!node.kids.has(name)) node.kids.set(name, { name, kids: new Map(), file: isFile });
+      node = node.kids.get(name);
+      if (isFile) node.file = true;
+    });
+  }
+  const lines = [];
+  function walk(node, prefix, isLast) {
+    if (node.name) {
+      lines.push(`${prefix}${isLast ? '└── ' : '├── '}${node.name}${node.file ? '' : '/'}`);
+      prefix += isLast ? '    ' : '│   ';
+    }
+    const kids = [...node.kids.values()].sort((a, b) => {
+      if (a.file !== b.file) return a.file ? 1 : -1;
+      return a.name.localeCompare(b.name, 'zh');
+    });
+    kids.forEach((kid, i) => walk(kid, prefix, i === kids.length - 1));
+  }
+  walk(root, '', true);
+  return lines.join('\n');
+}

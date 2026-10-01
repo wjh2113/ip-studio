@@ -4,7 +4,7 @@
       <div class="library-head">
         <div>
           <h2><Icon name="inbox" />素材库</h2>
-          <p class="hint">真实经历、数据、案例存这里；写作时按题材召回。选题灵感进「选题池」，蹭热点走顶栏「热点」。</p>
+          <p class="hint">文章、链接、对标等存在这里；写作时按题材召回。选题灵感进「选题池」，蹭热点走顶栏「热点」。</p>
         </div>
         <div class="library-tabs" role="tablist">
           <button type="button" role="tab" :aria-selected="lib.tab === 'materials'" :class="{ on: lib.tab === 'materials' }"
@@ -16,12 +16,9 @@
 
       <!-- —— 素材 —— -->
       <template v-if="lib.tab === 'materials'">
-        <p v-if="!s.personas.length" class="hot-note">
-          还没有账号。素材必须挂在账号下——先在左侧「＋ 新账号」，或去<a href="#" @click.prevent="goWrite">创作</a>里快速建号。
-        </p>
-        <p v-else-if="lib.error" class="hot-note bad">{{ lib.error }}</p>
+        <p v-if="lib.error" class="hot-note bad">{{ lib.error }}</p>
 
-        <div v-else class="library-layout">
+        <div class="library-layout">
           <!-- 左：分类 -->
           <aside class="library-kinds-nav" aria-label="素材分类">
             <div class="library-kinds-title">素材分类</div>
@@ -50,10 +47,6 @@
                 <Icon name="search" :size="14" />
                 <input id="libSearch" v-model="lib.q" type="search" placeholder="搜索标题、正文或标签…" maxlength="80" />
               </label>
-              <select id="libPersona" :value="s.personaId ?? ''" aria-label="按账号筛选" @change="onPersona">
-                <option value="">全部账号</option>
-                <option v-for="p in s.personas" :key="p.id" :value="p.id">{{ p.name }}</option>
-              </select>
               <div class="library-view-toggle" role="group" aria-label="视图">
                 <button type="button" :class="{ on: lib.viewMode === 'list' }" title="列表" @click="lib.viewMode = 'list'">
                   <Icon name="list" :size="14" />列表
@@ -67,6 +60,12 @@
                 <option value="recent">按最近更新</option>
               </select>
               <div class="library-actions">
+                <button type="button" class="btn ghost small" id="libFolderBtn" @click="pickFolder">
+                  <Icon name="archive" :size="14" />导入本地文件夹
+                </button>
+                <button type="button" class="btn ghost small" id="libUrlBtn" @click="lib.importFromUrl()">
+                  <Icon name="link" :size="14" />从链接提取
+                </button>
                 <button type="button" class="btn ghost small" id="libClipboardBtn" @click="lib.importClipboard()">
                   <Icon name="copy" :size="14" />从剪贴板导入
                 </button>
@@ -75,13 +74,18 @@
                 </button>
               </div>
             </div>
+            <input ref="folderInput" id="libFolderInput" type="file" webkitdirectory multiple class="sr-only"
+              @change="onFolderPicked" />
 
             <p v-if="lib.loading" class="hint">加载中…</p>
             <div v-else-if="!rows.length" class="pool-empty">
               <Icon name="inbox" :size="28" />
               <b>{{ lib.list.length ? '没有符合筛选的素材' : '还没有素材' }}</b>
-              <span>把真实经历、数据、案例存进来；写作时会按题材召回，模型不能编造之外的事。</span>
-              <button v-if="s.personas.length" type="button" class="btn primary small" @click="lib.startCreate()">＋ 新建素材</button>
+              <span>可新建、贴链接提取，或导入本地文件夹目录；写作时会按题材召回。</span>
+              <div class="library-empty-actions">
+                <button type="button" class="btn primary small" @click="lib.startCreate()">＋ 新建素材</button>
+                <button type="button" class="btn ghost small" @click="pickFolder">导入本地文件夹</button>
+              </div>
             </div>
 
             <template v-else>
@@ -97,7 +101,6 @@
                   <div class="library-main">
                     <b>{{ m.title }}</b>
                     <p>{{ clip(m.body) }}</p>
-                    <em v-if="personaName(m.persona_id)" class="persona-tag">{{ personaName(m.persona_id) }}</em>
                   </div>
                   <div class="mat-tags">
                     <span v-for="(t, i) in tagList(m.tags).slice(0, 4)" :key="i">{{ t }}</span>
@@ -125,7 +128,6 @@
                     <span v-for="(t, i) in tagList(m.tags).slice(0, 5)" :key="i">{{ t }}</span>
                   </div>
                   <div class="mat-card-foot">
-                    <em>{{ personaName(m.persona_id) || '未绑账号' }}</em>
                     <span>{{ stamp(m.updated_at || m.created_at) }}</span>
                   </div>
                 </article>
@@ -165,14 +167,8 @@
             </div>
 
             <div class="lib-detail-block">
-              <div class="lib-detail-label"><b>所属账号</b></div>
-              <div class="lib-persona-chip">
-                <span class="lib-persona-av">{{ (personaName(detail.persona_id) || '·')[0] }}</span>
-                <div>
-                  <b>{{ personaName(detail.persona_id) || '未绑定' }}</b>
-                  <span>用过 {{ detail.used_count || 0 }} 次 · 更新于 {{ stamp(detail.updated_at || detail.created_at) }}</span>
-                </div>
-              </div>
+              <div class="lib-detail-label"><b>使用</b></div>
+              <p class="hint" style="margin:0">用过 {{ detail.used_count || 0 }} 次 · 更新于 {{ stamp(detail.updated_at || detail.created_at) }}</p>
             </div>
 
             <p class="lib-disclaimer">素材仅作参考，写作时召回真东西；模型不能编造之外的事。</p>
@@ -227,11 +223,6 @@
           <button type="button" class="icon-btn" @click="lib.cancelForm()"><Icon name="x" /></button>
         </div>
         <div class="modal-body library-form">
-          <label v-if="!lib.form.id">挂到账号
-            <select v-model.number="lib.form.personaId">
-              <option v-for="p in s.personas" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
-          </label>
           <label>类型
             <select v-model="lib.form.kind">
               <option v-for="k in lib.kinds" :key="k" :value="k">{{ k }}</option>
@@ -241,12 +232,13 @@
             <input v-model="lib.form.title" maxlength="80" placeholder="一句话说清这条是什么" />
           </label>
           <label class="full">内容
-            <textarea v-model="lib.form.body" rows="6" maxlength="4000"
-              placeholder="具体细节：时间、数字、当时怎么想的、结果如何"></textarea>
+            <textarea v-model="lib.form.body" rows="8" maxlength="15000"
+              placeholder="具体细节，或粘贴链接提取 / 导入文件夹后的目录"></textarea>
           </label>
           <label class="full">标签
             <input v-model="lib.form.tags" maxlength="200" placeholder="逗号分隔，召回时权重更高" />
           </label>
+          <p v-if="lib.form.sourceUrl" class="hint">来源：{{ lib.form.sourceUrl }}</p>
           <p v-if="lib.error" class="form-error">{{ lib.error }}</p>
         </div>
         <div class="modal-foot">
@@ -259,7 +251,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import { useStudioStore } from '../stores/studio.js';
@@ -271,17 +263,21 @@ import { toast } from '../lib/feedback.js';
 const s = useStudioStore();
 const lib = useLibraryStore();
 const saving = useBusy();
+const folderInput = ref(null);
 
 const rows = computed(() => lib.filtered());
 const detail = computed(() => lib.selected());
 const counts = computed(() => lib.countsByKind());
 const openPool = computed(() => lib.pool.filter((x) => x.status !== 'done').length);
 
-watch(() => [s.view, s.personaId], ([view]) => {
+watch(() => s.view, (view) => {
   if (view === 'library') lib.open();
 });
 
-const KIND_ICON = { 经历: 'user', 数据: 'chart', 案例: 'file', 金句: 'sparkles', 观察: 'search' };
+const KIND_ICON = {
+  文章: 'doc', 图片: 'image', 视频: 'video', 链接: 'link',
+  语音: 'mic', 框架参考: 'layers', 对标账号: 'users',
+};
 function kindIcon(k) { return KIND_ICON[k] || 'inbox'; }
 
 function tagList(tags) {
@@ -298,12 +294,16 @@ function personaName(id) {
 function statusLabel(st) {
   return ({ idea: '待选', planned: '已排期', done: '已写成' })[st] || st;
 }
-function goWrite() {
-  s.view = 'write';
+function pickFolder() {
+  folderInput.value?.click();
 }
-function onPersona(ev) {
-  const v = ev.target.value;
-  s.personaId = v === '' ? null : Number(v);
+async function onFolderPicked(ev) {
+  const input = ev.target;
+  try {
+    await lib.importFolder(input.files);
+  } finally {
+    input.value = '';
+  }
 }
 async function copyBody(text) {
   try {

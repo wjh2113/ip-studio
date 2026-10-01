@@ -635,11 +635,13 @@
   width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
   background: var(--panel-2); color: var(--muted); flex: none;
 }
-.kind-ico[data-kind="经历"] { background: #eef3ff; color: #2f6bff; }
-.kind-ico[data-kind="数据"] { background: #e9f8ef; color: #16a34a; }
-.kind-ico[data-kind="案例"] { background: #fff5e5; color: #c76a00; }
-.kind-ico[data-kind="金句"] { background: #f3e8ff; color: #7c3aed; }
-.kind-ico[data-kind="观察"] { background: #e8f8f6; color: #0d9488; }
+.kind-ico[data-kind="文章"] { background: #eef3ff; color: #2f6bff; }
+.kind-ico[data-kind="图片"] { background: #fce7f3; color: #be185d; }
+.kind-ico[data-kind="视频"] { background: #ede9fe; color: #6d28d9; }
+.kind-ico[data-kind="链接"] { background: #e0f2fe; color: #0369a1; }
+.kind-ico[data-kind="语音"] { background: #e8f8f6; color: #0d9488; }
+.kind-ico[data-kind="框架参考"] { background: #fff5e5; color: #c76a00; }
+.kind-ico[data-kind="对标账号"] { background: #f3e8ff; color: #7c3aed; }
 .kind-ico[data-kind="pool"] { background: #fff5e5; color: #c76a00; }
 .kind-nav.pool-link { margin-top: 6px; border-top: 1px dashed var(--border); border-radius: 0 0 8px 8px; padding-top: 12px; }
 
@@ -683,21 +685,25 @@
   width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
   background: var(--panel-2); color: var(--muted);
 }
-.mat-thumb[data-kind="经历"] { background: #eef3ff; color: #2f6bff; }
-.mat-thumb[data-kind="数据"] { background: #e9f8ef; color: #16a34a; }
-.mat-thumb[data-kind="案例"] { background: #fff5e5; color: #c76a00; }
-.mat-thumb[data-kind="金句"] { background: #f3e8ff; color: #7c3aed; }
-.mat-thumb[data-kind="观察"] { background: #e8f8f6; color: #0d9488; }
+.mat-thumb[data-kind="文章"] { background: #eef3ff; color: #2f6bff; }
+.mat-thumb[data-kind="图片"] { background: #fce7f3; color: #be185d; }
+.mat-thumb[data-kind="视频"] { background: #ede9fe; color: #6d28d9; }
+.mat-thumb[data-kind="链接"] { background: #e0f2fe; color: #0369a1; }
+.mat-thumb[data-kind="语音"] { background: #e8f8f6; color: #0d9488; }
+.mat-thumb[data-kind="框架参考"] { background: #fff5e5; color: #c76a00; }
+.mat-thumb[data-kind="对标账号"] { background: #f3e8ff; color: #7c3aed; }
 .mat-kind {
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
   background: var(--panel-2); color: var(--muted); white-space: nowrap;
 }
-.mat-kind[data-kind="经历"] { background: #eef3ff; color: #2f6bff; }
-.mat-kind[data-kind="数据"] { background: #e9f8ef; color: #16a34a; }
-.mat-kind[data-kind="案例"] { background: #fff5e5; color: #c76a00; }
-.mat-kind[data-kind="金句"] { background: #f3e8ff; color: #7c3aed; }
-.mat-kind[data-kind="观察"] { background: #e8f8f6; color: #0d9488; }
+.mat-kind[data-kind="文章"] { background: #eef3ff; color: #2f6bff; }
+.mat-kind[data-kind="图片"] { background: #fce7f3; color: #be185d; }
+.mat-kind[data-kind="视频"] { background: #ede9fe; color: #6d28d9; }
+.mat-kind[data-kind="链接"] { background: #e0f2fe; color: #0369a1; }
+.mat-kind[data-kind="语音"] { background: #e8f8f6; color: #0d9488; }
+.mat-kind[data-kind="框架参考"] { background: #fff5e5; color: #c76a00; }
+.mat-kind[data-kind="对标账号"] { background: #f3e8ff; color: #7c3aed; }
 .mat-tags { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .mat-tags span {
   font-size: 11px; padding: 1px 7px; border-radius: 999px;
@@ -754,7 +760,11 @@
   padding: 10px 12px; background: var(--panel-2); border-radius: 8px;
 }
 
-.library-pool-add { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+.library-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 .library-pool-add input[type="text"], .library-pool-add input:not([type]) {
   flex: 1; min-width: 180px; height: 36px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px;
 }

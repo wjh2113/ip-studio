@@ -12,12 +12,13 @@ const persona = await Personas.create(user.id, {
   creator_age: '', creator_gender: '', creator_industry: '', creator_role: '', creator_traits: '',
 });
 
-test('素材召回：字面相关的召回，不相关的不给', async () => {
-  await Materials.create(user.id, persona.id, { kind: '数据', title: 'AI 让团队变小', body: '8 人团队走了 4 个，周报从 4.2 小时降到 47 分钟', tags: 'AI,团队' });
-  await Materials.create(user.id, persona.id, { kind: '经历', title: '周末备菜', body: '30 分钟做三个菜', tags: '做菜' });
+test('素材召回：字面相关的召回，不相关的不给（不按账号）', async () => {
+  await Materials.create(user.id, { kind: '文章', title: 'AI 让团队变小', body: '8 人团队走了 4 个，周报从 4.2 小时降到 47 分钟', tags: 'AI,团队' });
+  await Materials.create(user.id, { kind: '文章', title: '周末备菜', body: '30 分钟做三个菜', tags: '做菜' });
   assert.deepEqual((await recallMaterials(user.id, persona.id, 'AI 会让团队变小吗')).map((m) => m.title), ['AI 让团队变小']);
   assert.deepEqual(await recallMaterials(user.id, persona.id, '区块链跨境支付'), []);
-  assert.deepEqual(await recallMaterials(user.id, null, 'AI 团队'), []);
+  // personaId 已忽略：仍可按用户素材召回
+  assert.deepEqual((await recallMaterials(user.id, null, 'AI 团队')).map((m) => m.title), ['AI 让团队变小']);
 });
 
 async function newDraft() {
