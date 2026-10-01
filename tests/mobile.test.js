@@ -1,6 +1,6 @@
 /* 手机 App 接口：真的起服务走 HTTP（同 routes.test.js 的做法），数据用数据层直接造，省掉走模型的时间。
  * 覆盖：Bearer 登录与退出、今天（回填提醒的第 1 / 7 天规则、待发、选题池）、日历与标记发布、
- * 离线收件箱（去重、图片上传与只给本人看、路径穿越）、对标速存、发布包。 */
+ * 离线收件箱（去重、图片上传与只给本人看、路径穿越）、对标速存、发布包、语音记灵感的转写。 */
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -412,6 +412,21 @@ test('发布包：Markdown 转纯文本、话题标签、标题上限、配图�
 
   const stranger = client({ token: (await client().call('POST', '/api/auth/login', { username: `x${process.pid}`, password: 'secret123' }, { 'x-client': 'app' })).data.token });
   assert.equal((await stranger.call('GET', `/api/drafts/${id}/package`)).status, 404);
+});
+
+test('语音转文字：要登录、空录音报错、演示模式回固定转写', async () => {
+  const post = (c, body, type = 'audio/webm') => fetch(`${BASE}/api/transcribe`, {
+    method: 'POST',
+    headers: { 'content-type': type, 'x-filename': 'note.webm', ...(c?.token ? { authorization: `Bearer ${c.token}` } : {}) },
+    body,
+  });
+  const audio = new Uint8Array(4096).fill(1);
+  assert.equal((await post(null, audio)).status, 401);
+  assert.equal((await post(app, new Uint8Array(0))).status, 400);
+  const r = await post(app, audio);
+  assert.equal(r.status, 200);
+  const data = await r.json();
+  assert.ok(data.text.length >= 2, '应该回一段转写文字');
 });
 
 test('停服务', { timeout: 40_000 }, async () => {

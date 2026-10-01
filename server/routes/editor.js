@@ -3,6 +3,7 @@ import { Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
+import { userLimit } from '../limit.js';
 import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
 import { describe, json, requireUser, styleSamples, sys, withRetry } from './common.js';
 
@@ -73,6 +74,21 @@ const mockAssist = (body, selection) => {
 };
 
 /* 语音改稿：转写是修改要求。只套用能在正文里对上的 find，对不上的丢掉。 */
+/* 语音记灵感：一段录音转成文字，不落盘、不碰稿子。手机端「语音记」用，转出来的字用户还能改 */
+export async function handleTranscribe(req, res, file) {
+  const user = await requireUser(req);
+  userLimit(user.id, 'transcribe', 60, 10 * 60_000);
+  if (!file?.buffer?.length) throw new HttpError(400, '没有收到录音');
+  let text = '';
+  try {
+    text = String((await transcribeAudio(file.buffer, { filename: `note.${file.ext}`, mime: file.mime, userId: user.id })).text || '').trim();
+  } catch (err) {
+    throw new HttpError(502, String(err?.message || err));
+  }
+  if (text.length < 2) throw new HttpError(400, '没有听清，请再说一次');
+  json(res, 200, { text });
+}
+
 export async function handleVoiceEdit(req, res, file, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
