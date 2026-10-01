@@ -1100,7 +1100,7 @@ ${to.spec}
  * 绕开人物，一致性问题就不存在。
  * ================================================================== */
 
-import { IMAGE_MARK } from '../public/place.js';
+import { IMAGE_MARK } from '../shared/place.js';
 
 export { IMAGE_MARK };
 

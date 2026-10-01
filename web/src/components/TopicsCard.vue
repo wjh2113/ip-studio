@@ -32,7 +32,7 @@ import { computed } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
 import { useStudioStore } from '../stores/studio.js';
 import { useBriefStore } from '../stores/brief.js';
-import { callLegacy } from '../lib/legacy.js';
+import { useEditorStore } from '../stores/editor.js';
 
 const s = useStudioStore();
 const b = useBriefStore();
@@ -42,8 +42,8 @@ function back() {
   if (!s.streaming) b.goStep(1);
 }
 
-/* 选方向 → 第三步流式成稿（成稿区还在 public/js/compose.js） */
+/* 选方向 → 第三步流式成稿 */
 function generate(i) {
-  if (!s.streaming) callLegacy('generate', i);
+  useEditorStore().generate(i);
 }
 </script>

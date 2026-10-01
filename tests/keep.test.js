@@ -2,7 +2,7 @@ import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rebindCues, rebindIllus } from '../server/keep.js';
-import { IMAGE_MARK } from '../public/place.js';
+import { IMAGE_MARK } from '../shared/place.js';
 
 test('rebindCues：只留下正文里还能逐字找到的提示', async () => {
   const cues = { cues: [{ quote: '第一句' }, { quote: '被删掉的句子' }, { quote: '第三句' }] };

@@ -3,10 +3,10 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
 import { useHistoryStore } from './history.js';
+import { useEditorStore } from './editor.js';
 
 export const useTitlesStore = defineStore('titles', () => {
   const show = ref(false);
@@ -35,7 +35,7 @@ export const useTitlesStore = defineStore('titles', () => {
   async function open() {
     const s = useStudioStore();
     if (!s.draft?.content) { toast('还没有正文'); return; }
-    await callLegacy('flushSave', true);       // 先把编辑中的改动落盘，标题按最新正文起
+    await useEditorStore().flushSave(true);    // 先把编辑中的改动落盘，标题按最新正文起
     titles.value = [];
     show.value = true;
     load();

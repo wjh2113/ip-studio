@@ -46,19 +46,21 @@ await step('Esc 关面板', async () => {
   await page.waitForSelector('#planModal.hidden', { state: 'attached' });
   return 'ok';
 });
-await step('应用内确认框：取消不动、Esc 只关确认框', async () => {
-  await page.evaluate(() => { window.__r = 'pending'; window.ask.confirm({ title: '测试' }).then((v) => { window.__r = v; }); });
+await step('应用内确认框：Esc 取消不动，确认才删', async () => {
+  await page.evaluate(async () => {
+    await fetch('/api/drafts/topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: '确认框测试', platform: 'xiaohongshu', tone: '实用干货', length: 600 }) });
+  });
+  await page.reload();
+  await page.waitForSelector('#history .history-item');
+  await page.click('#history .history-item .del');
   await page.waitForSelector('.ask [data-yes]');
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => window.__r === false);
-  await page.evaluate(() => { window.ask.form({ title: '改名', fields: [{ key: 'n', label: '名字', required: true }] }).then((v) => { window.__f = v; }); });
-  await page.waitForSelector('.ask [data-k="n"]');
+  await page.waitForSelector('.ask', { state: 'detached' });
+  const still = (await page.$$('#history .history-item')).length;
+  await page.click('#history .history-item .del');
   await page.click('.ask [data-yes]');
-  const bad = await page.$eval('.ask [data-k="n"]', (n) => n.classList.contains('bad'));
-  await page.fill('.ask [data-k="n"]', '小王');
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => window.__f?.n === '小王');
-  return `空着提交标红=${bad}`;
+  await page.waitForFunction(() => !document.querySelector('#history .history-item'));
+  return `Esc 后还在 ${still} 条，确认后删掉`;
 });
 console.log(log.join('\n'));
 console.log('ERRORS', errors.length ? '\n' + errors.join('\n') : 'none');

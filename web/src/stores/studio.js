@@ -4,8 +4,7 @@ import { defineStore } from 'pinia';
  * 按业务拆出去的数据在同目录的其他 store：
  *   session 登录与启动 · account 账号设定 · brief 简报与方向 · history 创作记录 · sections 栏目
  *   frameworks 写法框架 · hot 热点 · plan 用量与支付 · jobs 后台任务 · titles 标题 · insights 回填与复盘
- *
- * 成稿区（第三步）还在 public/js：那几个模块通过 core.js 的 state（就是这里的 $state）读写同一份数据。 */
+ *   editor 成稿区 · versions 多平台与配图 · review 成稿检查 · speak 口播 · prompter 提词器 */
 export const useStudioStore = defineStore('studio', {
   state: () => ({
     user: null,
@@ -30,17 +29,14 @@ export const useStudioStore = defineStore('studio', {
     showArchived: false,
     speakCount: 0,
 
-    // 成稿区（public/js）用的
+    // 成稿区
     mode: 'read',        // read 阅读 | edit 编辑 | cue 口播
-    dirty: false,
-    assist: null,
-    voiceApplying: false,
-    revOpen: false,
+    dirty: false,        // 正文改了还没存
+    revOpen: false,      // 正文历史对照展开着
     revId: null,
     revText: '',
     revisions: [],
-    speaks: [],
-    focusSpeakId: null,
+    focusSpeakId: null,  // 展开着的那一遍口播
   }),
   getters: {
     /* 当前选中的账号设定；「全部创作」时是 null */

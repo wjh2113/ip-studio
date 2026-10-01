@@ -90,6 +90,8 @@ export function saveBlob(blob, filename) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);     // 有的浏览器只认挂在页面上的链接的 download 文件名
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

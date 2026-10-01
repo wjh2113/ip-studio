@@ -1,7 +1,7 @@
 /* 改稿保存时，按新正文留下还能对上的口播提示和配图。
    多平台版本不在这里动：正文长度变了，版本页自己标「需重做」。 */
 
-import { IMAGE_MARK, markAts } from '../public/place.js';
+import { IMAGE_MARK, markAts } from '../shared/place.js';
 
 export function rebindCues(text, cues) {
   const src = String(text ?? '');

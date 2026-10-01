@@ -5,7 +5,7 @@ import { DATA_DIR, Drafts, Personas, Usage } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON, generateText } from '../llm.js';
 import { buildDocx } from '../docx.js';
-import { IMAGE_MARK, markAts } from '../../public/place.js';
+import { IMAGE_MARK, markAts } from '../../shared/place.js';
 import { assertQuota } from '../quota.js';
 import { defineJob, enqueue, presentJob } from '../jobs.js';
 import { generate, imageInfo } from '../images.js';
@@ -250,8 +250,16 @@ export async function handleIllusImage(req, res, body, params, url) {
 
   const v = String(body?.version || '');
   const idx = Number(params.i);
-  const item = draft.illus?.[verKey(v)]?.items?.[idx];
+  let item = draft.illus?.[verKey(v)]?.items?.[idx];
   if (!item) throw new HttpError(400, '这个配图位不存在');
+  // 作者在配图栏里改过画面提示词：先存下来，出图用改过的（不带就沿用原来的）
+  const edited = typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : '';
+  if (edited && edited !== item.prompt) {
+    item = { ...item, prompt: edited };
+    const now = draft.illus[verKey(v)];
+    const next = { ...now, items: now.items.map((it, i) => (i === idx ? item : it)) };
+    await Drafts.setIllus(draft.id, user.id, { ...draft.illus, [verKey(v)]: next });
+  }
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
   // 额度不够当场告诉，别等排到了才失败
   await assertQuota(user.id, '图文配图', 1);

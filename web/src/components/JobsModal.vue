@@ -31,8 +31,8 @@ import { useStudioStore } from '../stores/studio.js';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { clock } from '../lib/text.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useBriefStore } from '../stores/brief.js';
+import { useSpeakStore } from '../stores/speak.js';
 
 const jobs = useJobsStore();
 const s = useStudioStore();
@@ -55,7 +55,7 @@ async function act(j, what) {
     else if (what === 'retry') await jobs.retry(j.id);
     else {
       jobs.show = false;
-      if (SPEAK_KINDS.has(j.kind)) await callLegacy('openSpeakRecord', j.payload.speakId);
+      if (SPEAK_KINDS.has(j.kind)) await useSpeakStore().openRecord(j.payload.speakId);
       else if (j.payload?.draftId) {
         if (s.draft?.id !== j.payload.draftId) {
           const { draft } = await api(`/drafts/${j.payload.draftId}`);

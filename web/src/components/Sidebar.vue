@@ -61,8 +61,19 @@
         </div>
       </div>
 
-      <!-- 口播记录还归 public/js/speak.js 管（拼 HTML、点开时往里插总评），和上面的列表分开放 -->
-      <div class="history" id="speakHistory" v-show="s.historyMode === 'speaks'"></div>
+      <!-- 口播记录：点开一遍跳到那篇的口播模式；稿子已经不在的，就地展开当时的总评 -->
+      <div class="history" id="speakHistory" v-show="s.historyMode === 'speaks'">
+        <div v-if="!sp.history.length" class="empty">还没有口播记录<br />生成口播提示后上传录音</div>
+        <div v-for="x in sp.history" :key="x.id" class="history-item" :class="{ active: s.focusSpeakId === x.id }" :data-speak="x.id"
+          @click="sp.openRecord(x.id)">
+          <div class="acts">
+            <button class="del" :data-speak-del="x.id" title="删除" @click.stop="sp.remove(x.id)">×</button>
+          </div>
+          <h4>{{ x.score == null ? '—' : `${x.score} 分` }}　{{ x.title || '未命名' }}</h4>
+          <p><span>{{ stamp(x.createdAt) }}</span><span>·</span><span>{{ speakLine(x) }}</span></p>
+          <div v-if="sp.orphan?.id === x.id" class="speak-orphan" @click.stop><SpeakReview :speak="sp.orphan" /></div>
+        </div>
+      </div>
 
       <div class="history-foot" id="historyFoot" :class="{ hidden: s.historyMode === 'speaks' || s.showArchived || !h.counts.activeDone }">
         <BusyBtn class="btn ghost small" id="archiveDoneBtn" :busy="h.archivingDone" @click="h.archiveDone()">把 {{ h.counts.activeDone }} 篇已完成的收起来</BusyBtn>
@@ -78,11 +89,15 @@ import { creatorLine, useAccountStore } from '../stores/account.js';
 import { DRAFT_STATUS, useHistoryStore } from '../stores/history.js';
 import { useBriefStore } from '../stores/brief.js';
 import { useFrameworksStore } from '../stores/frameworks.js';
+import { speakLine, useSpeakStore } from '../stores/speak.js';
+import SpeakReview from './SpeakReview.vue';
+import { stamp } from '../lib/text.js';
 
 const s = useStudioStore();
 const account = useAccountStore();
 const h = useHistoryStore();
 const brief = useBriefStore();
+const sp = useSpeakStore();
 
 const current = computed(() => s.currentPersona);
 

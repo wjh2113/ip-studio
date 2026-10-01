@@ -4,9 +4,9 @@ import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
 import { ask, toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
+import { useSpeakStore } from './speak.js';
 
 export const DRAFT_STATUS = { topics: '待选方向', writing: '生成中', done: '已完成' };
 
@@ -17,7 +17,7 @@ export const useHistoryStore = defineStore('history', () => {
 
   async function load() {
     const s = useStudioStore();
-    if (s.historyMode === 'speaks') { callLegacy('loadSpeakHistory'); return; }
+    if (s.historyMode === 'speaks') { useSpeakStore().loadHistory(); return; }
     try {
       const q = new URLSearchParams();
       if (s.personaId !== null) q.set('persona_id', s.personaId);

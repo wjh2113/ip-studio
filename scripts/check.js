@@ -14,7 +14,7 @@ import { join, relative } from 'node:path';
 import { ROOT } from '../server/paths.js';
 import { checkAsync } from './check-async.js';
 
-const DIRS = ['server', 'public', 'tests', 'scripts', 'web'];
+const DIRS = ['server', 'shared', 'public', 'tests', 'scripts', 'web'];
 const files = [];
 const vueFiles = [];
 const walk = (dir) => {

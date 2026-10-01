@@ -159,6 +159,15 @@ test('配图：排版位有画面提示词，出图走任务；同一张连点�
   assert.ok(job.result.image.file);
 });
 
+test('配图：改过的画面提示词随出图请求带上，存下来并用它出图', async () => {
+  const r = await api.call('POST', `/api/drafts/${draftId}/illus/0/image`, { async: true, prompt: '  窗边的一盆绿萝，清晨的光  ' });
+  assert.equal(r.status, 202, r.text);
+  const job = await untilJob(api, r.data.job.id);
+  assert.equal(job.status, 'done', job.error);
+  const d = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  assert.equal(d.illus.__main__.items[0].prompt, '窗边的一盆绿萝，清晨的光');
+});
+
 test('口播：上传录音（异步有任务号，同步等到总评），语音测评', async () => {
   let r = await api.call('POST', `/api/drafts/${draftId}/cues`, {});
   assert.equal(r.status, 200, r.text);

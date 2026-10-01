@@ -1,7 +1,7 @@
 /* 最小的 .docx：无压缩 zip + 一段 WordprocessingML。只嵌 png / jpeg。 */
 
 import { crc32 } from 'node:zlib';
-import { placeCuts } from '../public/place.js';
+import { placeCuts } from '../shared/place.js';
 
 const xml = (s) => String(s ?? '')
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')

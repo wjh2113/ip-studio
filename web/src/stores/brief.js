@@ -6,11 +6,14 @@ import { defineStore } from 'pinia';
 import { computed, reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
-import { callLegacy } from '../lib/legacy.js';
 import { useStudioStore } from './studio.js';
 import { useFrameworksStore } from './frameworks.js';
 import { useHistoryStore } from './history.js';
 import { useSectionsStore } from './sections.js';
+import { useEditorStore } from './editor.js';
+import { useVersionsStore } from './versions.js';
+import { useReviewStore } from './review.js';
+import { useSpeakStore } from './speak.js';
 
 const emptyForm = () => ({ subject: '', platform: '', tone: '', audience: '', length: '', keywords: '' });
 
@@ -149,16 +152,27 @@ export const useBriefStore = defineStore('brief', () => {
     }
   }
 
+  /* 离开当前稿子之前：编辑中没存的先存掉（存的是这篇，不会写到下一篇上），成稿区各块回到初始状态 */
+  function leaveDraft() {
+    const s = useStudioStore();
+    const ed = useEditorStore();
+    if (s.dirty) ed.flushSave(true);
+    ed.reset();
+    useVersionsStore().reset();
+    useReviewStore().reset();
+    useSpeakStore().reset();
+  }
+
   /* 打开一篇稿子（新出的方向、历史里点的、任务中心跳过来的）：直接落到它已经走到的那一步 */
   function setDraft(draft) {
     const s = useStudioStore();
+    leaveDraft();
     s.revOpen = false;
     s.revId = null;
     s.revText = '';
     s.revisions = [];
     s.draft = draft;
     fillFrom(draft);
-    callLegacy('draftChanged', draft);       // 第三步（成稿区）还在 public/js，让它跟着换
     if (draft.content) goStep(3, { done: true });
     else goStep(draft.topics?.length ? 2 : 1);
   }
@@ -186,8 +200,8 @@ export const useBriefStore = defineStore('brief', () => {
   /* 回到空白简报（新建、换账号、删掉当前稿时） */
   function reset() {
     const s = useStudioStore();
+    leaveDraft();
     s.draft = null;
-    callLegacy('draftChanged', null);
     goStep(1);
     Object.assign(form, emptyForm());
     draftNote.value = null;
