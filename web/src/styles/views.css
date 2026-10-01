@@ -668,6 +668,21 @@
 }
 .library-view-toggle button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
 .library-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.library-tagbar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 2px 0 4px;
+}
+.library-tagbar-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.tag-chip {
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.tag-chip.preset { border-style: dashed; }
+.tag-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.tag-chip i { font-style: normal; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.tag-chip.on i { color: var(--accent-ink); opacity: .7; }
+.tag-presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 
 .library-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .library-table.rich .library-th,

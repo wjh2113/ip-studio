@@ -4,7 +4,7 @@
       <div class="library-head">
         <div>
           <h2><Icon name="inbox" />素材库</h2>
-          <p class="hint">文章、链接、对标等存在这里；写作时按题材召回。选题灵感进「选题池」，蹭热点走顶栏「热点」。</p>
+          <p class="hint">文章、链接、对标等按形态分类；内容性质（经历、数据、案例…）用标签标，写作时按题材召回。选题灵感进「选题池」。</p>
         </div>
         <div class="library-tabs" role="tablist">
           <button type="button" role="tab" :aria-selected="lib.tab === 'materials'" :class="{ on: lib.tab === 'materials' }"
@@ -77,11 +77,21 @@
             <input ref="folderInput" id="libFolderInput" type="file" webkitdirectory multiple class="sr-only"
               @change="onFolderPicked" />
 
+            <div class="library-tagbar" aria-label="按标签筛选">
+              <span class="library-tagbar-label">标签</span>
+              <button type="button" class="tag-chip" :class="{ on: !lib.tag }" @click="lib.tag = ''">全部</button>
+              <button v-for="t in lib.allTags()" :key="t" type="button" class="tag-chip"
+                :class="{ on: lib.tag === t, preset: lib.CONTENT_TAGS.includes(t) }"
+                @click="lib.tag = lib.tag === t ? '' : t">
+                {{ t }}<i v-if="tagCounts[t]">{{ tagCounts[t] }}</i>
+              </button>
+            </div>
+
             <p v-if="lib.loading" class="hint">加载中…</p>
             <div v-else-if="!rows.length" class="pool-empty">
               <Icon name="inbox" :size="28" />
               <b>{{ lib.list.length ? '没有符合筛选的素材' : '还没有素材' }}</b>
-              <span>可新建、贴链接提取，或导入本地文件夹目录；写作时会按题材召回。</span>
+              <span>可新建、贴链接提取，或导入本地文件夹；用「经历 / 数据 / 案例」等标签标内容性质，写作时按题材召回。</span>
               <div class="library-empty-actions">
                 <button type="button" class="btn primary small" @click="lib.startCreate()">＋ 新建素材</button>
                 <button type="button" class="btn ghost small" @click="pickFolder">导入本地文件夹</button>
@@ -156,7 +166,7 @@
               </div>
 
               <div class="library-foot">
-                <span>共 {{ rows.length }} 条素材<template v-if="lib.kind || lib.q">（筛选自 {{ lib.list.length }} 条）</template></span>
+                <span>共 {{ rows.length }} 条素材<template v-if="lib.kind || lib.tag || lib.q">（筛选自 {{ lib.list.length }} 条）</template></span>
                 <span class="hint">素材只作参考，不会编造</span>
               </div>
             </template>
@@ -263,6 +273,11 @@
           </label>
           <label class="full">标签
             <input v-model="lib.form.tags" maxlength="200" placeholder="逗号分隔，召回时权重更高" />
+            <div class="tag-presets">
+              <span class="hint">内容性质：</span>
+              <button v-for="t in lib.CONTENT_TAGS" :key="t" type="button" class="tag-chip"
+                :class="{ on: lib.formHasTag(t) }" @click="lib.toggleFormTag(t)">{{ t }}</button>
+            </div>
           </label>
           <p v-if="lib.form.sourceUrl" class="hint">来源：{{ lib.form.sourceUrl }}</p>
           <p v-if="lib.error" class="form-error">{{ lib.error }}</p>
@@ -295,6 +310,7 @@ const refreshTarget = ref(null);
 const rows = computed(() => lib.filtered());
 const detail = computed(() => lib.selected());
 const counts = computed(() => lib.countsByKind());
+const tagCounts = computed(() => lib.countsByTag());
 const openPool = computed(() => lib.pool.filter((x) => x.status !== 'done').length);
 
 watch(() => s.view, (view) => {

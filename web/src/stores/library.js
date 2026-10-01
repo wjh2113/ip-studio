@@ -13,6 +13,7 @@ const FOLDER_FILE_CAP = 2000; // 目录树最多列这么多文件，防炸
 export const useLibraryStore = defineStore('library', () => {
   const tab = ref('materials'); // materials | pool
   const kind = ref('');         // '' = 全部种类
+  const tag = ref('');          // '' = 不按标签筛；经历/数据等内容性质走标签
   const q = ref('');
   const sort = ref('used');     // used | recent
   const viewMode = ref('list'); // list | card
@@ -22,6 +23,10 @@ export const useLibraryStore = defineStore('library', () => {
   const selectedId = ref(null);
   const pool = ref([]);
   const error = ref('');
+
+  /* 内容性质：原产品分类，现作推荐标签（左侧 kind 跟设计稿的形态分类） */
+  const CONTENT_TAGS = ['经历', '数据', '案例', '金句', '观察'];
+
 
   const form = reactive({
     open: false,
@@ -71,8 +76,13 @@ export const useLibraryStore = defineStore('library', () => {
 
   function filtered() {
     const needle = q.value.trim().toLowerCase();
+    const wantTag = tag.value.trim();
     const rows = list.value.filter((m) => {
       if (kind.value && m.kind !== kind.value) return false;
+      if (wantTag) {
+        const tags = String(m.tags || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean);
+        if (!tags.includes(wantTag)) return false;
+      }
       if (!needle) return true;
       return `${m.title} ${m.body} ${m.tags}`.toLowerCase().includes(needle);
     });
@@ -80,6 +90,44 @@ export const useLibraryStore = defineStore('library', () => {
       return [...rows].sort((a, b) => (b.used_count || 0) - (a.used_count || 0) || b.id - a.id);
     }
     return [...rows].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')) || b.id - a.id);
+  }
+
+  /* 标签栏：推荐内容标签在前，再跟素材里出现过的其它标签 */
+  function allTags() {
+    const seen = new Set();
+    const out = [];
+    for (const t of CONTENT_TAGS) {
+      if (!seen.has(t)) { seen.add(t); out.push(t); }
+    }
+    for (const m of list.value) {
+      for (const t of String(m.tags || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean)) {
+        if (!seen.has(t)) { seen.add(t); out.push(t); }
+      }
+    }
+    return out;
+  }
+
+  function countsByTag() {
+    const map = {};
+    for (const t of allTags()) map[t] = 0;
+    for (const m of list.value) {
+      for (const t of String(m.tags || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean)) {
+        map[t] = (map[t] || 0) + 1;
+      }
+    }
+    return map;
+  }
+
+  function toggleFormTag(name) {
+    const cur = String(form.tags || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean);
+    const i = cur.indexOf(name);
+    if (i >= 0) cur.splice(i, 1);
+    else cur.push(name);
+    form.tags = cur.join('，');
+  }
+
+  function formHasTag(name) {
+    return String(form.tags || '').split(/[,，]/).map((t) => t.trim()).includes(name);
   }
 
   function selected() {
@@ -283,8 +331,10 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    tab, kind, q, sort, viewMode, loading, list, kinds, selectedId, pool, error, form, poolForm,
-    open, loadMaterials, loadPool, filtered, selected, countsByKind,
+    tab, kind, tag, q, sort, viewMode, loading, list, kinds, selectedId, pool, error, form, poolForm,
+    CONTENT_TAGS,
+    open, loadMaterials, loadPool, filtered, selected, countsByKind, allTags, countsByTag,
+    toggleFormTag, formHasTag,
     startCreate, importClipboard, importFromUrl, importFolder, refreshFolder, isLocalFolder,
     startEdit, cancelForm, saveForm, remove,
     addPool, datePool, removePool, writePool,
