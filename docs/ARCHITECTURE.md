@@ -97,7 +97,7 @@ flowchart LR
   `sections` 栏目 · `frameworks` 写法框架 · `hot` 热点 · `editor` 成稿区（流式成稿、保存、改写、正文历史、语音改稿、导出）·
   `versions` 多平台与配图 · `review` 成稿检查 · `speak` 口播 · `prompter` 提词器 · `plan` 用量与支付 · `jobs` 后台任务 · `titles` 标题 · `insights` 回填与复盘。
 - `src/lib/`：不依赖界面的小工具。`api.js`（请求、流式、上传、下载）、`bus.js`（模块间通知）、`feedback.js`（`toast`、`ask`）、`busy.js`（提交中的锁）、`text.js`（Markdown、转义、日期）、`caret.js`（编辑框光标坐标）、`escape.js`（Esc 只关最上层）、`reveal.js`（营销页渐入）。
-- `src/styles/`：`app.css`（开头是设计令牌，各页面共用）和落地页、营销页、说明书各自的样式。`web/public/` 里的图标原样拷到 `dist/` 根目录。
+- `src/styles/`：`base.css`（设计令牌 + 通用控件，各页面都先引它）、`shell.css`（登录页、顶栏、侧栏）、`create.css`（创作前两步）、`workbench.css`（成稿工作台）、`views.css`（热点、账号设定、提词器、各弹窗）、`admin.css`，以及落地页、营销页、说明书各自的样式。设计依据是 `docs/LOVART-PROMPTS-WEB.md` 和 `export/` 里的设计图。图标是 `components/common/Icon.vue` 里自己画的线性图标，不引图标库。`web/public/` 里的图标原样拷到 `dist/` 根目录。
 - `shared/place.js`：插图位置算法，前端阅读区和服务端导出 Word 共用一份。
 
 约定：
@@ -137,7 +137,7 @@ flowchart LR
 | 新接口 | `server/index.js` 的 `ROUTES` 加一行 + 对应 `server/routes/<域>.js` 里 export 处理函数 |
 | 要跑很久的活 | 在业务路由里 `defineJob` 登记一种任务，接口里 `enqueue`；前端用 `stores/jobs.js` 的 `start` / `wait` |
 | 表结构 | `server/schema.js` 改字段，并在 `server/migrations.js` 末尾加一个编号迁移 |
-| 页面结构 / 样式 | `web/src/components/*.vue` / `web/src/styles/app.css`（开头是设计令牌）。改完 `npm run build:web` |
+| 页面结构 / 样式 | `web/src/components/*.vue` / `web/src/styles/*.css`（令牌在 `base.css` 开头）。改完 `npm run build:web` |
 | 页面行为、数据 | `web/src/stores/<业务>.js` |
 
 ## 本地开发

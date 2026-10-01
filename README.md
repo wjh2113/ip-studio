@@ -945,7 +945,7 @@ web/              前端（Vue 3 + Pinia，Vite 构建到 dist/）
   src/stores/     按业务拆的数据与动作（账号、简报、成稿区、口播、配图、热点、用量……）
   src/lib/        api、通知、提示与确认框、文本工具
   src/admin/ · src/prompts/ · src/landing/ · src/promo/   后台、提示词说明书、落地页、投放页
-  src/styles/     样式（设计令牌在 app.css 开头）
+  src/styles/     样式（设计令牌在 base.css 开头）
 tests/            node:test 单测（npm test）；tests/ui/ 浏览器回归（npm run test:ui）
 scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdcloud.sh 部署
 ```

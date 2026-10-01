@@ -46,7 +46,7 @@ await step('后台各分区都能切过去', async () => {
   const seen = [];
   for (const k of keys) {
     await page.click(`#adminNav [data-sec="${k}"]`);
-    await page.waitForSelector(`.admin-main > .card[data-sec="${k}"]:not([hidden])`);
+    await page.waitForSelector(`.admin-main > [data-sec="${k}"]:not([hidden])`);
     seen.push(k);
   }
   return seen.join(' ');

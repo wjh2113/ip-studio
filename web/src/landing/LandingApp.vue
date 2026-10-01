@@ -3,87 +3,69 @@
     <div class="lp-in">
       <span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></span>
       <span class="grow"></span>
+      <a class="lp-link" href="#how">功能</a>
+      <a class="lp-link" href="#price">价格</a>
       <a class="lp-link" href="/prompts">提示词说明书</a>
-      <a class="btn primary small" href="/">登录</a>
+      <a class="lp-link strong" href="/">登录</a>
     </div>
   </header>
 
   <main>
-    <!-- 首屏：先说清楚"和别的 AI 写作工具差在哪"，而不是"我能写文案" -->
+    <!-- 首屏只留四样：品牌、一句主标题、一句副标题、一组按钮（加一句免费档说明）。功能列表不进首屏 -->
     <section class="lp-hero">
-      <div class="lp-glow" aria-hidden="true"></div>
       <div class="lp-in">
-        <span class="lp-badge">自媒体创作 · 从选题到成稿</span>
-        <h1>AI 写的东西一眼假，<br>不是因为它不会写</h1>
-        <p class="lead">
-          是因为它不了解你的号，也不知道你真实经历过什么。<br>
-          自媒体助手把这两件事变成账号的资产——<b>用得越久，出来的东西越像你写的</b>。
-        </p>
+        <h1 class="lp-brand">自媒体助手</h1>
+        <p class="lp-title">AI 写的东西一眼假，不是因为它不会写</p>
+        <p class="lead">是因为它不了解你的号，也不知道你真实经历过什么——这里把这两件事变成账号的资产，<b>用得越久，越像你写的</b>。</p>
         <div class="lp-cta">
-          <a class="btn primary" href="/">登录进入</a>
-          <a class="btn ghost" href="#how">先看它怎么工作</a>
+          <a class="btn primary lg" href="/">登录进入<Icon name="arrow-right" :size="16" /></a>
+          <a class="btn ghost lg" href="#how">先看怎么工作<Icon name="play" :size="13" /></a>
         </div>
-        <p class="lp-fine">免费档不需要绑卡。文章配图是付费功能。</p>
+        <p class="lp-fine"><Icon name="check-circle" :size="15" />免费档不需要绑卡，够写几十篇稿子。文章配图是付费功能。</p>
 
-        <!-- 产品预览。一个视觉化的产品，落地页上却看不到产品的样子，
-             是最说不过去的事。这块是纯 CSS 画的，不是截图——
-             截图会随产品变化过期，而且在暗色模式下会打架。 -->
+        <!-- 产品预览：选题方向三选一。纯 CSS 画的，不是截图——截图会随产品变化过期，暗色模式下也会打架 -->
         <div class="lp-shot" aria-hidden="true">
-          <div class="lp-shot-bar">
-            <i></i><i></i><i></i>
-            <span class="lp-shot-url">自媒体助手 · 选择话题方向</span>
+          <div class="lp-shot-side">
+            <span class="brand"><span class="brand-mark"></span><span>自媒体助手</span></span>
+            <i class="on">创作</i><i>热点</i><i>账号设定</i><i>创作记录</i>
           </div>
           <div class="lp-shot-body">
-            <div class="lp-shot-steps">
-              <span>1 确定选题</span><span class="on">2 选择话题方向</span><span>3 创作内容</span>
-            </div>
-            <div class="lp-shot-card">
-              <div class="lp-shot-l">
+            <div class="lp-shot-steps"><span class="done">✓ 确定选题</span><span class="on"><b>2</b>选择话题方向</span><span><b>3</b>创作内容</span></div>
+            <h4 class="lp-shot-h">三个话题方向</h4>
+            <div class="lp-shot-cards">
+              <div class="lp-shot-card on">
                 <span class="lp-shot-tag"><b>1</b>反常识</span>
-                <h4>AI 14天造芯片，最先慌的不是芯片厂，是你公司的技术总监</h4>
-                <div class="lp-shot-diff"><b>差异</b>从AI造芯片事件切入，指出中小企业主最该担心的不是技术壁垒，而是依赖技术壁垒的岗位——区别于另外两个方向，它不讨论行业颠覆。</div>
-                <div class="lp-shot-btn">用这个方向写</div>
+                <h5>AI 14 天造芯片，最先慌的不是芯片厂，是你公司的技术总监</h5>
+                <p><em>差异</em>从 AI 造芯片切入，讲依赖技术壁垒的岗位，而不是行业颠覆。</p>
+                <span class="lp-shot-btn">重新生成这篇</span>
               </div>
-              <div class="lp-shot-r">
-                <b>结构</b>
-                <ul><li>先抛热点：技术门槛骤降，但中小企业主往往觉得与自己无关</li>
-                  <li>转折：你的技术总监每天都在干什么？</li>
-                  <li>反问：如果AI能自己造芯片，你的技术壁垒到底是谁的饭碗？</li></ul>
-              </div>
-            </div>
-            <div class="lp-shot-card dim">
-              <div class="lp-shot-l">
+              <div class="lp-shot-card t1">
                 <span class="lp-shot-tag"><b>2</b>行业视角</span>
-                <h4>AI造芯片背后，是每个行业都在发生的'去黑盒化'</h4>
+                <h5>AI 造芯片背后，是每个行业都在发生的「去黑盒化」</h5>
+                <p><em>差异</em>从老师傅经验讲起，落到每个行业都在发生的变化。</p>
+                <span class="lp-shot-btn ghost">用这个方向写</span>
               </div>
-              <div class="lp-shot-r"><b>结构</b><ul><li>解释'黑盒'概念：每个行业都有说不清道不明的老师傅经验</li></ul></div>
+              <div class="lp-shot-card t2">
+                <span class="lp-shot-tag"><b>3</b>个人经历</span>
+                <h5>我在芯片厂干了五年，这条新闻我看了三遍</h5>
+                <p><em>差异</em>用作者自己素材库里的经历，第一人称讲。</p>
+                <span class="lp-shot-btn ghost">用这个方向写</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 问题：说人话，不堆形容词 -->
-    <section class="lp-band">
-      <div class="lp-in lp-cols">
-        <div>
-          <h3>通用 AI 写出来的</h3>
-          <ul class="lp-bad">
-            <li>「在当今快速发展的时代」这类开头</li>
-            <li>编一个没发生过的案例来举例</li>
-            <li>每篇都是同一个语气，换个号也能发</li>
-            <li>写完就完了——改平台版本、拆口播稿还得自己来</li>
-          </ul>
-        </div>
-        <div>
-          <h3>这里想做到的</h3>
-          <ul class="lp-good">
-            <li>按这个号的定位、栏目和你的人设写</li>
-            <li><b>只用你提供的真实素材</b>，不许编造之外的事</li>
-            <li>喂几篇你自己写的，它学你的语感</li>
-            <li>一路做到多平台版本、口播提示和提词器</li>
-          </ul>
-        </div>
+    <!-- 对比：说人话，不堆形容词 -->
+    <section class="lp-in lp-vs">
+      <h2 class="lp-h2">通用 AI vs 自媒体助手</h2>
+      <div class="lp-table">
+        <div class="lp-tr head"><span>对比维度</span><span>通用 AI</span><span><span class="brand-mark sm"></span>自媒体助手</span></div>
+        <div class="lp-tr"><span>理解账号</span><span>不知道你是谁，每篇都是同一个语气，换个号也能发</span><span>按这个号的定位、栏目和你的人设写，喂几篇旧稿学你的语感</span></div>
+        <div class="lp-tr"><span>内容可靠</span><span>编一个没发生过的案例来举例</span><span><b>只用你提供的真实素材</b>，不许编造之外的经历、时间、数字</span></div>
+        <div class="lp-tr"><span>文字质感</span><span>「在当今快速发展的时代」这类开头</span><span>先出三个角度不同的方向，选定再写；成稿后自动检查套话和风险</span></div>
+        <div class="lp-tr"><span>写完之后</span><span>改平台版本、拆口播稿还得自己来</span><span>一路做到多平台版本、配图、口播提示和提词器</span></div>
       </div>
     </section>
 
@@ -244,11 +226,14 @@
 
   <footer class="lp-foot">
     <div class="lp-in">
-      <span>自媒体助手</span>
-      <span class="grow"></span>
-      <a href="/prompts">提示词说明书</a>
-      <a href="/">登录</a>
+      <div class="lp-foot-brand">
+        <span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></span>
+        <p>懂你的账号，帮你做出更好的内容</p>
+      </div>
+      <div class="lp-foot-col"><b>产品</b><a href="#how">功能</a><a href="#price">价格</a><a href="/">登录</a></div>
+      <div class="lp-foot-col"><b>资源</b><a href="/prompts">提示词说明书</a></div>
     </div>
+    <div class="lp-in lp-copy">© 自媒体助手</div>
   </footer>
 </template>
 
@@ -257,12 +242,13 @@
  * 动态的只有一件事：价格从服务端取——写死在页面里迟早和后台对不上，那种不一致比不显示价格更伤信任。 */
 import { onMounted, ref } from 'vue';
 import { reveal } from '../lib/reveal.js';
+import Icon from '../components/common/Icon.vue';
 
 const plans = ref([]);
 const priceError = ref(false);
 
 onMounted(async () => {
-  reveal('.lp-feat, .lp-cases > div, .lp-cols > div, .lp-end');
+  reveal('.lp-feat, .lp-cases > div, .lp-cols > div, .lp-tr, .lp-end');
   try {
     const d = await (await fetch('/api/pricing')).json();
     plans.value = [...d.plans, ...d.packs];

@@ -1,30 +1,34 @@
 <template>
   <div v-if="!a.admin" id="gate" class="auth-screen" :class="{ hidden: !a.gate }">
     <!-- 登录 / 首次设置 -->
-    <div class="auth-card">
-      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>管理后台</span></div>
-      <p class="auth-sub" id="gateSub">{{ gateSub }}</p>
+    <div class="auth-hero">
+      <div class="auth-brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></div>
+      <p class="auth-sub">管理后台</p>
+    </div>
+    <div class="auth-card gate">
+      <div class="gate-mark" aria-hidden="true"><Icon name="shield" :size="26" /></div>
+      <p class="gate-sub" id="gateSub">{{ gateSub }}</p>
       <form id="gateForm" autocomplete="off" @submit.prevent="submit">
-        <label v-if="!passwordOnly" id="adminUserRow">管理员用户名<input name="username" v-model="username" required maxlength="24" autocomplete="username" /></label>
-        <label>密码<input name="password" v-model="password" type="password" required
+        <label v-if="!passwordOnly" id="adminUserRow">管理员用户名<span class="input-ic"><Icon name="user" /><input name="username" v-model="username" required maxlength="24" autocomplete="username" /></span></label>
+        <label>密码<span class="input-ic"><Icon name="lock" /><input name="password" v-model="password" type="password" required
           :placeholder="passwordOnly ? '管理员密码' : a.gate?.needsSetup ? '至少 8 位' : ''"
-          :autocomplete="a.gate?.needsSetup ? 'new-password' : 'current-password'" /></label>
+          :autocomplete="a.gate?.needsSetup ? 'new-password' : 'current-password'" /></span></label>
         <p class="form-error" id="gateError">{{ gateError || a.gate?.error || '' }}</p>
-        <BusyBtn type="submit" class="btn primary block" id="gateSubmit" :busy="busy" :disabled="Boolean(a.gate?.setupLocked)">{{ a.gate?.needsSetup ? '创建管理员' : '登录' }}</BusyBtn>
+        <BusyBtn type="submit" class="btn primary block lg" id="gateSubmit" :busy="busy" :disabled="Boolean(a.gate?.setupLocked)">{{ a.gate?.needsSetup ? '创建管理员' : '登录' }}</BusyBtn>
       </form>
-      <p class="auth-tip"><a href="/">← 回到自媒体助手</a></p>
+      <p class="auth-tip"><a href="/"><Icon name="arrow-left" :size="13" />回到自媒体助手</a></p>
     </div>
   </div>
 
   <!-- 后台主体 -->
-  <div v-else id="panel" class="app">
+  <div v-else id="panel" class="app admin-app">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>管理后台</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span><em class="brand-sub">管理后台</em></div>
+      <span class="chip llm-chip" id="llmChip" :class="{ warn: d && !d.llm.live }"><i class="dot" aria-hidden="true"></i>{{ d ? (d.llm.live ? `${d.llm.label} · ${d.llm.model}` : d.llm.label) : '…' }}</span>
       <div class="topbar-right">
-        <span class="chip" id="llmChip" :class="{ warn: d && !d.llm.live }">{{ d ? (d.llm.live ? `${d.llm.label} · ${d.llm.model}` : d.llm.label) : '…' }}</span>
-        <span class="user-name" id="adminName">{{ a.admin.username }}</span>
-        <a class="btn ghost small" href="/">前台</a>
-        <button class="btn ghost small" id="logoutBtn" @click="a.logout()">退出</button>
+        <span class="user-chip"><span class="user-avatar" aria-hidden="true"><Icon name="user" :size="15" /></span><span class="user-name" id="adminName">{{ a.admin.username }}</span></span>
+        <a class="top-link" href="/"><Icon name="home" />前台</a>
+        <button class="top-link" id="logoutBtn" @click="a.logout()"><Icon name="logout" />退出</button>
       </div>
     </header>
 
@@ -32,30 +36,36 @@
       <!-- 十个分区堆在一列里往下滚，找一个东西要滚半天：一次只显示一个 -->
       <nav class="admin-nav" id="adminNav">
         <button v-for="x in ADMIN_SECTIONS" :key="x.key" type="button" :data-sec="x.key" :class="{ on: a.section === x.key }"
-          @click="a.show(x.key)">{{ x.label }}<i>{{ x.hint }}</i></button>
+          :title="x.hint" @click="a.show(x.key)"><Icon :name="SEC_ICON[x.key] || 'list'" :size="16" /><span>{{ x.label }}<i>{{ x.hint }}</i></span></button>
       </nav>
       <main class="main admin-main">
-        <section class="card" data-sec="overview" :hidden="a.section !== 'overview'">
-          <div class="card-head">
-            <h2>使用概览</h2>
-            <div class="card-actions">
-              <select id="days" v-model="a.days" @change="a.load()">
-                <option value="1">近 1 天</option>
-                <option value="7">近 7 天</option>
-                <option value="30">近 30 天</option>
-                <option value="90">近 90 天</option>
-              </select>
-              <button class="btn ghost small" id="refreshBtn" @click="a.load()">刷新</button>
+        <section data-sec="overview" class="overview" :hidden="a.section !== 'overview'">
+          <div class="page-head">
+            <div>
+              <h1>使用概览</h1>
+              <p>查看平台整体运行情况与关键指标</p>
             </div>
+            <span class="grow"></span>
+            <select id="days" v-model="a.days" @change="a.load()">
+              <option value="1">近 1 天</option>
+              <option value="7">近 7 天</option>
+              <option value="30">近 30 天</option>
+              <option value="90">近 90 天</option>
+            </select>
+            <button class="btn primary" id="refreshBtn" @click="a.load()"><Icon name="refresh" :size="15" />刷新</button>
           </div>
           <div class="stat-row" id="stats">
             <div v-if="a.error" class="ideas-state error">{{ a.error }}</div>
             <template v-else-if="!d || a.loading"><div v-for="i in 4" :key="i" class="idea-skeleton"></div></template>
-            <template v-else><div v-for="[k, v, sub] in stats" :key="k" class="stat"><b>{{ v }}</b><span>{{ k }}</span><br><em>{{ sub }}</em></div></template>
+            <template v-else><div v-for="([k, v, sub], i) in stats" :key="k" class="stat" :data-tone="i">
+              <span class="stat-ic"><Icon :name="STAT_ICON[i]" :size="16" /></span><span>{{ k }}</span><b>{{ v }}</b><em>{{ sub }}</em></div></template>
           </div>
-          <div v-if="d" class="spark" id="spark">
-            <div v-for="x in d.byDay" :key="x.day" class="bar" :style="{ height: `${Math.max(4, (x.calls / sparkMax) * 100)}%` }"
-              :title="`${x.day}：${x.calls} 次调用 / ${fmtTokens(x.tokens)} tokens`"><span>{{ x.day.slice(5) }}</span></div>
+          <div v-if="d" class="card trend-card">
+            <div class="card-head"><h2>调用量趋势</h2><span class="grow"></span><span class="hint">每天的模型调用次数，悬停看 tokens</span></div>
+            <div class="spark" id="spark">
+              <div v-for="x in d.byDay" :key="x.day" class="bar" :style="{ height: `${Math.max(4, (x.calls / sparkMax) * 100)}%` }"
+                :title="`${x.day}：${x.calls} 次调用 / ${fmtTokens(x.tokens)} tokens`"><b>{{ x.calls }}</b><span>{{ x.day.slice(5) }}</span></div>
+            </div>
           </div>
         </section>
 
@@ -175,6 +185,7 @@
 <script setup>
 import { computed, h, ref } from 'vue';
 import BusyBtn from '../components/common/BusyBtn.vue';
+import Icon from '../components/common/Icon.vue';
 import Toast from '../components/common/Toast.vue';
 import AskDialog from '../components/common/AskDialog.vue';
 import AbSection from './AbSection.vue';
@@ -184,6 +195,11 @@ import PromptList from './PromptList.vue';
 import { ADMIN_SECTIONS, fmt, fmtTime, fmtTokens, useAdminStore } from './store.js';
 
 const a = useAdminStore();
+const SEC_ICON = {
+  overview: 'chart', quality: 'shield', cost: 'money', ab: 'layers', eval: 'flask',
+  pay: 'card', usage: 'bolt', prompts: 'doc', users: 'users', admins: 'key',
+};
+const STAT_ICON = ['users', 'file', 'bolt', 'layers', 'clock'];
 const d = computed(() => a.overview);
 
 /* 百分比；没有数据显示一道灰杠，别显示成 0% 让人误会 */
