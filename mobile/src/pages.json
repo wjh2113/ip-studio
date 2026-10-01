@@ -1,0 +1,51 @@
+{
+  "pages": [
+    { "path": "pages/today/index", "style": { "navigationStyle": "custom", "enablePullDownRefresh": true } },
+    { "path": "pages/create/index", "style": { "navigationBarTitleText": "创作" } },
+    { "path": "pages/speak/index", "style": { "navigationStyle": "custom", "enablePullDownRefresh": true } },
+    { "path": "pages/inspire/index", "style": { "navigationStyle": "custom", "enablePullDownRefresh": true } },
+    { "path": "pages/me/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/login/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/create/topics", "style": { "navigationBarTitleText": "选方向" } },
+    { "path": "pages/create/draft", "style": { "navigationBarTitleText": "成稿" } },
+    { "path": "pages/create/package", "style": { "navigationBarTitleText": "发布包" } },
+    { "path": "pages/create/titles", "style": { "navigationBarTitleText": "标题候选" } },
+    { "path": "pages/create/voice", "style": { "navigationBarTitleText": "语音改稿" } },
+    { "path": "pages/create/review", "style": { "navigationBarTitleText": "审稿" } },
+    { "path": "pages/create/illus", "style": { "navigationBarTitleText": "配图" } },
+    { "path": "pages/speak/record", "style": { "navigationStyle": "custom", "disableScroll": true, "app-plus": { "popGesture": "none" } } },
+    { "path": "pages/speak/result", "style": { "navigationBarTitleText": "口播评测" } },
+    { "path": "pages/inspire/edit", "style": { "navigationBarTitleText": "记一条" } },
+    { "path": "pages/inspire/benchmark", "style": { "navigationBarTitleText": "对标速存" } },
+    { "path": "pages/jobs/index", "style": { "navigationBarTitleText": "任务", "enablePullDownRefresh": true } },
+    { "path": "pages/metrics/fill", "style": { "navigationBarTitleText": "回填发布数据" } },
+    { "path": "pages/metrics/insights", "style": { "navigationBarTitleText": "复盘" } },
+    { "path": "pages/calendar/index", "style": { "navigationBarTitleText": "内容日历" } },
+    { "path": "pages/account/quick", "style": { "navigationBarTitleText": "快速建号" } },
+    { "path": "pages/account/feed", "style": { "navigationBarTitleText": "喂给语气" } },
+    { "path": "pages/me/plan", "style": { "navigationBarTitleText": "用量与套餐" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "自媒体助手",
+    "navigationBarBackgroundColor": "#f4f6fa",
+    "backgroundColor": "#f4f6fa",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#98a2b3",
+    "selectedColor": "#2f6bff",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/today/index", "text": "今天", "iconPath": "static/tab/today.png", "selectedIconPath": "static/tab/today-on.png" },
+      { "pagePath": "pages/create/index", "text": "创作", "iconPath": "static/tab/create.png", "selectedIconPath": "static/tab/create-on.png" },
+      { "pagePath": "pages/speak/index", "text": "口播", "iconPath": "static/tab/speak.png", "selectedIconPath": "static/tab/speak-on.png" },
+      { "pagePath": "pages/inspire/index", "text": "灵感", "iconPath": "static/tab/inspire.png", "selectedIconPath": "static/tab/inspire-on.png" },
+      { "pagePath": "pages/me/index", "text": "我的", "iconPath": "static/tab/me.png", "selectedIconPath": "static/tab/me-on.png" }
+    ]
+  },
+  "easycom": {
+    "autoscan": true
+  }
+}

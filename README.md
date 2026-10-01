@@ -946,6 +946,7 @@ web/              前端（Vue 3 + Pinia，Vite 构建到 dist/）
   src/lib/        api、通知、提示与确认框、文本工具
   src/admin/ · src/prompts/ · src/landing/ · src/promo/   后台、提示词说明书、落地页、投放页
   src/styles/     样式（设计令牌在 base.css 开头）
+mobile/           手机 App（uni-app：H5 / App / 微信小程序），说明见 mobile/README.md
 tests/            node:test 单测（npm test）；tests/ui/ 浏览器回归（npm run test:ui）
 scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdcloud.sh 部署
 ```
@@ -1075,6 +1076,12 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | POST | `/api/personas/:id/benchmarks` | `handleBenchmarkCreate` | benchmarks.js |
 | DELETE | `/api/benchmarks/:bid` | `handleBenchmarkDelete` | benchmarks.js |
 | POST | `/api/benchmarks/:bid/save` | `handleBenchmarkSave` | benchmarks.js |
+| POST | `/api/transcribe` | `handleTranscribe` | editor.js |
+
+## 手机 App
+
+`mobile/` 是 uni-app 工程（H5 / 安卓 / iOS / 微信小程序）：今天待办、快速出稿与发布包、口播录制与评测、灵感随手记（可离线）、数据回填、内容日历、任务中心。
+怎么跑、怎么打包、第一版没做的（App 端录视频、系统分享入口、推送、手机上买套餐）见 [mobile/README.md](mobile/README.md)。
 
 ## 第一版的边界
 

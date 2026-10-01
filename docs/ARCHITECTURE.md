@@ -100,12 +100,22 @@ flowchart LR
 | GET | `/api/drafts/:id/package` | 发布包：原文 + 每个平台版本各一份，`title`（正文首行 `# 标题` 优先）、纯文本 `body`（去掉 Markdown 和插图占位）、`tags`（`#话题#` 和 `#话题 `，最多 10 个）、`images`（已出的配图，地址同网页）、`limits`（标题上限取 `TITLE_LIMITS`，正文没有平台硬上限，为 null）、`checks`（标题按字符数、正文按去空白字数） |
 | GET / POST | `/api/personas/:id/benchmarks` | 对标列表 / 新建。新建传 `{ url }` 由服务端抓取，或 `{ text, title }` 粘贴；只存标题、提纲（h1–h3，不够取段落首句，最多 12 条）和约 300 字摘要。抓不到回 422 并提示改用粘贴 |
 | DELETE | `/api/benchmarks/:bid` | 删一条对标 |
+| POST | `/api/transcribe` | 语音记灵感：原始音频请求体（同 `speaks` 的上传方式，`content-type` 为音频类型），只转写不评测、不扣额度，回 `{ text }`。按用户限流（10 分钟 60 次）；转不出 2 个字以上回 400「没有听清」 |
 | POST | `/api/benchmarks/:bid/save` | `{ to: 'material' }` 存成「案例」素材；`{ to: 'framework' }` 提纲每条一段、篇幅平均，写明「只学结构，不抄内容」，摘要存进 `source_text` 供防洗稿比对；提纲不到 2 条回 422 |
 
 对标抓取的 SSRF 防护（`server/webpage.js`）：只认 http / https；每一跳自己解析 DNS，解析结果里有私有、回环、链路本地、CGNAT、组播、保留、文档段
 （含 IPv6 和 `::ffff:` 映射）就拒绝，并且用检查过的地址去连（防 DNS 重绑定）；重定向自己跟，最多 3 跳；8 秒超时；正文 2MB 封顶；
 只收 `text/html`、`text/plain`。另外按用户限流（10 分钟 30 次，`limit.js` 的 `userLimit`）。测试里要抓本机的小网站，
 只有 `NODE_ENV=test` 且 `BENCHMARK_ALLOW_PRIVATE=1` 时才放过内网地址。
+
+## 手机 App（mobile/）
+
+uni-app（Vue 3 + Pinia）的 Vite 命令行工程，一套代码出 H5、安卓 / iOS App、微信小程序，依赖只装在 `mobile/` 里。
+只调上面这些接口和网页已有的接口（出稿、改稿、口播、配图、复盘），不另设后端。页面清单、离线策略、第一版没做的事见 [mobile/README.md](../mobile/README.md)。
+
+- 鉴权走 Bearer（见上）；`lib/api.js` 统一加请求头，401 清 token 回登录页。
+- 灵感离线队列在本机，按 `key` 幂等上传 `/api/inbox`；没网录的口播也先存本机。
+- `scripts/check.js` 把 `mobile/src` 按 H5 / App / 小程序三种条件编译分别展开检查，并拦下和 uni 组件同名的 setup 变量。
 
 ## 前端（web/）
 

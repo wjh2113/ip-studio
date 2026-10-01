@@ -1,0 +1,46 @@
+{
+  "name": "自媒体助手",
+  "appid": "",
+  "description": "自媒体创作者的移动端：采灵感、练口播、读稿小改、发前打包、回填数据",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": { "alwaysShowBeforeRender": true, "waiting": true, "autoclose": true, "delay": 0 },
+    "modules": { "Camera": {}, "Record": {}, "Share": {} },
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.CAMERA\"/>",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.WAKE_LOCK\"/>"
+        ]
+      },
+      "ios": {
+        "privacyDescription": {
+          "NSCameraUsageDescription": "口播录制要用前置摄像头",
+          "NSMicrophoneUsageDescription": "口播录制和语音记灵感要用麦克风",
+          "NSPhotoLibraryUsageDescription": "从相册选图记灵感",
+          "NSPhotoLibraryAddUsageDescription": "把配图保存到相册"
+        }
+      },
+      "sdkConfigs": {}
+    }
+  },
+  "h5": {
+    "title": "自媒体助手",
+    "router": { "mode": "hash", "base": "./" }
+  },
+  "mp-weixin": {
+    "appid": "",
+    "setting": { "urlCheck": false },
+    "usingComponents": true
+  },
+  "vueVersion": "3"
+}
