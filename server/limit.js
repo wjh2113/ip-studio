@@ -44,6 +44,12 @@ export function rateLimit(req, path) {
   else if (req.method === 'POST' && path.startsWith('/api/')) hit(`post:${ip}`, 90, 60_000);
 }
 
+/* 按用户限流：给「服务端替用户去访问外部网站」这类接口用（对标抓取）。不扣额度，但不能被当成免费爬虫 */
+export function userLimit(userId, name, max, windowMs) {
+  if (process.env.RATE_LIMIT === 'off' && process.env.NODE_ENV !== 'production') return;
+  hit(`user:${name}:${userId}`, max, windowMs);
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, b] of buckets) {

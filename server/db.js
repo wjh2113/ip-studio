@@ -8,8 +8,8 @@ import { fromRoot } from './paths.js';
 import { rebindCues, rebindIllus } from './keep.js';
 import { editRatio } from './quality.js';
 import {
-  adminSessions, admins, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
-  frameworks, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
+  adminSessions, admins, benchmarks, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
+  frameworks, inboxKeys, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
   speakTakes, styleSamples, topicPool, usageEvents, users,
 } from './schema.js';
 
@@ -617,6 +617,12 @@ export const Pool = {
     const rows = await orm().delete(topicPool).where(and(eq(topicPool.id, id), eq(topicPool.user_id, userId))).returning({ id: topicPool.id });
     return rows.length > 0;
   },
+  /* 还没写完的选题数。personaId：undefined = 全部账号，null = 未绑定账号的，数字 = 该账号 */
+  async countOpen(userId, personaId) {
+    const where = [eq(topicPool.user_id, userId), ne(topicPool.status, 'done')];
+    if (personaId !== undefined) where.push(same(topicPool.persona_id, personaId));
+    return Number((await one(orm().select({ n: count() }).from(topicPool).where(and(...where)))).n);
+  },
 };
 
 export const Samples = {
@@ -833,6 +839,36 @@ export const Drafts = {
     const rows = await orm().update(drafts).set({ archived_at: t, updated_at: t }).where(and(...where)).returning({ id: drafts.id });
     return rows.length;
   },
+  async setPublished(id, userId, day) {
+    const rows = await orm().update(drafts).set({ published_at: day, updated_at: now() })
+      .where(and(eq(drafts.id, id), eq(drafts.user_id, userId)))
+      .returning({ id: drafts.id, published_at: drafts.published_at });
+    return rows[0] || null;
+  },
+  /* App「今天」和日历用的一张表：每篇没归档的稿子一行，带上排期、口播、回填这几样判断要用的东西。
+     口播「练过」= 有一条评分 ≥ 60 的录音；排期取关联选题里最早的那个日期；回填只要最后一次的日期。
+     personaId：undefined = 全部账号，null = 未绑定账号的，数字 = 该账号 */
+  async agenda(userId, personaId) {
+    const byPersona = personaId !== undefined ? sql`AND d.persona_id IS NOT DISTINCT FROM ${personaId}` : sql`AND TRUE`;
+    const list = await read(sql`
+      SELECT d.id, d.title, d.subject, d.platform, d.status, d.published_at, d.updated_at,
+             COALESCE(json_array_length(CASE WHEN json_typeof(d.cues_json::json->'cues') = 'array'
+               THEN d.cues_json::json->'cues' END), 0) > 0 AS has_cues,
+             EXISTS (
+               SELECT 1 FROM speak_takes s
+               WHERE s.user_id = d.user_id AND s.draft_id = d.id
+                 AND json_typeof(s.review_json::json->'score') = 'number'
+                 AND (s.review_json::json->>'score')::numeric >= 60
+             ) AS spoken,
+             (SELECT MIN(p.plan_date) FROM topic_pool p
+              WHERE p.user_id = d.user_id AND p.draft_id = d.id AND p.plan_date <> '') AS plan_date,
+             (SELECT MAX(m.captured_on) FROM draft_metrics m
+              WHERE m.user_id = d.user_id AND m.draft_id = d.id) AS last_metric
+      FROM drafts d
+      WHERE d.user_id = ${userId} AND d.archived_at = '' ${byPersona}
+      ORDER BY d.updated_at DESC, d.id DESC`);
+    return list.map((r) => ({ ...nums(r, ['id']), has_cues: Boolean(r.has_cues), spoken: Boolean(r.spoken) }));
+  },
   async usedSubjects(userId, personaId, limit = 60) {
     return orm().select({ subject: drafts.subject, title: drafts.title }).from(drafts)
       .where(and(eq(drafts.user_id, userId), same(drafts.persona_id, personaId)))
@@ -958,6 +994,16 @@ export const Jobs = {
       .where(and(eq(jobs.id, id), eq(jobs.user_id, userId), eq(jobs.status, 'queued'))).returning({ id: jobs.id });
     return rows.length === 1;
   },
+  /* App 首页：在排队 / 在跑的个数，和 sinceIso 之后失败的最近几条 */
+  async summary(userId, sinceIso, limit = 5) {
+    const active = await one(orm().select({ n: count() }).from(jobs)
+      .where(and(eq(jobs.user_id, userId), inArray(jobs.status, ['queued', 'running']))));
+    const failed = await orm().select({
+      id: jobs.id, kind: jobs.kind, label: jobs.label, error: jobs.error, finishedAt: jobs.finished_at,
+    }).from(jobs).where(and(eq(jobs.user_id, userId), eq(jobs.status, 'failed'), sql`${jobs.finished_at} >= ${sinceIso}`))
+      .orderBy(desc(jobs.finished_at), desc(jobs.id)).limit(limit);
+    return { active: Number(active.n), failed };
+  },
   async prune(userId, keep = 100) {
     await orm().execute(sql`
       DELETE FROM jobs WHERE user_id = ${userId} AND status NOT IN ('queued', 'running')
@@ -1018,6 +1064,50 @@ export const Speaks = {
     if (!row) return null;
     await orm().delete(speakTakes).where(and(eq(speakTakes.id, id), eq(speakTakes.user_id, userId)));
     return row;
+  },
+};
+
+/* App 离线收件箱的去重记录 */
+export const Inbox = {
+  /* 先占 key：插进去了返回 null（这是第一次）；已经有了返回那一行（重发）。
+     并发的两次重发会在唯一键上排队，后到的等前一个事务提交后读到它的结果 */
+  async claim(userId, key, kind) {
+    const row = await one(orm().insert(inboxKeys).values({ user_id: userId, key, kind, created_at: now() })
+      .onConflictDoNothing().returning());
+    if (row) return null;
+    return this.byKey(userId, key);
+  },
+  async byKey(userId, key) {
+    return one(orm().select().from(inboxKeys).where(and(eq(inboxKeys.user_id, userId), eq(inboxKeys.key, key))));
+  },
+  async setRef(userId, key, refId) {
+    await orm().update(inboxKeys).set({ ref_id: refId }).where(and(eq(inboxKeys.user_id, userId), eq(inboxKeys.key, key)));
+  },
+};
+
+const hydrateBenchmark = (r) => (r ? {
+  id: r.id, persona_id: r.persona_id, url: r.url, title: r.title,
+  outline: parseJson(r.outline_json, []), excerpt: r.excerpt, created_at: r.created_at,
+} : null);
+
+export const Benchmarks = {
+  async create(userId, personaId, b) {
+    return hydrateBenchmark(await one(orm().insert(benchmarks).values({
+      user_id: userId, persona_id: personaId, url: b.url || '', title: b.title || '',
+      outline_json: JSON.stringify(b.outline || []), excerpt: b.excerpt || '', created_at: now(),
+    }).returning()));
+  },
+  async byId(id, userId) {
+    return hydrateBenchmark(await one(orm().select().from(benchmarks).where(and(eq(benchmarks.id, id), eq(benchmarks.user_id, userId)))));
+  },
+  async list(userId, personaId, limit = 100) {
+    return (await orm().select().from(benchmarks)
+      .where(and(eq(benchmarks.user_id, userId), eq(benchmarks.persona_id, personaId)))
+      .orderBy(desc(benchmarks.id)).limit(limit)).map(hydrateBenchmark);
+  },
+  async remove(id, userId) {
+    const rows = await orm().delete(benchmarks).where(and(eq(benchmarks.id, id), eq(benchmarks.user_id, userId))).returning({ id: benchmarks.id });
+    return rows.length > 0;
   },
 };
 

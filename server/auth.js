@@ -114,8 +114,24 @@ function readCookie(req, name) {
   return hit ? hit.slice(name.length + 1) : null;
 }
 
+/* 手机 App 不走 cookie：登录时拿到同一张会话表里的 token，之后每次请求带 Authorization: Bearer <token>。
+   token 是 startSession 生成的 64 位十六进制串，格式不对的直接当没带，不去查库。 */
+function readBearer(req) {
+  const m = String(req.headers.authorization || '').match(/^Bearer\s+([A-Za-z0-9_-]{16,256})\s*$/i);
+  return m ? m[1] : null;
+}
+
+/* 这次请求用的会话 token：有 cookie 认 cookie（网页），没有才认 Bearer（App） */
+export const sessionToken = (req) => readCookie(req, COOKIE_NAME) || readBearer(req);
+
 export async function currentUser(req) {
-  return Sessions.user(readCookie(req, COOKIE_NAME));
+  return Sessions.user(sessionToken(req));
+}
+
+/* 退出：把服务端那条会话删掉。只清 cookie 的话 token 还活着，App 存过的 token 照样能用 14 天 */
+export async function endSession(req) {
+  const token = sessionToken(req);
+  if (token) await Sessions.destroy(token);
 }
 
 export class HttpError extends Error {

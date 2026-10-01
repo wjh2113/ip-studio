@@ -36,6 +36,8 @@ const DIST_DIR = fromRoot('dist');
 const PORT = Number(process.env.PORT) || 5177;
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_BODY = 256 * 1024;
+// App 离线收件箱一批能带图（每张 ≤ 3MB，base64 后约 4MB），请求体放宽到和录音一样的 24MB；只这一个接口
+const MAX_INBOX_BODY = 24 * 1024 * 1024;
 
 const ROUTES = [
   ['POST', /^\/api\/auth\/register$/, R.handleRegister],
@@ -146,6 +148,17 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/archive$/, R.handleArchive],
   ['POST', /^\/api\/drafts\/archive-done$/, R.handleArchiveDone],
   ['DELETE', /^\/api\/drafts\/(?<id>\d+)$/, R.handleDelete],
+  // 手机 App：今天、日历、离线收件箱、发布包、对标速存
+  ['GET', /^\/api\/today$/, R.handleToday],
+  ['GET', /^\/api\/calendar$/, R.handleCalendar],
+  ['PUT', /^\/api\/drafts\/(?<id>\d+)\/published$/, R.handlePublishedSet],
+  ['GET', /^\/api\/drafts\/(?<id>\d+)\/package$/, R.handlePackage],
+  ['POST', /^\/api\/inbox$/, R.handleInbox],
+  ['GET', /^\/api\/inbox\/files\/(?<name>[^/]+)$/, R.handleInboxFile],
+  ['GET', /^\/api\/personas\/(?<id>\d+)\/benchmarks$/, R.handleBenchmarkList],
+  ['POST', /^\/api\/personas\/(?<id>\d+)\/benchmarks$/, R.handleBenchmarkCreate],
+  ['DELETE', /^\/api\/benchmarks\/(?<bid>\d+)$/, R.handleBenchmarkDelete],
+  ['POST', /^\/api\/benchmarks\/(?<bid>\d+)\/save$/, R.handleBenchmarkSave],
 ];
 
 const MIME = {
@@ -202,7 +215,7 @@ async function dispatch(req, res) {
       // 视频测评不带请求体：视频已在服务端，整段交给网关，这里不收截帧
       const body = raw || req.method === 'GET' || req.method === 'DELETE'
         ? {}
-        : await readJSON(req);
+        : await readJSON(req, path === '/api/inbox' ? MAX_INBOX_BODY : MAX_BODY);
       await match[2](req, res, body, params, url);
     } catch (err) {
       // QuotaError 自带 402；别把它当 500，前端要靠状态码识别"该升级了"

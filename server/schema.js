@@ -1,7 +1,7 @@
 /* 表结构（Drizzle）。列名沿用原来的蛇形，读出来的字段和以前的 SQLite 行一致。
  * 改表请在 migrations.js 末尾追加编号迁移，并在这里同步字段。 */
 import { sql } from 'drizzle-orm';
-import { doublePrecision, index, integer, pgTable, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
+import { doublePrecision, index, integer, pgTable, primaryKey, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
 
 const id = () => integer('id').primaryKey().generatedAlwaysAsIdentity();
 
@@ -331,3 +331,24 @@ export const evalVotes = pgTable('eval_votes', {
   winner: integer('winner').notNull().default(0),
   created_at: text('created_at').notNull(),
 });
+
+/* 迁移 4：App 离线收件箱的去重记录。同一个 key 只处理一次，ref_id 指向建出来的选题或素材 */
+export const inboxKeys = pgTable('inbox_keys', {
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  key: text('key').notNull(),
+  kind: text('kind').notNull(),
+  ref_id: integer('ref_id'),
+  created_at: text('created_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.user_id, t.key] })]);
+
+/* 迁移 4：对标速存。只留标题、提纲和开头摘要，用来学结构 */
+export const benchmarks = pgTable('benchmarks', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+  url: text('url').notNull().default(''),
+  title: text('title').notNull().default(''),
+  outline_json: text('outline_json').notNull().default('[]'),
+  excerpt: text('excerpt').notNull().default(''),
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_benchmarks_persona').on(t.user_id, t.persona_id, t.id)]);

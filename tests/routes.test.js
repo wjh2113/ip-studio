@@ -229,6 +229,26 @@ test('重复注册回 409，不是 500', async () => {
   assert.equal(r.status, 409, r.text);
 });
 
+test('移动端：X-Client: app 登录回 token，Bearer 调今天、日历、发布包（细节在 mobile.test.js）', async () => {
+  const r = await client().call('POST', '/api/auth/login', { username: `rt${process.pid}`, password: 'secret123' }, { 'x-client': 'app' });
+  assert.equal(r.status, 200, r.text);
+  const bearer = { authorization: `Bearer ${r.data.token}` };
+  const get = async (path) => {
+    const res = await fetch(BASE + path, { headers: bearer });
+    return { status: res.status, data: await res.json() };
+  };
+  const today = await get('/api/today');
+  assert.equal(today.status, 200, JSON.stringify(today.data));
+  assert.equal(today.data.week.length, 7);
+  const day = new Date().toISOString().slice(0, 10);
+  const cal = await get(`/api/calendar?from=${day}&to=${day}`);
+  assert.equal(cal.status, 200);
+  assert.ok(cal.data.days[0].items.some((it) => it.id === draftId), '今天成稿的稿子应当在日历上');
+  const pkg = await get(`/api/drafts/${draftId}/package`);
+  assert.equal(pkg.status, 200);
+  assert.ok(pkg.data.platforms[0].body);
+});
+
 test('Fastify 自己拒掉的请求也是 JSON、也带安全头', async () => {
   const r = await fetch(`${BASE}/%zz`);
   assert.equal(r.status, 400);

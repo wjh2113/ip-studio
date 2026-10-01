@@ -41,7 +41,7 @@ eval "$(DATABASE_URL="${DATABASE_URL}" node -e '
 ')"
 pg_dump --format=custom --file="${OUT}/app.dump"
 
-for d in images speaks; do
+for d in images speaks inbox; do
   if [[ -d "${DATA_DIR}/${d}" ]]; then
     tar -czf "${OUT}/${d}.tar.gz" -C "${DATA_DIR}" "${d}"
   fi

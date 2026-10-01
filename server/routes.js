@@ -14,6 +14,9 @@
  *   insights.js   发布数据回填与复盘
  *   billing.js    套餐、额度、下单与支付回调
  *   frameworks.js 框架库：内置与我的、推荐、增删改
+ *   jobs.js       任务中心
+ *   mobile.js     手机 App：今天、内容日历与标记发布、离线收件箱、发布包
+ *   benchmarks.js 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架
  * index.js 和测试仍然从这里 import，不用关心函数具体在哪个文件。 */
 export * from './routes/common.js';
 export * from './routes/auth.js';
@@ -31,3 +34,5 @@ export * from './routes/insights.js';
 export * from './routes/billing.js';
 export * from './routes/frameworks.js';
 export * from './routes/jobs.js';
+export * from './routes/mobile.js';
+export * from './routes/benchmarks.js';

@@ -952,7 +952,7 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 
 ## API
 
-下表由 `server/index.js` 的路由表整理（共 108 条）。处理函数在 `server/routes/` 对应文件里；
+下表由 `server/index.js` 的路由表整理（共 118 条）。处理函数在 `server/routes/` 对应文件里；
 除注册、登录、`/api/me`、`/api/meta`、`/api/pricing`、`/api/prompt-docs`（只读）、后台的登录与初始化、支付回调外都要登录；其余 `/api/admin/*` 和提示词编辑要管理员会话。
 
 | 方法 | 路径 | 处理函数 | 文件 |
@@ -1065,6 +1065,16 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | POST | `/api/drafts/:id/archive` | `handleArchive` | drafts.js |
 | POST | `/api/drafts/archive-done` | `handleArchiveDone` | drafts.js |
 | DELETE | `/api/drafts/:id` | `handleDelete` | drafts.js |
+| GET | `/api/today` | `handleToday` | mobile.js |
+| GET | `/api/calendar` | `handleCalendar` | mobile.js |
+| PUT | `/api/drafts/:id/published` | `handlePublishedSet` | mobile.js |
+| GET | `/api/drafts/:id/package` | `handlePackage` | mobile.js |
+| POST | `/api/inbox` | `handleInbox` | mobile.js |
+| GET | `/api/inbox/files/:name` | `handleInboxFile` | mobile.js |
+| GET | `/api/personas/:id/benchmarks` | `handleBenchmarkList` | benchmarks.js |
+| POST | `/api/personas/:id/benchmarks` | `handleBenchmarkCreate` | benchmarks.js |
+| DELETE | `/api/benchmarks/:bid` | `handleBenchmarkDelete` | benchmarks.js |
+| POST | `/api/benchmarks/:bid/save` | `handleBenchmarkSave` | benchmarks.js |
 
 ## 第一版的边界
 
@@ -1100,7 +1110,7 @@ DNS：在阿里云给 `ip.aidigitcloud.cn` 加一条 **A** 记录指向 `111.228
 ### 备份
 
 部署脚本会装一条 crontab：每天 03:17 跑 [scripts/backup.sh](scripts/backup.sh)，
-用 `pg_dump` 拿数据库的一致性快照（服务不停），再把 `data/images`、`data/speaks` 打包，
+用 `pg_dump` 拿数据库的一致性快照（服务不停），再把 `data/images`、`data/speaks`、`data/inbox`（手机端随手记的图片）打包，
 放在 `/opt/ip-studio-backups/<时间戳>/`，保留 14 天，日志在同目录的 `backup.log`。
 这只是本机备份，**磁盘坏了一样会丢**；要异地，在脚本末尾加一行同步到对象存储。
 

@@ -45,6 +45,32 @@ export const MIGRATIONS = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_one_active ON prompt_revisions(feature) WHERE active = 1;
     `);
   } },
+  { version: 4, name: '手机 App：离线收件箱去重表、对标速存', up: async (db) => {
+    // inbox_keys：App 离线攒的条目会重发，按 (user_id, key) 记住处理过的，重发只回上次的结果
+    // benchmarks：对标内容只存标题、提纲和开头摘要，不存全文
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS inbox_keys (
+        user_id    integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key        text NOT NULL,
+        kind       text NOT NULL,
+        ref_id     integer,
+        created_at text NOT NULL,
+        PRIMARY KEY (user_id, key)
+      );
+
+      CREATE TABLE IF NOT EXISTS benchmarks (
+        id           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        persona_id   integer NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+        url          text NOT NULL DEFAULT '',
+        title        text NOT NULL DEFAULT '',
+        outline_json text NOT NULL DEFAULT '[]',
+        excerpt      text NOT NULL DEFAULT '',
+        created_at   text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_benchmarks_persona ON benchmarks(user_id, persona_id, id DESC);
+    `);
+  } },
 ];
 
 function toPg(text) {

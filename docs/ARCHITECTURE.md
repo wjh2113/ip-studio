@@ -13,7 +13,7 @@ flowchart LR
   end
   subgraph Node 服务
     I[server/index.js<br/>Fastify · 路由表 · 静态文件] --> R[server/routes.js<br/>聚合导出]
-    R --> RD[server/routes/*.js<br/>16 个业务域]
+    R --> RD[server/routes/*.js<br/>18 个业务域]
     RD --> L[llm.js<br/>模型通道 · 分档 · 额度 · 超时]
     RD --> P[prompts.js<br/>提示词与拼装]
     RD --> S[speak.js · images.js · hotspots.js<br/>pay.js · docx.js]
@@ -26,7 +26,7 @@ flowchart LR
   end
   C -- fetch /api --> I
   D --> DB[(PostgreSQL<br/>Drizzle)]
-  S --> FS[(data/images<br/>data/speaks)]
+  S --> FS[(data/images<br/>data/speaks<br/>data/inbox)]
   L --> GW[LLM 网关 / Claude / OpenAI 兼容]
   S --> EXT[出图 · 发音与出镜评测 · 榜单 · 微信/支付宝]
 ```
@@ -76,6 +76,36 @@ flowchart LR
 | `billing.js` | 套餐、下单、支付回调 |
 | `frameworks.js` | 写法框架库、从范文拆解 |
 | `jobs.js` | 任务中心：长任务的进度、取消、重试 |
+| `mobile.js` | 手机 App：今天、内容日历与标记发布、离线收件箱、发布包 |
+| `benchmarks.js` | 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架（抓取与 SSRF 防护在 `server/webpage.js`） |
+
+## 移动端接口
+
+手机 App 是「随身」用的：看今天该干嘛、路上记灵感、到点把成稿复制出去发。写作改稿仍在网页上做，
+这些接口只做聚合和搬运，不调模型、不扣额度。
+
+**鉴权**：和网页共用 `sessions` 表和 14 天有效期。`POST /api/auth/login`、`/api/auth/register` 带请求头 `X-Client: app` 时，
+回包里多一个 `token`（cookie 照发）；之后每次请求带 `Authorization: Bearer <token>`。`currentUser` 先认 cookie，没有 cookie 才认 Bearer，
+所以 `/image/...` 这类本人文件也能用 Bearer 取。`POST /api/auth/logout` 会删掉这次请求所用的那条服务端会话（cookie 或 Bearer），不只是清 cookie。
+
+日期一律按 UTC 算（和回填快照的 `captured_on` 一致）。`persona` 参数：不传或空 = 全部账号，`none` = 未绑定账号的，数字 = 该账号。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/today?persona=` | 首页：`quota`（剩余点数，`low` = 剩不到 15%）、`metricsDue`（发布后第 1 / 7 天该回填却没有那天及以后的快照；两个都欠只提第 7 天；只看 30 天内发布的）、`jobs`（在跑个数 + 7 天内最近 5 条失败）、`poolUnused`、`ready`（成稿未发，最多 10 篇）、`speakTodo`（有口播提示但没有 ≥ 60 分的录音，最多 5 篇）、`week`（本周一到周日，规则同日历） |
+| GET | `/api/calendar?from=&to=&persona=` | 每天一格（最多 62 天）。稿子落在发布日；没发按关联选题（`topic_pool.draft_id`）的排期；再没有、但已成稿的按最后修改日；归档的不算。`states` 可叠加：`done` 成稿未发、`cue` 待练口播、`published`、`metrics` 该回填 |
+| PUT | `/api/drafts/:id/published` | `{ date: 'YYYY-MM-DD' \| '' }` 标记 / 取消发布，只改 `published_at` |
+| POST | `/api/inbox` | 离线收件箱，一批最多 50 条，`kind` 为 `pool`（进选题池，来源默认「灵感」）或 `material`（进素材库，要选账号）。每条带客户端生成的 `key`（8–64 位），按 `(user_id, key)` 记在 `inbox_keys`，重发只回上次结果并标 `duplicate: true`。可带一张 JPEG / PNG 的 data URL（≤ 3MB，校验文件头），存到 `data/inbox/u<用户>-<随机>.<扩展名>`，并在备注 / 正文末尾加一行「图片：<地址>」。单条出错不影响整批，总是 200。这个接口的请求体上限放宽到 24MB |
+| GET | `/api/inbox/files/:name` | 收件箱图片，文件名前缀的用户号必须是当前用户，文件名不合格式（含路径穿越）一律 400 |
+| GET | `/api/drafts/:id/package` | 发布包：原文 + 每个平台版本各一份，`title`（正文首行 `# 标题` 优先）、纯文本 `body`（去掉 Markdown 和插图占位）、`tags`（`#话题#` 和 `#话题 `，最多 10 个）、`images`（已出的配图，地址同网页）、`limits`（标题上限取 `TITLE_LIMITS`，正文没有平台硬上限，为 null）、`checks`（标题按字符数、正文按去空白字数） |
+| GET / POST | `/api/personas/:id/benchmarks` | 对标列表 / 新建。新建传 `{ url }` 由服务端抓取，或 `{ text, title }` 粘贴；只存标题、提纲（h1–h3，不够取段落首句，最多 12 条）和约 300 字摘要。抓不到回 422 并提示改用粘贴 |
+| DELETE | `/api/benchmarks/:bid` | 删一条对标 |
+| POST | `/api/benchmarks/:bid/save` | `{ to: 'material' }` 存成「案例」素材；`{ to: 'framework' }` 提纲每条一段、篇幅平均，写明「只学结构，不抄内容」，摘要存进 `source_text` 供防洗稿比对；提纲不到 2 条回 422 |
+
+对标抓取的 SSRF 防护（`server/webpage.js`）：只认 http / https；每一跳自己解析 DNS，解析结果里有私有、回环、链路本地、CGNAT、组播、保留、文档段
+（含 IPv6 和 `::ffff:` 映射）就拒绝，并且用检查过的地址去连（防 DNS 重绑定）；重定向自己跟，最多 3 跳；8 秒超时；正文 2MB 封顶；
+只收 `text/html`、`text/plain`。另外按用户限流（10 分钟 30 次，`limit.js` 的 `userLimit`）。测试里要抓本机的小网站，
+只有 `NODE_ENV=test` 且 `BENCHMARK_ALLOW_PRIVATE=1` 时才放过内网地址。
 
 ## 前端（web/）
 
@@ -111,7 +141,7 @@ flowchart LR
 
 ## 数据
 
-23 张表，按用途分：
+25 张表，按用途分：
 
 | 用途 | 表 |
 |---|---|
@@ -120,12 +150,14 @@ flowchart LR
 | 创作 | `drafts`、`draft_revisions`、`speak_takes`、`frameworks` |
 | 复盘 | `draft_metrics`（发布数据快照，一次回填一行） |
 | 后台任务 | `jobs`（出图、口播转写与评测；worker 在 `server/jobs.js`） |
-| 素材与选题 | `materials`、`topic_pool` |
+| 素材与选题 | `materials`、`topic_pool`、`benchmarks`（对标速存） |
+| 手机 App | `inbox_keys`（离线收件箱按 key 去重） |
 | 提示词 | `prompt_revisions`、`prompt_variants`、`eval_cases`、`eval_runs`、`eval_votes` |
 | 计费与运营 | `orders`、`usage_events`、`settings` |
 
 `drafts` 里有多个 JSON 列（方向、账号快照、口播提示、多平台版本、配图、发布数据），读写在 `db.js` 的 `Drafts` 里集中处理。
 录音和图片存在 `data/speaks/<用户>/`、`data/images/<用户>/`，只能由本人访问（`index.js` 的 `serveOwned`）。
+App 收件箱的图片在 `data/inbox/u<用户>-*.jpg|png`，由 `GET /api/inbox/files/:name` 按文件名前缀校验本人后返回。
 
 ## 改东西去哪
 
