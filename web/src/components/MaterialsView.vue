@@ -96,10 +96,18 @@
                 </div>
                 <div v-for="m in rows" :key="m.id" class="library-row" :class="{ on: lib.selectedId === m.id }"
                   :data-mat="m.id" @click="lib.selectedId = m.id">
-                  <span class="mat-thumb" :data-kind="m.kind"><Icon :name="kindIcon(m.kind)" :size="16" /></span>
+                  <a v-if="materialUrl(m)" class="mat-thumb is-link" :data-kind="m.kind" :href="materialUrl(m)"
+                    target="_blank" rel="noopener noreferrer" title="打开原文" @click.stop>
+                    <Icon :name="kindIcon(m.kind)" :size="16" />
+                  </a>
+                  <span v-else class="mat-thumb" :data-kind="m.kind"><Icon :name="kindIcon(m.kind)" :size="16" /></span>
                   <span class="mat-kind" :data-kind="m.kind">{{ m.kind }}</span>
                   <div class="library-main">
-                    <b>{{ m.title }}</b>
+                    <b>
+                      <a v-if="materialUrl(m)" class="mat-title-link" :href="materialUrl(m)"
+                        target="_blank" rel="noopener noreferrer" @click.stop>{{ m.title }}</a>
+                      <template v-else>{{ m.title }}</template>
+                    </b>
                     <p>{{ clip(m.body) }}</p>
                   </div>
                   <div class="mat-tags">
@@ -126,7 +134,11 @@
                     <span class="mat-kind" :data-kind="m.kind">{{ m.kind }}</span>
                     <span class="mat-used">用过 {{ m.used_count || 0 }}</span>
                   </div>
-                  <h4>{{ m.title }}</h4>
+                  <h4>
+                    <a v-if="materialUrl(m)" class="mat-title-link" :href="materialUrl(m)"
+                      target="_blank" rel="noopener noreferrer" @click.stop>{{ m.title }}</a>
+                    <template v-else>{{ m.title }}</template>
+                  </h4>
                   <p>{{ clip(m.body, 120) }}</p>
                   <div class="mat-tags">
                     <span v-for="(t, i) in tagList(m.tags).slice(0, 5)" :key="i">{{ t }}</span>
@@ -156,6 +168,8 @@
               <div>
                 <span class="mat-kind" :data-kind="detail.kind">{{ detail.kind }}</span>
                 <h3>{{ detail.title }}</h3>
+                <a v-if="materialUrl(detail)" class="mat-open-link" :href="materialUrl(detail)"
+                  target="_blank" rel="noopener noreferrer"><Icon name="link" :size="13" />打开原文</a>
               </div>
               <button type="button" class="icon-btn" title="关闭" @click="lib.selectedId = null"><Icon name="x" /></button>
             </div>
@@ -295,6 +309,16 @@ function kindIcon(k) { return KIND_ICON[k] || 'inbox'; }
 
 function tagList(tags) {
   return String(tags || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean);
+}
+/* 从正文「来源：…」或正文/标题里的 http(s) 取出可点开的地址 */
+function materialUrl(m) {
+  const body = String(m?.body || '');
+  const sourced = body.match(/(?:^|\n)来源：\s*(https?:\/\/\S+)/i);
+  if (sourced) return sourced[1].replace(/[)\]】》"'>]+$/, '');
+  const titled = String(m?.title || '').trim();
+  if (/^https?:\/\//i.test(titled)) return titled;
+  const any = body.match(/https?:\/\/[^\s)\]】》"'>]+/i);
+  return any ? any[0] : '';
 }
 function clip(s, n = 80) {
   const t = String(s || '').replace(/\s+/g, ' ').trim();

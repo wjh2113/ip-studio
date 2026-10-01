@@ -691,6 +691,15 @@
   width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
   background: var(--panel-2); color: var(--muted);
 }
+.mat-thumb.is-link { text-decoration: none; cursor: pointer; color: inherit; }
+.mat-thumb.is-link:hover { box-shadow: 0 0 0 2px var(--accent); }
+.mat-title-link { color: inherit; text-decoration: none; }
+.mat-title-link:hover { color: var(--accent-ink); text-decoration: underline; }
+.mat-open-link {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
+  font-size: 13px; color: var(--accent-ink); text-decoration: none;
+}
+.mat-open-link:hover { text-decoration: underline; }
 .mat-thumb[data-kind="文章"] { background: #eef3ff; color: #2f6bff; }
 .mat-thumb[data-kind="图片"] { background: #fce7f3; color: #be185d; }
 .mat-thumb[data-kind="视频"] { background: #ede9fe; color: #6d28d9; }

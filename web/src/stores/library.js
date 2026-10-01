@@ -196,10 +196,15 @@ export const useLibraryStore = defineStore('library', () => {
 
   async function saveForm() {
     error.value = '';
+    let text = form.body.trim();
+    const src = String(form.sourceUrl || '').trim();
+    if (src && !text.includes(src)) {
+      text = `${text}\n\n来源：${src}`.trim().slice(0, BODY_MAX);
+    }
     const body = {
       kind: form.kind,
       title: form.title.trim(),
-      body: form.body.trim(),
+      body: text,
       tags: form.tags.trim(),
     };
     if (!body.title || !body.body) { error.value = '标题和内容都要填'; return; }
