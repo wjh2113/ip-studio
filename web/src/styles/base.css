@@ -175,6 +175,17 @@ label > input, label > select, label > textarea { margin-top: 6px; font-weight: 
 .btn.lg { height: 42px; padding: 0 20px; font-size: 15px; }
 .btn.block { width: 100%; }
 
+/* 行内小按钮：列表行尾的「写这条」「删除」这类 */
+.mini {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 9px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--accent-line); background: var(--panel); color: var(--accent-ink); font: inherit; font-size: 12px;
+}
+.mini:hover { background: var(--accent-soft); }
+.mini.del { color: var(--muted); border-color: var(--border); }
+.mini.del:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.mini:disabled { opacity: .5; cursor: not-allowed; }
+
 .icon-btn {
   border: 0; background: transparent; cursor: pointer; color: var(--muted);
   font-size: 20px; line-height: 1; padding: 4px; border-radius: 6px;
@@ -298,7 +309,7 @@ label > input, label > select, label > textarea { margin-top: 6px; font-weight: 
 .menu button:hover:not(:disabled) > .ic { color: var(--accent); }
 .menu button:disabled { opacity: .4; cursor: not-allowed; }
 .menu button em {
-  font-style: normal; font-size: 12px; color: var(--faint); margin-left: 4px;
+  display: block; font-style: normal; font-size: 12px; color: var(--faint); margin-top: 1px; line-height: 1.5;
 }
 .menu hr { border: 0; border-top: 1px solid var(--border); margin: 5px 8px; }
 .menu hr + .menu-head { padding-top: 2px; }

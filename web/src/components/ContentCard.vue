@@ -1,83 +1,126 @@
 <template>
-  <section class="card" id="contentCard" style="position:relative">
-    <!-- 第三步：成稿。标题行 + 工具条吸顶：长文往下读的时候，模式切换和这几个动作始终够得着。
-         sentinel 是吸顶判断用的：它滚出视口说明标题行已经贴在顶上了 -->
-    <div ref="sentinel" style="position:absolute;top:0;height:1px;width:1px;pointer-events:none"></div>
-    <div class="head-stick" :class="{ stuck }">
-      <div class="card-head">
-        <button class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)">← 换方向</button>
-        <h2 id="contentTitle">{{ title }}</h2>
-        <span class="counter" id="counter">{{ counter }}</span>
-        <span class="grow"></span>
-        <!-- 模式指示器：只说明「你现在在哪个模式」，切换动作在工具条上 -->
-        <span v-if="s.mode !== 'read'" class="mode-now" id="modeNow">{{ s.mode === 'edit' ? '编辑中' : '口播' }}</span>
+  <section class="work" id="contentCard">
+    <!-- 第三步：成稿工作台。左边是正文（标题行 + 工具条吸顶），右边是一列可收起的面板：版本、检查、多平台、配图、口播。
+         正文是主角，工具都在边上，不抢阅读 -->
+    <div class="card work-main" style="position:relative">
+      <!-- sentinel 是吸顶判断用的：它滚出视口说明标题行已经贴在顶上了 -->
+      <div ref="sentinel" style="position:absolute;top:0;height:1px;width:1px;pointer-events:none"></div>
+      <div class="head-stick" :class="{ stuck }">
+        <div class="card-head">
+          <button class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
+          <h2 id="contentTitle">{{ title }}</h2>
+          <span class="counter" id="counter">{{ counter }}</span>
+          <span class="grow"></span>
+          <!-- 模式指示器：只说明「你现在在哪个模式」，切换动作在工具条上 -->
+          <span class="mode-label">当前模式</span>
+          <span class="mode-now" id="modeNow" :class="`m-${s.mode}`">{{ s.mode === 'edit' ? '编辑中' : s.mode === 'cue' ? '口播' : '阅读' }}</span>
+        </div>
+
+        <!-- 三组动作：改 / 认了 / 拿走。后两个各带一个菜单——一次只让人做一个决定 -->
+        <div class="toolbar">
+          <div class="tb-group">
+            <button v-if="s.mode !== 'read'" class="btn ghost small" id="backReadBtn" @click="ed.setMode('read')"><Icon name="arrow-left" :size="14" />返回阅读</button>
+            <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')"><Icon name="pen" :size="14" />修改</button>
+            <button class="btn ghost small" id="revBtn" :class="{ on: s.revOpen }" @click="toggleRevs"><Icon name="clock" :size="14" />版本</button>
+          </div>
+          <div class="tb-group">
+            <div class="menu-wrap">
+              <button class="btn primary small" id="confirmBtn" aria-haspopup="true" @click.stop="toggleMenu('confirm')"><Icon name="check-circle" :size="14" />确认<Icon name="chev-down" :size="13" /></button>
+              <div v-if="menu === 'confirm'" class="menu" id="confirmMenu">
+                <div class="menu-head">这稿定了，接下来</div>
+                <button v-for="a in CONFIRM.slice(0, 5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
+                  :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
+                <hr>
+                <button v-for="a in CONFIRM.slice(5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
+                  :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
+              </div>
+            </div>
+            <div class="menu-wrap">
+              <button class="btn ghost small" id="exportBtn" aria-haspopup="true" @click.stop="toggleMenu('export')"><Icon name="download" :size="14" />导出<Icon name="chev-down" :size="13" /></button>
+              <div v-if="menu === 'export'" class="menu narrow" id="exportMenu">
+                <div class="menu-head">导出格式</div>
+                <button type="button" data-fmt="copy" @click="exportAs('copy')"><Icon name="copy" :size="15" /><span>复制<em id="copyHint">{{ copyHint }}</em></span></button>
+                <button type="button" data-fmt="md" @click="exportAs('md')"><Icon name="file" :size="15" /><span>Markdown<em>纯文本 .md</em></span></button>
+                <button type="button" data-fmt="html" @click="exportAs('html')"><Icon name="image" :size="15" /><span>图文 HTML<em>单个 .html，图嵌在里面</em></span></button>
+                <button type="button" data-fmt="docx" @click="exportAs('docx')"><Icon name="doc" :size="15" /><span>Word<em>.docx，有配图就嵌进文档</em></span></button>
+                <button type="button" data-fmt="pdf" @click="exportAs('pdf')"><Icon name="download" :size="15" /><span>PDF<em>打印另存为 PDF</em></span></button>
+              </div>
+            </div>
+          </div>
+          <span class="grow"></span>
+          <span class="hint" id="toolHint">{{ ed.toolHint }}</span>
+          <!-- 保存跟着编辑模式出现在这一行，和「确认 / 导出」在一起 -->
+          <template v-if="s.mode === 'edit'">
+            <span class="save-state" id="saveState" :class="ed.save.kind">{{ ed.save.text }}</span>
+            <button class="btn primary small" id="saveBtn" @click="ed.flushSave(true)">保存</button>
+          </template>
+        </div>
       </div>
 
-      <!-- 三个动作代替原来一排八个按钮：改 / 认了 / 拿走。后两个各带一个菜单——一次只让人做一个决定 -->
-      <div class="toolbar">
-        <button v-if="s.mode !== 'read'" class="btn ghost small" id="backReadBtn" @click="ed.setMode('read')">← 返回阅读</button>
-        <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')">修改</button>
-        <button class="btn ghost small" id="revBtn" :class="{ on: s.revOpen }" @click="toggleRevs">版本</button>
-        <div class="menu-wrap">
-          <button class="btn primary small" id="confirmBtn" aria-haspopup="true" @click.stop="toggleMenu('confirm')">确认 ▾</button>
-          <div v-if="menu === 'confirm'" class="menu" id="confirmMenu">
-            <div class="menu-head">这稿定了，接下来</div>
-            <button v-for="a in CONFIRM.slice(0, 5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-              :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)">{{ a.label }}<em>{{ a.hint }}</em></button>
-            <hr>
-            <button v-for="a in CONFIRM.slice(5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-              :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)">{{ a.label }}<em>{{ a.hint }}</em></button>
-          </div>
-        </div>
-        <div class="menu-wrap">
-          <button class="btn ghost small" id="exportBtn" aria-haspopup="true" @click.stop="toggleMenu('export')">导出 ▾</button>
-          <div v-if="menu === 'export'" class="menu" id="exportMenu">
-            <div class="menu-head">导出格式</div>
-            <button type="button" data-fmt="copy" @click="exportAs('copy')">复制<em id="copyHint">{{ copyHint }}</em></button>
-            <button type="button" data-fmt="md" @click="exportAs('md')">下载 Markdown<em>纯文本，.md</em></button>
-            <button type="button" data-fmt="html" @click="exportAs('html')">下载图文<em>单个 .html，图嵌在里面</em></button>
-            <button type="button" data-fmt="docx" @click="exportAs('docx')">导出 Word<em>.docx，有配图就嵌进文档</em></button>
-            <button type="button" data-fmt="pdf" @click="exportAs('pdf')">导出 PDF<em>走浏览器打印，在弹窗里选「另存为 PDF」</em></button>
-          </div>
-        </div>
+      <RevPane v-if="s.revOpen" />
+      <VersionBars part="tabs" />
+
+      <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
+
+      <textarea v-show="s.mode === 'edit'" class="editor" id="editor" ref="editor" spellcheck="false" :class="{ 'mark-over': markOver }"
+        :value="s.draft?.content || ''" @input="onEditorInput" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
+        @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
+
+      <CuesPane v-if="s.mode === 'cue' && !v.current" />
+
+      <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」、语音改稿 -->
+      <div v-if="s.mode === 'edit'" class="editor-bar" id="editorBar">
+        <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字 → AI 改写　·　输入 <kbd>/</kbd> → 续写</span>
         <span class="grow"></span>
-        <span class="hint" id="toolHint">{{ ed.toolHint }}</span>
-        <!-- 保存跟着编辑模式出现在这一行，和「确认 / 导出」在一起 -->
-        <template v-if="s.mode === 'edit'">
-          <span class="save-state" id="saveState" :class="ed.save.kind">{{ ed.save.text }}</span>
-          <button class="btn ghost small" id="saveBtn" @click="ed.flushSave(true)">保存</button>
+        <div class="mark-dock" id="markDock">
+          <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0" title="先把光标点在要插图的地方，再把这个标签拖进去；或点一下插到光标处"
+            @dragstart="markDragStart" @dragend="markDragEnd" @click="markClick" @keydown.enter.prevent="insertMark()" @keydown.space.prevent="insertMark()"><Icon name="image" :size="14" />此处放图片</span>
+          <button type="button" class="btn ghost small" id="voiceBtn" :class="{ recording: ed.voice.recording }" :disabled="ed.voice.recognizing"
+            title="说改哪里、怎么改" @click="ed.toggleVoice()"><Icon name="mic" :size="14" />{{ ed.voice.recognizing ? '识别中…' : ed.voice.recording ? '说完了' : '语音改稿' }}</button>
+        </div>
+        <p v-if="ed.voiceNote" class="voice-note" id="voiceNote">
+          <template v-if="ed.voiceNote.heard">{{ ed.voiceNote.heard }}<br></template>
+          <template v-if="ed.voiceNote.understood">{{ ed.voiceNote.understood }}<br></template>
+          <template v-if="ed.voiceNote.undo != null">改了 {{ ed.voiceNote.changed }} 处。<button type="button" class="mini" id="voiceUndoBtn" @click="ed.undoVoice()">撤销</button></template>
+          <template v-else>正文没有改。{{ ed.voiceNote.why }}</template>
+        </p>
+      </div>
+    </div>
+
+    <aside class="work-side" id="workSide">
+      <WorkPanel title="版本对照" icon="clock" :active="s.revOpen" :badge="s.revOpen ? '展开中' : ''">
+        <p class="wp-text">每次保存前都会留下上一版，点开逐行对照。</p>
+        <button class="btn ghost small" type="button" data-side="revs" @click="toggleRevs">{{ s.revOpen ? '收起对照' : '打开版本对照' }}</button>
+      </WorkPanel>
+      <WorkPanel title="检查结果" icon="shield" :active="review.open" :badge="reviewBadge">
+        <ReviewBox />
+        <template v-if="!review.open">
+          <p class="wp-text">错字、通顺、调性与风险，逐条给建议，可一键采纳。</p>
+          <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!s.draft?.content || Boolean(v.current)" @click="review.run()">检查一遍</BusyBtn>
         </template>
-      </div>
-    </div>
-
-    <RevPane v-if="s.revOpen" />
-    <ReviewBox />
-    <VersionBars />
-
-    <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
-
-    <div v-if="s.mode === 'edit'" class="mark-dock" id="markDock">
-      <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0" title="拖进正文，或点一下插到光标处"
-        @dragstart="markDragStart" @dragend="markDragEnd" @click="markClick" @keydown.enter.prevent="insertMark()" @keydown.space.prevent="insertMark()">此处放图片</span>
-      <button type="button" class="btn ghost small" id="voiceBtn" :class="{ recording: ed.voice.recording }" :disabled="ed.voice.recognizing"
-        @click="ed.toggleVoice()">{{ ed.voice.recognizing ? '识别中…' : ed.voice.recording ? '说完了' : '语音改稿' }}</button>
-      <span class="hint" id="markHint">先把光标点在要插图的地方，再把这个标签拖进去。语音改稿是说改哪里、怎么改。</span>
-      <p v-if="ed.voiceNote" class="voice-note" id="voiceNote">
-        <template v-if="ed.voiceNote.heard">{{ ed.voiceNote.heard }}<br></template>
-        <template v-if="ed.voiceNote.understood">{{ ed.voiceNote.understood }}<br></template>
-        <template v-if="ed.voiceNote.undo != null">改了 {{ ed.voiceNote.changed }} 处。<button type="button" class="mini" id="voiceUndoBtn" @click="ed.undoVoice()">撤销</button></template>
-        <template v-else>正文没有改。{{ ed.voiceNote.why }}</template>
-      </p>
-    </div>
-    <textarea v-show="s.mode === 'edit'" class="editor" id="editor" ref="editor" spellcheck="false" :class="{ 'mark-over': markOver }"
-      :value="s.draft?.content || ''" @input="onEditorInput" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
-      @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
-
-    <CuesPane v-if="s.mode === 'cue' && !v.current" />
-
-    <div v-if="s.mode === 'edit'" class="editor-bar" id="editorBar">
-      <span class="hint">选中文字 → 调 AI 改写　·　输入 <kbd>/</kbd> → 让 AI 接着写</span>
-    </div>
+      </WorkPanel>
+      <WorkPanel title="多平台" icon="layers" :active="v.multi.open" :badge="v.tabs.length > 1 ? `${v.tabs.length - 1} 个版本` : ''">
+        <VersionBars part="multi" />
+        <template v-if="!(v.multi.open && s.draft?.content)">
+          <p class="wp-text">事实不变，按各平台的篇幅和结构重排。</p>
+          <button class="btn ghost small" type="button" data-side="multi" :disabled="!s.draft?.content || Boolean(v.current)" @click="v.openMulti()">出多平台版本</button>
+        </template>
+      </WorkPanel>
+      <WorkPanel title="配图" icon="image" :active="v.ill.open" :badge="illusBadge">
+        <VersionBars part="illus" />
+        <template v-if="!v.ill.open">
+          <p class="wp-text">正文里写「此处放图片」就插在那里；没写就自动排位。</p>
+          <button class="btn ghost small" type="button" data-side="illus" :disabled="!s.draft?.content" @click="v.toggleIllus()">开始配图</button>
+        </template>
+      </WorkPanel>
+      <WorkPanel title="口播" icon="mic" :badge="s.draft?.cues ? `${s.draft.cues.cues?.length || 0} 段` : ''">
+        <p class="wp-text">{{ s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了。' : '把成稿切成段、标好语气，配合提词器照着念。' }}</p>
+        <div class="wp-acts">
+          <button v-if="s.draft?.cues" class="btn ghost small" type="button" data-side="prompter" @click="openPrompter">提词器</button>
+          <button class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || Boolean(v.current)" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : s.draft?.cues ? '进入口播' : '生成口播提示' }}</button>
+        </div>
+      </WorkPanel>
+    </aside>
   </section>
 </template>
 
@@ -86,6 +129,9 @@
  * review.js（检查）、speak.js（口播）；这里管界面：模式切换、菜单、划词和 / 的位置、拖标签进正文。 */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RevPane from './RevPane.vue';
+import Icon from './common/Icon.vue';
+import BusyBtn from './common/BusyBtn.vue';
+import WorkPanel from './WorkPanel.vue';
 import ReviewBox from './ReviewBox.vue';
 import VersionBars from './VersionBars.vue';
 import CuesPane from './CuesPane.vue';
@@ -99,6 +145,7 @@ import { useSpeakStore } from '../stores/speak.js';
 import { useAccountStore } from '../stores/account.js';
 import { useTitlesStore } from '../stores/titles.js';
 import { useInsightsStore } from '../stores/insights.js';
+import { usePrompterStore } from '../stores/prompter.js';
 import { toast } from '../lib/feedback.js';
 import { countChars, esc, markdown } from '../lib/text.js';
 import { caretFromPoint, caretRect } from '../lib/caret.js';
@@ -108,20 +155,39 @@ const s = useStudioStore();
 const brief = useBriefStore();
 const ed = useEditorStore();
 const v = useVersionsStore();
+const review = useReviewStore();
+
+/* 右栏面板标题旁的小结：检查出几条、配图出了几张 */
+const reviewBadge = computed(() => {
+  if (review.running) return '检查中';
+  const x = review.result;
+  if (!review.open || !x) return '';
+  if (x.issues.length) return `${x.issues.length} 条建议`;
+  return x.flags?.length ? `${x.flags.length} 处风险提示` : '没发现问题';
+});
+const illusBadge = computed(() => {
+  const st = v.illus;
+  if (!st?.items?.length) return '';
+  return `已出 ${st.items.filter((i) => i.image).length}/${st.items.length}`;
+});
+
+function openPrompter() {
+  usePrompterStore().open();
+}
 
 const sentinel = ref(null);
 const article = ref(null);
 const editor = ref(null);
 
 const CONFIRM = [
-  { act: 'cues', label: '生成口播提示', hint: '切段、标语气，配合提词器照着念' },
-  { act: 'titles', label: '起标题', hint: '按不同写法出 6 个候选，挑一个替换' },
-  { act: 'multi', label: '出多平台版本', hint: '事实不变，按各平台重排结构和篇幅' },
-  { act: 'illus', label: '配图', hint: '正文写 <此处放图片> 就插在那里；没写则自动排位。出图要点「全部出图」' },
-  { act: 'learn', label: '喂给账号学习', hint: '作为语气样本，影响以后的成稿' },
-  { act: 'review', label: '再检查一遍', hint: '错字、通顺性、调性与风险' },
-  { act: 'metrics', label: '回填发布数据', hint: '发完填几个数字，复盘才知道什么有效' },
-  { act: 'archive', label: '归档', hint: '收进「已归档」，随时能恢复' },
+  { act: 'cues', icon: 'mic', label: '生成口播提示', hint: '切段、标语气，配合提词器照着念' },
+  { act: 'titles', icon: 'tag', label: '起标题', hint: '按不同写法出 6 个候选，挑一个替换' },
+  { act: 'multi', icon: 'layers', label: '出多平台版本', hint: '事实不变，按各平台重排结构和篇幅' },
+  { act: 'illus', icon: 'image', label: '配图', hint: '正文写 <此处放图片> 就插在那里；没写则自动排位。出图要点「全部出图」' },
+  { act: 'learn', icon: 'user', label: '喂给账号学习', hint: '作为语气样本，影响以后的成稿' },
+  { act: 'review', icon: 'shield', label: '再检查一遍', hint: '错字、通顺性、调性与风险' },
+  { act: 'metrics', icon: 'chart', label: '回填发布数据', hint: '发完填几个数字，复盘才知道什么有效' },
+  { act: 'archive', icon: 'archive', label: '归档', hint: '收进「已归档」，随时能恢复' },
 ];
 
 /* ---------- 标题、字数、阅读区 ---------- */

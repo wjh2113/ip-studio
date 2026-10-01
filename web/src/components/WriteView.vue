@@ -2,18 +2,27 @@
     <div id="writeView" :class="{ hidden: s.view !== 'write' }">
       <!-- 步骤条同时是导航：走过的步骤可以点回去 -->
       <ol class="steps" id="steps">
-        <li v-for="x in STEPS" :key="x.n" class="step" :class="stepClass(x.n)" :data-step="x.n" @click="b.clickStep(x.n)"><b>{{ x.n }}</b> {{ x.label }}</li>
+        <template v-for="(x, i) in STEPS" :key="x.n">
+          <li v-if="i" class="step-arrow" aria-hidden="true"><Icon name="arrow-right" :size="18" /></li>
+          <li class="step" :class="stepClass(x.n)" :data-step="x.n" @click="b.clickStep(x.n)">
+            <b><Icon v-if="stepClass(x.n).done && x.n !== s.step" name="check" :size="16" /><template v-else>{{ x.n }}</template></b>
+            <span class="step-txt"><span class="step-label">{{ x.label }}</span><span class="step-desc">{{ x.desc }}</span></span>
+          </li>
+        </template>
       </ol>
 
       <!-- 引导：还没有账号设定 -->
       <section v-if="onboarding" class="card onboard" id="onboardCard">
-        <h2>先给这个号定个位</h2>
-        <p>设定账号的平台、内容方向、目标用户和要解决的问题之后，每次创作都会自动带上这份语境——
-          选题不会跑偏，语气也不会每篇都换一个人。</p>
-        <div class="actions">
-          <button class="btn primary" id="quickBtn" type="button" @click="account.quick.open = true">贴一段自我介绍，帮我填</button>
-          <button class="btn ghost" id="onboardBtn" @click="account.open(null)">自己一项项填</button>
-          <button class="btn ghost" id="skipOnboardBtn" @click="skipOnboard">先不设定，直接创作</button>
+        <div class="onboard-art" aria-hidden="true"><Icon name="user" :size="30" /></div>
+        <div class="onboard-text">
+          <h2>先给这个号定个位</h2>
+          <p>设定账号的平台、内容方向、目标用户和要解决的问题之后，每次创作都会自动带上这份语境——
+            选题不会跑偏，语气也不会每篇都换一个人。</p>
+        </div>
+        <div class="onboard-acts">
+          <button class="onboard-opt primary" id="quickBtn" type="button" @click="account.quick.open = true"><b>贴一段自我介绍帮我填</b><span>自动识别并填好设定</span></button>
+          <button class="onboard-opt" id="onboardBtn" @click="account.open(null)"><b>自己一项项填</b><span>手动设置账号信息</span></button>
+          <button class="onboard-opt" id="skipOnboardBtn" @click="skipOnboard"><b>先不设定直接创作</b><span>跳过设置，直接开始</span></button>
         </div>
       </section>
 
@@ -26,6 +35,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import Icon from './common/Icon.vue';
 import BriefCard from './BriefCard.vue';
 import TopicsCard from './TopicsCard.vue';
 import ContentCard from './ContentCard.vue';
@@ -37,7 +47,11 @@ const s = useStudioStore();
 const b = useBriefStore();
 const account = useAccountStore();
 
-const STEPS = [{ n: 1, label: '确定选题' }, { n: 2, label: '选择话题方向' }, { n: 3, label: '创作内容' }];
+const STEPS = [
+  { n: 1, label: '确定选题', desc: '明确题材与创作方向' },
+  { n: 2, label: '选择话题方向', desc: '从三个方向里挑最合适的' },
+  { n: 3, label: '创作内容', desc: '成稿、配图与口播' },
+];
 
 const onboarding = computed(() => Boolean(s.user) && !s.personas.length && !s.skipOnboard);
 

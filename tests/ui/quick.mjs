@@ -22,7 +22,7 @@ await step('注册 → 看到引导卡', async () => {
   await page.fill('#authForm [name=password]', 'secret123');
   await page.click('#authSubmit');
   await page.waitForSelector('#quickBtn', { state: 'visible' });
-  return (await page.textContent('#onboardCard .actions')).replace(/\s+/g, ' ').trim();
+  return (await page.textContent('#onboardCard .onboard-acts')).replace(/\s+/g, ' ').trim();
 });
 await step('太短的介绍被拦下', async () => {
   await page.click('#quickBtn');
