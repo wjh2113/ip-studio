@@ -1,12 +1,19 @@
 /* 前端 · brief：创作简报：参数继承、题材推荐、第一步三个方向。从原 app.js 原样拆出。 */
 import { PERSONA_FIELDS, api, busy, currentPersona, el, esc, goStep, hint, state, syncLength, toast } from './core.js';
-import { closeSectionManager, collectSectionInputs, loadPersonas, loadSamples, loadSections, missingRequired, renderPersonaBar, renderSectionChips, renderSectionInputs, resetBrief } from './account.js';
+import { collectSectionInputs, loadPersonas, loadSamples, loadSections, missingRequired, renderPersonaBar, renderSectionChips, renderSectionInputs, resetBrief } from './account.js';
 import { generate, loadHistory, renderHistory } from './compose.js';
 import { renderContent, setMode } from './editor.js';
 import { renderCues } from './speak.js';
 import { renderIllusBar, renderMultiBar, renderVersionTabs, ver } from './versions.js';
 import { addPool, loadMaterials, mat } from './library.js';
 import { legacy } from '../../web/src/lib/legacy.js';
+import { useSectionsStore } from '../../web/src/stores/sections.js';
+import { useFrameworksStore } from '../../web/src/stores/frameworks.js';
+
+/* 写法框架推荐要看平台和题材，这两样还在这个表单里 */
+legacy.briefContext = () => ({ platform: el.platformSel.value || '', subject: el.briefForm.subject.value.trim() });
+el.platformSel.addEventListener('change', () => useFrameworksStore().loadRecs());
+el.briefForm.subject.addEventListener('change', () => useFrameworksStore().loadRecs());
 
 /* ---------------- 简报参数：默认跟账号走 ---------------- */
 
@@ -254,9 +261,8 @@ el.personaCancelBtn.addEventListener('click', closePersonaModal);
 el.personaCloseBtn.addEventListener('click', closePersonaModal);
 
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if (!el.sectionModal.classList.contains('hidden')) closeSectionManager();
-  else if (!el.personaModal.classList.contains('hidden')) closePersonaModal();
+  if (e.key !== 'Escape' || useSectionsStore().managerOpen) return;
+  if (!el.personaModal.classList.contains('hidden')) closePersonaModal();
 });
 
 el.personaForm.addEventListener('submit', async (e) => {
@@ -366,6 +372,7 @@ el.retopicsBtn.addEventListener('click', async () => {
 
 el.newBtn.addEventListener('click', () => {
   if (state.streaming) return;
+  useFrameworksStore().choose(null);
   resetBrief();
   renderHistory();
   el.briefForm.subject.focus();
@@ -373,6 +380,8 @@ el.newBtn.addEventListener('click', () => {
 
 /* ---------------- 渲染方向 ---------------- */
 legacy.setDraft = (d) => setDraft(d);
+legacy.resetBrief = () => resetBrief();
+legacy.useSubject = (subject, hotspot) => useSubject(subject, hotspot);
 
 export function setDraft(draft) {
   state.revOpen = false;

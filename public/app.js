@@ -7,12 +7,10 @@
  *   compose.js   第二步流式成稿、创作记录列表
  *   export.js    复制 / 下载 / 导出
  *   editor.js    成稿编辑器：保存、划词改写、/ 续写、AI 浮层、三动作工具条、正文历史、阅读/编辑模式、语音改稿
- *   hot.js       热点板块：榜单与比对
  *   review.js    成稿检查
  *   speak.js     口播提示、口播记录与评测、提词器
  *   versions.js  多平台版本与图文配图
  *   library.js   素材库与选题池
- *   frameworks.js 写法框架：简报里的推荐与选择、框架库的浏览与编辑
  *   quickstart.js 快速建号：贴自我介绍和旧文章，先把账号设定填出来
  * 这里先按顺序加载它们（core 最先），最后启动。 */
 import { api, el, esc, state, syncLength, toast } from './js/core.js';
@@ -22,12 +20,10 @@ import './js/brief.js';
 import './js/compose.js';
 import './js/export.js';
 import './js/editor.js';
-import './js/hot.js';
 import './js/review.js';
 import './js/speak.js';
 import './js/versions.js';
 import './js/library.js';
-import './js/frameworks.js';
 import './js/quickstart.js';
 
 /* ---------------- 启动 ---------------- */

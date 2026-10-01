@@ -71,28 +71,18 @@ export const el = {
   hotRef: $('hotRef'),
   historyFilter: $('historyFilter'), archiveDoneBtn: $('archiveDoneBtn'),
   sectionPick: $('sectionPick'), sectionChips: $('sectionChips'),
-  sectionModal: $('sectionModal'), sectionModalClose: $('sectionModalClose'),
-  sectionModalSub: $('sectionModalSub'), manageSectionsBtn: $('manageSectionsBtn'),
-  sectionList: $('sectionList'), sectionPreset: $('sectionPreset'),
-  sectionAddBtn: $('sectionAddBtn'), sectionForm: $('sectionForm'), sectionName: $('sectionName'),
-  sectionPurpose: $('sectionPurpose'), sectionGuide: $('sectionGuide'), sectionError: $('sectionError'),
-  fieldRows: $('fieldRows'), fieldAddBtn: $('fieldAddBtn'), sectionInputs: $('sectionInputs'),
-  sectionSaveBtn: $('sectionSaveBtn'), sectionCancelBtn: $('sectionCancelBtn'),
+  manageSectionsBtn: $('manageSectionsBtn'),
+  sectionInputs: $('sectionInputs'),
   inheritRow: $('inheritRow'), inheritFacts: $('inheritFacts'),
   editParamsBtn: $('editParamsBtn'), paramGrid: $('paramGrid'),
   paramReset: $('paramReset'), resetParamsBtn: $('resetParamsBtn'),
-  viewNav: $('viewNav'), writeView: $('writeView'), hotView: $('hotView'),
-  hotRun: $('hotRun'), hotMeta: $('hotMeta'), hotSources: $('hotSources'),
-  hotMatches: $('hotMatches'), hotIntro: $('hotIntro'),
-  boardList: $('boardList'), boardFilter: $('boardFilter'), boardRefresh: $('boardRefresh'),
-  manualInput: $('manualInput'), manualRun: $('manualRun'),
   styleSection: $('styleSection'), sampleList: $('sampleList'), digestBox: $('digestBox'),
   rebuildDigestBtn: $('rebuildDigestBtn'), styleHint: $('styleHint'),
 };
 
 export const state = useStudioStore().$state;
 
-export const currentPersona = () => state.personas.find((p) => p.id === state.personaId) || null;
+export const currentPersona = () => useStudioStore().currentPersona;
 
 export const PERSONA_FIELDS = [
   'name', 'platform', 'tone', 'content_focus', 'audience', 'problem', 'notes',

@@ -8,8 +8,6 @@ import { flushSave, markDirty, renderContent } from './editor.js';
 
 const VERDICT_LABEL = { ok: '没发现问题', minor: '有几处小毛病', bad: '大面积不通顺' };
 
-export const SUMMARY_SOURCE = { board: '　来源：榜单摘要', article: '　来源：抓取原文后概括' };
-
 el.reviewBtn.addEventListener('click', () => runReview());
 
 el.reviewClose.addEventListener('click', () => el.reviewBox.classList.add('hidden'));

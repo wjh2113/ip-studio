@@ -1,5 +1,5 @@
 <template>
-    <div id="writeView">
+    <div id="writeView" :class="{ hidden: s.view !== 'write' }">
       <!-- 步骤条同时是导航：走过的步骤可以点回去 -->
       <ol class="steps" id="steps">
         <li class="step active" data-step="1"><b>1</b> 确定选题</li>
@@ -39,12 +39,7 @@
 
           <div class="section-inputs hidden" id="sectionInputs"></div>
 
-          <!-- 写法框架：默认不套；推荐三个，点一下就用。框架管结构，素材管事实 -->
-          <div class="sections-pick" id="fwPick">
-            <span class="sections-label">写法框架</span>
-            <div class="section-chips" id="fwChips"></div>
-            <button type="button" class="btn ghost small" id="fwLibBtn">框架库</button>
-          </div>
+          <FrameworkPick />
 
           <div class="hot-ref hidden" id="hotRef"></div>
 
@@ -268,3 +263,10 @@
       </section>
     </div>
 </template>
+
+<script setup>
+import { useStudioStore } from '../stores/studio.js';
+import FrameworkPick from './FrameworkPick.vue';
+
+const s = useStudioStore();
+</script>

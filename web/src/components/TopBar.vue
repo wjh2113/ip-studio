@@ -2,8 +2,8 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></div>
     <nav class="tabs-nav" id="viewNav">
-      <button data-view="write" class="active">创作</button>
-      <button data-view="hot">热点</button>
+      <button data-view="write" :class="{ active: s.view === 'write' }" @click="s.view = 'write'">创作</button>
+      <button data-view="hot" :class="{ active: s.view === 'hot' }" @click="s.view = 'hot'">热点</button>
     </nav>
     <div class="topbar-right">
       <span class="chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle">{{ llmText }}</span>

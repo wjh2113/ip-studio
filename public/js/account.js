@@ -3,8 +3,10 @@ import { api, busy, creatorLine, currentPersona, el, esc, goStep, state, toast }
 import { applyPersonaDefaults, editCurrentPersona, loadIdeas } from './brief.js';
 import { loadHistory, platformLabel } from './compose.js';
 import { flushSave } from './editor.js';
-import { openHot } from './hot.js';
 import { loadPool } from './library.js';
+import { useSectionsStore } from '../../web/src/stores/sections.js';
+import { useFrameworksStore } from '../../web/src/stores/frameworks.js';
+import { legacy } from '../../web/src/lib/legacy.js';
 
 /* ---------------- 账号设定 ---------------- */
 /* 刷新后停在原来的账号。不记的话每次回来都跳回第一个，
@@ -93,7 +95,6 @@ el.personaList.addEventListener('click', (e) => {
   resetBrief();
   renderPersonaBar();
   loadHistory();
-  if (state.view === 'hot') { el.hotMatches.innerHTML = ''; openHot(); }
 });
 
 export function resetBrief() {
@@ -248,6 +249,7 @@ el.sectionChips.addEventListener('click', (e) => {
   state.sectionId = btn.dataset.section ? Number(btn.dataset.section) : null;
   renderSectionChips();
   renderSectionInputs();
+  useFrameworksStore().applySectionDefault();
 });
 
 /* 选中的栏目要什么素材，就在简报里问什么 */
@@ -289,174 +291,12 @@ export function missingRequired() {
   return (section?.fields || []).filter((f) => f.required && !values[f.label]).map((f) => f.label);
 }
 
-/* ---------------- 账号设定里的栏目管理 ---------------- */
+/* ---------------- 栏目管理浮层在 Vue（SectionModal.vue） ---------------- */
 
-el.manageSectionsBtn.addEventListener('click', () => openSectionManager());
+el.manageSectionsBtn.addEventListener('click', () => useSectionsStore().openManager());
 
-async function openSectionManager() {
-  const persona = currentPersona();
-  if (!persona) { toast('先选一个账号'); return; }
-  state.sectionPersonaId = persona.id;
-  el.sectionModalSub.textContent = `账号「${persona.name}」`;
-  closeSectionForm();
-  el.sectionList.innerHTML = '';
-  el.sectionModal.classList.remove('hidden');
-  await loadSections(persona.id, { forPicker: false });
-  renderSectionManager();
-}
-
-export function closeSectionManager() {
-  el.sectionModal.classList.add('hidden');
-  renderSectionChips();          // 增删过就同步到简报那排
+// 管理浮层关掉后：增删过的栏目同步到简报那一排
+legacy.sectionsChanged = () => {
+  renderSectionChips();
   renderSectionInputs(collectSectionInputs() || {});
-}
-
-el.sectionModalClose.addEventListener('click', closeSectionManager);
-
-el.sectionModal.addEventListener('click', (e) => {
-  if (e.target === el.sectionModal) closeSectionManager();
-});
-
-function renderSectionManager() {
-  el.sectionList.innerHTML = state.sections.map((s) => `
-    <div class="section-row" data-row="${s.id}">
-      <div class="info">
-        <span class="nm">${esc(s.name)}</span>
-        ${s.purpose ? `<span class="ps">${esc(s.purpose)}</span>` : ''}
-      </div>
-      ${s.draft_count ? `<span class="cnt">${s.draft_count} 篇</span>` : ''}
-      <button type="button" data-edit="${s.id}">编辑</button>
-      <button type="button" class="del" data-delsec="${s.id}" title="删除">×</button>
-    </div>`).join('');
-
-  const used = new Set(state.sections.map((s) => s.name));
-  el.sectionPreset.innerHTML = '<option value="">自定义栏目…</option>'
-    + state.presets.filter((p) => !used.has(p.name))
-      .map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-}
-
-el.sectionAddBtn.addEventListener('click', () => {
-  const preset = state.presets.find((p) => p.name === el.sectionPreset.value);
-  openSectionForm(preset ? { ...preset } : { name: '', purpose: '', guide: '' });
-});
-
-el.sectionList.addEventListener('click', async (e) => {
-  const pid = state.sectionPersonaId;
-  const edit = e.target.closest('button[data-edit]');
-  const del = e.target.closest('button[data-delsec]');
-  if (edit) {
-    const s = state.sections.find((x) => x.id === Number(edit.dataset.edit));
-    if (s) openSectionForm(s, s.id);
-    return;
-  }
-  if (!del) return;
-  const s = state.sections.find((x) => x.id === Number(del.dataset.delsec));
-  if (!await ask.confirm({
-    title: `删除栏目「${s?.name}」？`,
-    body: s?.draft_count ? `其下 ${s.draft_count} 篇创作会保留。` : '',
-    ok: '删除', danger: true,
-  })) return;
-  try {
-    const { sections } = await api(`/personas/${pid}/sections/${del.dataset.delsec}`, { method: 'DELETE' });
-    state.sections = sections;
-    renderSectionManager();
-  } catch (err) { toast(err.message); }
-});
-
-function openSectionForm(values, id = null) {
-  state.editingSection = id;
-  el.sectionName.value = values.name || '';
-  el.sectionPurpose.value = values.purpose || '';
-  el.sectionGuide.value = values.guide || '';
-  fillFrameworkSelect(values.default_framework || '');
-  renderFieldRows(values.fields || []);
-  el.sectionError.textContent = '';
-  el.sectionForm.classList.remove('hidden');
-  el.sectionName.focus();
-}
-
-/* 栏目默认框架的下拉：内置 + 我的。每次打开表单都拉一次，框架库里刚加的也能选 */
-async function fillFrameworkSelect(current) {
-  const sel = document.getElementById('sectionFramework');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">不指定</option>';
-  try {
-    const { builtin, mine } = await api('/frameworks');
-    const opt = (f) => `<option value="${esc(f.key)}">${esc(f.name)}</option>`;
-    sel.innerHTML = '<option value="">不指定</option>'
-      + (mine.length ? `<optgroup label="我的">${mine.map(opt).join('')}</optgroup>` : '')
-      + `<optgroup label="内置">${builtin.map(opt).join('')}</optgroup>`;
-  } catch { /* 拉不到就只能不指定 */ }
-  sel.value = current;
-}
-
-function renderFieldRows(fields) {
-  el.fieldRows.innerHTML = fields.map((f) => fieldRowHtml(f)).join('');
-}
-
-const fieldRowHtml = (f = {}) => `
-  <div class="field-row">
-    <input type="text" class="lbl" value="${esc(f.label || '')}" maxlength="30" placeholder="要什么，如：你的背景经历" />
-    <input type="text" class="hnt" value="${esc(f.hint || '')}" maxlength="80" placeholder="给自己的提示（选填）" />
-    <label class="req-box"><input type="checkbox" ${f.required ? 'checked' : ''} />必填</label>
-    <button type="button" class="del" title="删掉这项">×</button>
-  </div>`;
-
-el.fieldAddBtn.addEventListener('click', () => {
-  if (el.fieldRows.children.length >= 8) { toast('一个栏目最多 8 项素材'); return; }
-  el.fieldRows.insertAdjacentHTML('beforeend', fieldRowHtml());
-  el.fieldRows.lastElementChild.querySelector('.lbl').focus();
-});
-
-el.fieldRows.addEventListener('click', async (e) => {
-  const row = e.target.closest('.field-row');
-  if (!row || !e.target.closest('.del')) return;
-  const label = row.querySelector('.lbl')?.value.trim();
-  if (!await ask.confirm({
-    title: label ? `删掉「${label}」这项？` : '删掉这项？',
-    body: '还没保存的填写会一起去掉。',
-    ok: '删除', danger: true,
-  })) return;
-  row.remove();
-});
-
-const collectFields = () => [...el.fieldRows.querySelectorAll('.field-row')]
-  .map((row) => ({
-    label: row.querySelector('.lbl').value.trim(),
-    hint: row.querySelector('.hnt').value.trim(),
-    required: row.querySelector('input[type="checkbox"]').checked,
-  }))
-  .filter((f) => f.label);
-
-function closeSectionForm() {
-  state.editingSection = null;
-  el.sectionForm.classList.add('hidden');
-}
-
-el.sectionCancelBtn.addEventListener('click', closeSectionForm);
-
-el.sectionSaveBtn.addEventListener('click', async () => {
-  const personaId = state.sectionPersonaId;
-  if (!personaId) return;
-  const body = {
-    name: el.sectionName.value.trim(),
-    purpose: el.sectionPurpose.value.trim(),
-    guide: el.sectionGuide.value.trim(),
-    fields: collectFields(),
-    default_framework: document.getElementById('sectionFramework')?.value || '',
-  };
-  const id = state.editingSection;
-  await busy(el.sectionSaveBtn, async () => {
-    try {
-      const { sections } = await api(
-        id ? `/personas/${personaId}/sections/${id}` : `/personas/${personaId}/sections`,
-        { method: id ? 'PUT' : 'POST', body },
-      );
-      state.sections = sections;
-      renderSectionManager();
-      closeSectionForm();
-    } catch (err) {
-      el.sectionError.textContent = err.message;
-    }
-  });
-});
+};

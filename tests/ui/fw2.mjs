@@ -51,7 +51,7 @@ await step('栏目设默认框架（用刚拆出来的）', async () => {
   const key = await page.$eval('#sectionFramework optgroup[label="我的"] option', (o) => o.value);
   await page.selectOption('#sectionFramework', key);
   // 栏目要求的必填素材：测试里全部清掉
-  await page.$$eval('#fieldRows input[type=checkbox]', (cs) => cs.forEach((c) => { c.checked = false; }));
+  for (const c of await page.$$('#fieldRows input[type=checkbox]')) await c.uncheck();
   await page.click('#sectionSaveBtn');
   await page.waitForSelector('#sectionForm.hidden', { state: 'attached' });
   await page.click('#sectionModalClose');

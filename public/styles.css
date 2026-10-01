@@ -1203,9 +1203,11 @@ body::before {
   -webkit-mask-image: radial-gradient(1100px 620px at 50% 0%, #000 30%, transparent 78%);
 }
 body > * { position: relative; z-index: 1; }
-/* Vue 挂在 #cw 上。display:contents 不产生盒子，子节点仍按原来「body 的直接子元素」叠在背景网格之上 */
+/* Vue 挂在 #cw 上。display:contents 不产生盒子，子节点仍按原来「body 的直接子元素」叠在背景网格之上。
+   用 :where 把优先级降到 0：浮层、提示条这些自己写了 position: fixed 的要以自己的为准，
+   写成 #cw > * 的话 id 选择器优先级更高，会把它们全改成 relative，浮层就跑到页面最底下去了 */
 #cw { display: contents; }
-#cw > * { position: relative; z-index: 1; }
+:where(#cw) > * { position: relative; z-index: 1; }
 
 /* ② 板块标题的主色短线。比整块着色克制，但足够把层级说清楚 */
 legend, .acc-panel > .subsection > legend, .docs-main h4 {

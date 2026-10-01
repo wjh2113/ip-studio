@@ -3,7 +3,8 @@ import { defineStore } from 'pinia';
 /* 和原来 public/js/core.js 里的 state 是同一份字段（core.js 里 state = useStudioStore().$state）。
  * 功能模块通过 core.js 读写，组件通过这个 store 读写，指向同一份。
  *
- * 按业务拆出去的数据在同目录的其他 store（plan 用量、jobs 任务、titles 标题、insights 回填与复盘）。
+ * 按业务拆出去的数据在同目录的其他 store（plan 用量、jobs 任务、titles 标题、insights 回填与复盘、
+ * hot 热点、frameworks 写法框架、sections 栏目管理）。
  * 还没迁完的界面是 public/js 里的模块按 id 找元素、拼 HTML。迁移规则见 docs/ARCHITECTURE.md。 */
 export const useStudioStore = defineStore('studio', {
   state: () => ({
@@ -27,7 +28,6 @@ export const useStudioStore = defineStore('studio', {
     revText: '',
     revisions: [],
     view: 'write',
-    boards: null,
     paramsUnlocked: false,
     sections: [],
     sectionId: null,
@@ -47,6 +47,8 @@ export const useStudioStore = defineStore('studio', {
     archivingDone: false, // 「把已完成的收起来」进行中（Sidebar）
   }),
   getters: {
+    /* 当前选中的账号设定；「全部创作」时是 null */
+    currentPersona: (s) => s.personas.find((p) => p.id === s.personaId) || null,
     /* 平台 key → 中文名（meta 还没到时原样返回 key） */
     platformLabel: (s) => (key) => s.meta?.platforms?.find((p) => p.key === key)?.label || key,
   },
