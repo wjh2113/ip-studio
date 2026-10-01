@@ -60,7 +60,7 @@ await step('切到已归档，再恢复一篇', async () => {
 });
 await step('口播筛选：用单独的容器，创作记录列表藏起来', async () => {
   await page.click('#historyFilter [data-view="speaks"]');
-  await page.waitForFunction(() => /口播记录/.test(document.querySelector('#speakHistory')?.textContent || ''));
+  await page.waitForFunction(() => /口播记录|录音评测/.test(document.querySelector('#speakHistory')?.textContent || ''));
   const vis = await page.evaluate(() => ({
     history: getComputedStyle(document.querySelector('#history')).display,
     speak: getComputedStyle(document.querySelector('#speakHistory')).display,

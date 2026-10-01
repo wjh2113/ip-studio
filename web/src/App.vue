@@ -3,9 +3,9 @@
 
   <div id="app" class="app" :class="{ hidden: !s.user }">
     <TopBar />
-    <div class="layout" :class="{ 'no-side': s.view === 'library' || s.view === 'frameworks' }">
-      <!-- 素材库 / 框架库自带管理界面，不再叠账号设定 / 创作记录 -->
-      <Sidebar v-show="s.view !== 'library' && s.view !== 'frameworks'" />
+    <div class="layout" :class="{ 'no-side': s.view === 'frameworks' }">
+      <!-- 框架库自带管理界面，不叠侧栏；素材库的侧栏上半截换成素材分类（见 Sidebar / MaterialKinds） -->
+      <Sidebar v-show="s.view !== 'frameworks'" />
       <!-- 宽度按步骤走，见 .main[data-step] -->
       <main class="main" id="main" :data-step="s.view === 'write' ? s.step : undefined" :data-view="s.view">
         <WriteView />

@@ -1,6 +1,8 @@
 <template>
     <aside class="sidebar">
-      <div class="persona-bar">
+      <!-- 素材库列表页：上半截换成素材分类；新增 / 编辑素材时仍是账号设定（存进选题池要挑账号） -->
+      <MaterialKinds v-if="libMode" />
+      <div v-else class="persona-bar">
         <div class="sidebar-head">
           <span class="sh-title">账号设定<Icon name="gear" :size="14" /></span>
           <button class="btn primary small" id="newPersonaBtn" @click="account.open(null)"><Icon name="plus" :size="14" />新账号</button>
@@ -53,7 +55,7 @@
           <template v-else>{{ emptyTitle }}<br />从右边填写题材开始</template>
         </div>
         <div v-for="d in h.list" :key="d.id" class="history-item"
-             :class="{ active: s.draft?.id === d.id, archived: d.archived_at }" :data-id="d.id" @click="h.open(d.id)">
+             :class="{ active: s.draft?.id === d.id, archived: d.archived_at }" :data-id="d.id" @click="openDraft(d.id)">
           <div class="acts">
             <button :data-arch-id="d.id" :data-to="d.archived_at ? '0' : '1'" :title="d.archived_at ? '恢复到进行中' : '归档'"
               @click.stop="h.archive(d.id, !d.archived_at)"><Icon :name="d.archived_at ? 'undo' : 'archive'" :size="14" /></button>
@@ -95,6 +97,8 @@ import { useBriefStore } from '../stores/brief.js';
 import { useFrameworksStore } from '../stores/frameworks.js';
 import { speakLine, useSpeakStore } from '../stores/speak.js';
 import SpeakReview from './SpeakReview.vue';
+import MaterialKinds from './MaterialKinds.vue';
+import { useLibraryStore } from '../stores/library.js';
 import { stamp } from '../lib/text.js';
 
 const s = useStudioStore();
@@ -103,7 +107,9 @@ const h = useHistoryStore();
 const brief = useBriefStore();
 const sp = useSpeakStore();
 
+const lib = useLibraryStore();
 const current = computed(() => s.currentPersona);
+const libMode = computed(() => s.view === 'library' && !lib.form.open);
 
 const summary = computed(() => {
   const p = current.value;
@@ -123,8 +129,15 @@ const ownerName = (d) => s.personas.find((p) => p.id === d.persona_id)?.name || 
 
 const emptyTitle = computed(() => (current.value ? `「${current.value.name}」还没有创作记录` : '还没有创作记录'));
 
+/* 在素材库页点创作记录：回到创作页再打开 */
+function openDraft(id) {
+  if (s.view === 'library') s.view = 'write';
+  h.open(id);
+}
+
 function newDraft() {
   if (s.streaming) return;
+  if (s.view === 'library') s.view = 'write';
   brief.reset();
   useFrameworksStore().choose(null);
   brief.focusSubject += 1;
