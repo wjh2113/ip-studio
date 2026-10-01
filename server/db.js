@@ -509,10 +509,11 @@ export const Materials = {
   async byId(id, userId) {
     return one(orm().select().from(materials).where(and(eq(materials.id, id), eq(materials.user_id, userId))));
   },
+  /* personaId 省略 = 该用户全部；传 null = 未绑账号的；传数字 = 指定账号 */
   async list(userId, personaId) {
-    return orm().select().from(materials)
-      .where(and(eq(materials.user_id, userId), same(materials.persona_id, personaId ?? null)))
-      .orderBy(desc(materials.id));
+    const where = [eq(materials.user_id, userId)];
+    if (personaId !== undefined) where.push(same(materials.persona_id, personaId));
+    return orm().select().from(materials).where(and(...where)).orderBy(desc(materials.id));
   },
   async remove(id, userId) {
     const rows = await orm().delete(materials).where(and(eq(materials.id, id), eq(materials.user_id, userId))).returning({ id: materials.id });
@@ -598,9 +599,11 @@ export const Pool = {
   async byId(id, userId) {
     return one(orm().select().from(topicPool).where(and(eq(topicPool.id, id), eq(topicPool.user_id, userId))));
   },
+  /* personaId 省略 = 该用户全部；传 null = 未绑账号的；传数字 = 指定账号 */
   async list(userId, personaId) {
-    return orm().select().from(topicPool)
-      .where(and(eq(topicPool.user_id, userId), same(topicPool.persona_id, personaId ?? null)))
+    const where = [eq(topicPool.user_id, userId)];
+    if (personaId !== undefined) where.push(same(topicPool.persona_id, personaId));
+    return orm().select().from(topicPool).where(and(...where))
       .orderBy(sql`(${topicPool.plan_date} = '')`, asc(topicPool.plan_date), desc(topicPool.id));
   },
   /* 只改传进来的字段，一条 UPDATE 完成：不先读再写，两个人同时改不同字段不会互相覆盖 */

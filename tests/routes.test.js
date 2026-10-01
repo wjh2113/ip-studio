@@ -205,6 +205,35 @@ test('语气样本：加一篇就重建语气档案（以前 .map is not a funct
   assert.equal(r.data.added, 1);
 });
 
+test('素材库一级页：全量列表、按账号筛、增删改', async () => {
+  let r = await api.call('GET', '/api/personas');
+  const pid = r.data.personas[0].id;
+  r = await api.call('POST', `/api/personas/${pid}/materials`, {
+    kind: '经历', title: '第一次带队翻车', body: '把人带走一半之后才学会复盘。', tags: '管理,复盘',
+  });
+  assert.equal(r.status, 200, r.text);
+  const mid = r.data.material.id;
+
+  r = await api.call('GET', '/api/materials');
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.data.materials.some((m) => m.id === mid));
+  assert.ok(r.data.kinds.includes('经历'));
+
+  r = await api.call('GET', `/api/materials?persona=${pid}`);
+  assert.ok(r.data.materials.some((m) => m.id === mid));
+
+  r = await api.call('PUT', `/api/materials/${mid}`, {
+    kind: '案例', title: '第一次带队翻车', body: '复盘写进了新人手册。', tags: '管理',
+  });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.material.kind, '案例');
+
+  r = await api.call('DELETE', `/api/materials/${mid}`);
+  assert.equal(r.status, 200, r.text);
+  r = await api.call('GET', '/api/materials');
+  assert.ok(!r.data.materials.some((m) => m.id === mid));
+});
+
 test('管理后台：设置列表、保存设置报错、Eval 运行', async () => {
   const admin = client();
   let r = await admin.call('POST', '/api/admin/setup', { username: 'boss', password: 'adminpass9' });

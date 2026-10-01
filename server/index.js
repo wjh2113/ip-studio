@@ -114,6 +114,7 @@ const ROUTES = [
   ['GET', /^\/api\/prompt-docs$/, R.handlePromptDocs],
   ['PUT', /^\/api\/prompt-docs\/(?<key>[\w-]+)$/, R.handlePromptSave],
   ['POST', /^\/api\/prompt-docs\/(?<key>[\w-]+)\/revisions\/(?<rid>\d+)\/activate$/, R.handlePromptActivate],
+  ['GET', /^\/api\/materials$/, R.handleMaterialsIndex],
   ['GET', /^\/api\/personas\/(?<id>\d+)\/materials$/, R.handleMaterialList],
   ['POST', /^\/api\/personas\/(?<id>\d+)\/materials$/, R.handleMaterialCreate],
   ['PUT', /^\/api\/materials\/(?<mid>\d+)$/, R.handleMaterialUpdate],

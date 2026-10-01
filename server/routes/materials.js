@@ -43,10 +43,29 @@ export async function recallMaterials(userId, personaId, text, limit = 6) {
   return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.m);
 }
 
+/* 账号范围：不传 = 全部；none = 未绑账号；数字 = 该账号。和 /api/drafts、/api/today 同一口径 */
+function personaScope(url) {
+  const raw = url?.searchParams.get('persona');
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  if (raw === 'none') return null;
+  if (!/^\d+$/.test(raw)) throw new HttpError(400, '账号参数不对');
+  return Number(raw);
+}
+
+/* 素材库一级页：GET /api/materials?persona= */
+export async function handleMaterialsIndex(req, res, body, params, url) {
+  const user = await requireUser(req);
+  const personaId = personaScope(url);
+  if (typeof personaId === 'number' && !await Personas.byId(personaId, user.id)) {
+    throw new HttpError(404, '账号不存在');
+  }
+  json(res, 200, { materials: await Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
+}
+
 export async function handleMaterialList(req, res, body, params) {
   const user = await requireUser(req);
-  const personaId = params.id ? Number(params.id) : null;
-  if (personaId && !await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
+  const personaId = Number(params.id);
+  if (!await Personas.byId(personaId, user.id)) throw new HttpError(404, '账号不存在');
   json(res, 200, { materials: await Materials.list(user.id, personaId), kinds: MATERIAL_KINDS });
 }
 
@@ -92,8 +111,10 @@ export async function handleMaterialDelete(req, res, body, params) {
 
 export async function handlePoolList(req, res, body, params, url) {
   const user = await requireUser(req);
-  const raw = url?.searchParams.get('persona');
-  const personaId = raw ? Number(raw) : null;
+  const personaId = personaScope(url);
+  if (typeof personaId === 'number' && !await Personas.byId(personaId, user.id)) {
+    throw new HttpError(404, '账号不存在');
+  }
   json(res, 200, { pool: await Pool.list(user.id, personaId) });
 }
 
