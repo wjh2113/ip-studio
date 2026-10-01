@@ -1,5 +1,6 @@
 /* 落地页入口 */
 import { createApp } from 'vue';
+import '../styles/base.css';
 import '../styles/app.css';
 import '../styles/landing.css';
 import LandingApp from './LandingApp.vue';

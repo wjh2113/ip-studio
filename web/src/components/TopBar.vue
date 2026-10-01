@@ -6,20 +6,21 @@
       <button data-view="hot" :class="{ active: s.view === 'hot' }" @click="s.view = 'hot'">热点</button>
     </nav>
     <div class="topbar-right">
-      <span class="chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle">{{ llmText }}</span>
-      <button class="btn ghost small jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
-        title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()">任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
-      <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
-      <span class="user-name" id="userName">{{ s.user?.username }}</span>
-      <a class="btn ghost small" href="/prompts" target="_blank" rel="noopener"
-         title="每条提示词的产品定位、价值与功能逻辑">说明书</a>
-      <button class="btn ghost small" id="logoutBtn" @click="session.logout()">退出</button>
+      <span class="chip llm-chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle"><i class="dot" aria-hidden="true"></i>{{ llmText }}</span>
+      <button class="top-btn jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
+        title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()"><Icon name="bolt" />任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
+      <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><Icon name="crown" /><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
+      <span class="user-chip"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span></span>
+      <a class="top-link" href="/prompts" target="_blank" rel="noopener"
+         title="每条提示词的产品定位、价值与功能逻辑"><Icon name="book" />说明书</a>
+      <button class="top-link" id="logoutBtn" @click="session.logout()"><Icon name="logout" />退出</button>
     </div>
   </header>
 </template>
 
 <script setup>
 import { computed } from 'vue';
+import Icon from './common/Icon.vue';
 import { useStudioStore } from '../stores/studio.js';
 import { usePlanStore } from '../stores/plan.js';
 import { useJobsStore } from '../stores/jobs.js';
