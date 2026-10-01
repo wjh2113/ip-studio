@@ -189,5 +189,10 @@ async function activate(p, h) {
 }
 
 load();
-onBeforeUnmount(() => observer?.disconnect());
+const onFocus = () => { if (!d.value?.canEdit) load(); };
+window.addEventListener('focus', onFocus);
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  window.removeEventListener('focus', onFocus);
+});
 </script>

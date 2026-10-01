@@ -183,7 +183,6 @@ export function setupHttpEnabled() {
 }
 
 export async function ensureBootstrapAdmin() {
-  if (!await adminSetupNeeded()) return false;
   const username = String(process.env.ADMIN_USERNAME || '').trim();
   const password = String(process.env.ADMIN_PASSWORD || '');
   if (!username || !password) return false;
@@ -196,9 +195,18 @@ export async function ensureBootstrapAdmin() {
     console.warn('[admin] 环境变量里的管理员账号不合规：', bad);
     return false;
   }
-  await createAdmin(username, password);
-  console.log(`[admin] 已从环境变量创建管理员「${username}」`);
-  return true;
+  if (await adminSetupNeeded()) {
+    await createAdmin(username, password);
+    console.log(`[admin] 已从环境变量创建管理员「${username}」`);
+    return true;
+  }
+  /* 已有管理员时仍以 .env 为准同步密码——否则改了 ADMIN_PASSWORD 却登不进，说明书页也就改不了提示词 */
+  const existing = await Admins.byName(username);
+  if (existing && !verifyPassword(password, existing.pass_hash)) {
+    await Admins.setPassword(existing.id, hashPassword(password));
+    console.log(`[admin] 已按环境变量更新管理员「${username}」的密码`);
+  }
+  return false;
 }
 
 export async function currentAdmin(req) {

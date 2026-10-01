@@ -5,6 +5,7 @@ import { ref } from 'vue';
 
 export async function adminApi(path, options = {}) {
   const res = await fetch(`/api${path}`, {
+    credentials: 'same-origin',
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: options.body ? JSON.stringify(options.body) : undefined,
