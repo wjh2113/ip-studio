@@ -538,7 +538,12 @@
 .fw-card-head b { font-size: 14.5px; }
 .fw-tag { font-size: 11px; padding: 0 7px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
 .fw-sum { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.65; }
-.fw-actions { display: flex; gap: 6px; }
+.fw-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.fw-detail { display: grid; gap: 10px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; background: var(--panel-2); }
+.fw-detail-block h4 { margin: 0 0 4px; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.fw-detail-text { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+.fw-example { margin: 0; font-size: 13px; line-height: 1.75; color: var(--text); white-space: pre-wrap; font-family: inherit; background: var(--panel); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); }
+.fw-detail-toggle { margin-left: auto; }
 .fw-bar-slots { display: flex; gap: 2px; height: 24px; border-radius: 6px; overflow: hidden; }
 .fw-seg { display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 4px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .fw-seg.s0 { background: color-mix(in srgb, var(--accent) 24%, transparent); }

@@ -58,8 +58,19 @@
           </div>
           <p v-if="f.summary" class="fw-sum">{{ f.summary }}</p>
           <SlotBar :slots="f.slots" />
+          <div v-if="openDetail === f.key && (f.detail || f.example)" class="fw-detail" :data-detail-panel="f.key">
+            <div v-if="f.detail" class="fw-detail-block">
+              <h4>详细解释</h4>
+              <p class="fw-detail-text">{{ f.detail }}</p>
+            </div>
+            <div v-if="f.example" class="fw-detail-block">
+              <h4>示例 <button type="button" class="btn ghost small" :data-copy-ex="f.key" @click="copyExample(f)">复制</button></h4>
+              <pre class="fw-example">{{ f.example }}</pre>
+            </div>
+          </div>
           <div class="fw-actions">
             <button type="button" class="btn primary small" :data-use="f.key" @click="use(f)">{{ s.frameworkKey === f.key ? '正在用' : '用这个写' }}</button>
+            <button v-if="f.detail || f.example" type="button" class="btn ghost small fw-detail-toggle" :data-detail="f.key" :aria-expanded="openDetail === f.key" @click="toggleDetail(f.key)">{{ openDetail === f.key ? '收起' : '详细解释与示例' }}</button>
             <BusyBtn v-if="f.builtin" class="btn ghost small" :data-copy="f.key" :busy="copying === f.key" @click="copyBuiltin(f)">复制到我的</BusyBtn>
             <template v-else>
               <button type="button" class="btn ghost small" :data-edit="f.id" @click="openEditor(f)">编辑</button>
@@ -96,6 +107,8 @@
           </div>
           <div class="fw-bar-preview" id="fwPreview"><SlotBar v-if="previewSlots.length" :slots="previewSlots" /></div>
         </div>
+        <label class="full">详细解释<textarea id="fwDetail" maxlength="1200" rows="4" v-model="ed.detail" placeholder="为什么这么写、什么时候用、容易翻车在哪（可选，帮自己回顾和给团队看）"></textarea></label>
+        <label class="full">示例<textarea id="fwExample" maxlength="2000" rows="6" v-model="ed.example" placeholder="一篇能照着学的范文，按上面的段落顺序写（可选）"></textarea></label>
         <p v-if="ed.why" class="hint" id="fwWhy">为什么有效：{{ ed.why }}</p>
         <p class="form-error" id="fwError">{{ error }}</p>
         <div class="section-form-foot">
@@ -131,6 +144,7 @@ const listError = ref('');
 const copying = ref('');
 const nameBox = ref(null);
 const sourceBox = ref(null);
+const openDetail = ref('');
 
 watch(() => s.view, async (view) => {
   if (view !== 'frameworks') return;
@@ -156,6 +170,13 @@ function use(f) {
   toast(`本篇按「${f.name}」的结构写`);
 }
 
+function toggleDetail(key) { openDetail.value = openDetail.value === key ? '' : key; }
+
+async function copyExample(f) {
+  try { await navigator.clipboard.writeText(f.example || ''); toast('示例已复制'); }
+  catch { toast('复制失败，请手动选中复制'); }
+}
+
 async function copyBuiltin(f) {
   copying.value = f.key;
   try {
@@ -171,7 +192,7 @@ async function del(f) {
 }
 
 let uid = 0;
-const ed = reactive({ id: null, name: '', summary: '', scenes: '', platforms: [], slots: [], source: null, why: '' });
+const ed = reactive({ id: null, name: '', summary: '', scenes: '', platforms: [], slots: [], detail: '', example: '', source: null, why: '' });
 const error = ref('');
 const saving = useBusy();
 
@@ -183,6 +204,8 @@ function openEditor(f = null, { source = null, why = '' } = {}) {
   ed.why = why;
   ed.name = f?.name || '';
   ed.summary = f?.summary || '';
+  ed.detail = f?.detail || '';
+  ed.example = f?.example || '';
   ed.scenes = (f?.scenes || []).join('，');
   ed.platforms = [...(f?.platforms || [])];
   const slots = f?.slots?.length ? f.slots : [
@@ -220,6 +243,8 @@ async function save() {
   const body = {
     name: ed.name.trim(),
     summary: ed.summary.trim(),
+    detail: ed.detail.trim(),
+    example: ed.example.trim(),
     scenes: ed.scenes,
     platforms: [...ed.platforms],
     slots: readSlots(),

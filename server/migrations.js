@@ -84,6 +84,14 @@ export const MIGRATIONS = [
     await db.run(`UPDATE materials SET persona_id = NULL WHERE persona_id IS NOT NULL`);
     await db.run(`ALTER TABLE materials ALTER COLUMN kind SET DEFAULT '文章'`);
   } },
+  { version: 6, name: '框架库：详细解释与示例', up: async (db) => {
+    // 给每个框架补两段：detail 讲清「为什么这么写、什么时候用、容易翻车在哪」；
+    // example 给一段能照着学的范文。内置框架的内容在代码里回填，用户框架留空，作者自己补。
+    await db.exec(`
+      ALTER TABLE frameworks ADD COLUMN IF NOT EXISTS detail  text NOT NULL DEFAULT '';
+      ALTER TABLE frameworks ADD COLUMN IF NOT EXISTS example text NOT NULL DEFAULT '';
+    `);
+  } },
 ];
 
 function toPg(text) {

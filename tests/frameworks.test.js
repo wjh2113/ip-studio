@@ -12,6 +12,9 @@ test('内置框架：key 唯一、每个框架篇幅占比合计为 1、平台 k
     const sum = f.slots.reduce((n, x) => n + x.ratio, 0);
     assert.ok(Math.abs(sum - 1) < 1e-9, `${f.key} 合计 ${sum}`);
     for (const p of f.platforms) assert.ok(PLATFORMS[p], `${f.key} 平台 ${p}`);
+    // 内置框架都补了详细解释和示例，作者点开就能照着学
+    assert.ok(f.detail && f.detail.length >= 20, `${f.key} 缺详细解释`);
+    assert.ok(f.example && f.example.length >= 20, `${f.key} 缺示例`);
   }
   assert.ok(BUILTIN_FRAMEWORKS.length >= 20);
 });
@@ -23,6 +26,14 @@ test('清洗：占比归一化、空段丢掉、段数和名字校验', async ()
   assert.deepEqual(f.platforms, ['xiaohongshu']);
   assert.throws(() => normalizeFramework({ name: 'x', slots: [{ role: 'a' }] }), /至少/);
   assert.throws(() => normalizeFramework({ slots: [] }), /名字/);
+});
+
+test('清洗：detail 和 example 保留并截断', async () => {
+  const long = 'x'.repeat(2000);
+  const f = normalizeFramework({ name: 'F', detail: long, example: long, slots: [{ role: 'a', ratio: 1 }, { role: 'b', ratio: 1 }] }, Object.keys(PLATFORMS));
+  assert.equal(f.detail.length, 1200);
+  assert.equal(f.example.length, 2000);
+  assert.equal(normalizeFramework({ name: 'F', slots: [{ role: 'a', ratio: 1 }, { role: 'b', ratio: 1 }] }, Object.keys(PLATFORMS)).detail, '');
 });
 
 test('推荐：别的平台专用的不推，本平台专用和场景命中的靠前', async () => {

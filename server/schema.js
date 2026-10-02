@@ -173,6 +173,8 @@ export const frameworks = pgTable('frameworks', {
   platforms: text('platforms').notNull().default('[]'),
   scenes: text('scenes').notNull().default('[]'),
   slots_json: text('slots_json').notNull().default('[]'),
+  detail: text('detail').notNull().default(''),
+  example: text('example').notNull().default(''),
   source_text: text('source_text').notNull().default(''),
   from_key: text('from_key').notNull().default(''),
   used_count: integer('used_count').notNull().default(0),

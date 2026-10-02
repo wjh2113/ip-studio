@@ -531,6 +531,7 @@ function hydrateFramework(r) {
   return {
     key: `u:${r.id}`, id: r.id, builtin: false, kind: r.kind, name: r.name, summary: r.summary,
     platforms: arr(r.platforms), scenes: arr(r.scenes), slots: arr(r.slots_json),
+    detail: r.detail || '', example: r.example || '',
     from_key: r.from_key, used_count: r.used_count, created_at: r.created_at, updated_at: r.updated_at,
     source_chars: String(r.source_text || '').length,
   };
@@ -552,7 +553,8 @@ export const Frameworks = {
     const row = await one(orm().insert(frameworks).values({
       user_id: userId, name: f.name, summary: f.summary || '',
       platforms: JSON.stringify(f.platforms || []), scenes: JSON.stringify(f.scenes || []),
-      slots_json: JSON.stringify(f.slots), source_text: f.source_text || '', from_key: f.from_key || '',
+      slots_json: JSON.stringify(f.slots), detail: f.detail || '', example: f.example || '',
+      source_text: f.source_text || '', from_key: f.from_key || '',
       created_at: t, updated_at: t,
     }).returning());
     return hydrateFramework(row);
@@ -560,7 +562,8 @@ export const Frameworks = {
   async update(id, userId, f) {
     const rows = await orm().update(frameworks).set({
       name: f.name, summary: f.summary || '', platforms: JSON.stringify(f.platforms || []),
-      scenes: JSON.stringify(f.scenes || []), slots_json: JSON.stringify(f.slots), updated_at: now(),
+      scenes: JSON.stringify(f.scenes || []), slots_json: JSON.stringify(f.slots),
+      detail: f.detail || '', example: f.example || '', updated_at: now(),
     }).where(and(eq(frameworks.id, id), eq(frameworks.user_id, userId))).returning({ id: frameworks.id });
     if (rows.length && f.source_text !== undefined) {
       await orm().update(frameworks).set({ source_text: f.source_text }).where(and(eq(frameworks.id, id), eq(frameworks.user_id, userId)));
