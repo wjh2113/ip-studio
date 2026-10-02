@@ -1,6 +1,6 @@
 <template>
     <aside class="sidebar">
-      <!-- 素材库列表页：上半截换成素材分类；新增 / 编辑素材时仍是账号设定（存进选题池要挑账号） -->
+      <!-- 素材库页（含新增 / 编辑）：上半截换成素材分类；选题池要挑账号在表单右侧的「目标」里 -->
       <MaterialKinds v-if="libMode" />
       <div v-else class="persona-bar">
         <div class="sidebar-head">
@@ -109,7 +109,7 @@ const sp = useSpeakStore();
 
 const lib = useLibraryStore();
 const current = computed(() => s.currentPersona);
-const libMode = computed(() => s.view === 'library' && !lib.form.open);
+const libMode = computed(() => s.view === 'library');
 
 const summary = computed(() => {
   const p = current.value;

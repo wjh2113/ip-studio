@@ -35,7 +35,7 @@ await step('注册 → 进素材库：侧栏换成素材分类', async () => {
 await step('新增素材是整页：填文本 → 保存并继续新建 → 再存一条', async () => {
   await page.click('#libNewBtn');
   await page.waitForSelector('#matForm');
-  if (!await page.isVisible('#personaList')) throw new Error('新增页侧栏应是账号设定');
+  if (!await page.isVisible('#libKinds')) throw new Error('新增页侧栏仍应是素材分类');
   await page.fill('#matBody', '刚升组长那年，我把所有活都揽在自己身上，结果项目延期两周。');
   await page.fill('#matTitle', '第一次带团队踩的坑');
   await page.fill('#matTags', '经历，职场');
