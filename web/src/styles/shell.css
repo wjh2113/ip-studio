@@ -54,13 +54,14 @@
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 20;
 }
-.topbar .brand { min-width: calc(var(--sidebar-w) - 24px - 28px); }
+.topbar .brand { min-width: calc(var(--sidebar-w) - 24px - 28px); flex: none; }
 
-/* 板块切换：文字 tab + 底部主色条，贴着顶栏下沿 */
-.tabs-nav { display: flex; gap: 6px; align-self: stretch; }
+/* 板块切换：文字 tab + 底部主色条，贴着顶栏下沿。不收缩，避免窄屏把汉字竖着挤开。 */
+.tabs-nav { display: flex; gap: 6px; align-self: stretch; flex: none; }
 .tabs-nav button {
   position: relative; border: 0; background: transparent; cursor: pointer;
   padding: 0 14px; font-size: 15px; color: var(--muted);
+  flex: none; white-space: nowrap;
 }
 .tabs-nav button:hover { color: var(--text); }
 .tabs-nav button.active { color: var(--accent-ink); font-weight: 600; }
@@ -69,7 +70,7 @@
   border-radius: 2px; background: var(--accent);
 }
 
-.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
 .llm-chip {
   height: 32px; padding: 0 12px; border-radius: 8px;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 500;
@@ -119,6 +120,15 @@
   .user-name, .top-link { font-size: 0; }
   .user-name { display: none; }
   .top-link .ic { width: 18px; height: 18px; }
+}
+/* 平板：模型标识收成圆点，额度只留数字，说明书先藏起来给导航腾位置 */
+@media (max-width: 960px) {
+  .llm-chip { max-width: 36px; overflow: hidden; padding: 0 10px; font-size: 0; gap: 0; }
+  .llm-chip .dot { margin: 0; }
+  .credit-chip { font-size: 0; gap: 4px; padding: 0 10px; }
+  .credit-chip .ic, .credit-chip b { font-size: 13px; }
+  .credit-chip .ic { width: 16px; height: 16px; }
+  .topbar a.top-link[href="/prompts"] { display: none; }
 }
 
 /* ---------- 布局 ---------- */
@@ -279,4 +289,45 @@
   .main { padding: 16px; }
   .topbar { padding: 0 14px; }
   .tabs-nav button { padding: 0 8px; }
+}
+/* 手机浏览器：顶栏拆两行——上品牌与操作，下横向可滑导航。网页本为桌面设计，这里保证打开不挤烂。 */
+@media (max-width: 720px) {
+  :root { --topbar-h: 104px; }
+  .topbar {
+    height: auto; min-height: var(--topbar-h);
+    flex-wrap: wrap; align-items: center;
+    gap: 0 8px; padding: 8px 12px 0;
+  }
+  .topbar .brand {
+    order: 1; flex: 1 1 auto; min-width: 0;
+    font-size: 15px; gap: 8px;
+  }
+  .topbar .brand .brand-mark { width: 26px; height: 26px; border-radius: 7px; }
+  .topbar-right {
+    order: 2; margin-left: 0; gap: 4px; flex: none;
+  }
+  .tabs-nav {
+    order: 3; flex: 1 1 100%;
+    align-self: auto; height: 44px;
+    gap: 2px; margin: 6px -12px 0; padding: 0 8px;
+    border-top: 1px solid var(--border);
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs-nav::-webkit-scrollbar { display: none; }
+  .tabs-nav button {
+    height: 100%; padding: 0 12px; font-size: 14px;
+  }
+  .tabs-nav button.active::after { left: 10px; right: 10px; bottom: 0; }
+  .llm-chip { display: none; }
+  .jobs-btn { font-size: 0; padding: 0 8px; gap: 0; }
+  .jobs-btn .ic { width: 16px; height: 16px; }
+  .credit-chip { padding: 0 8px; }
+  .user-chip { padding: 0; }
+  .user-avatar { width: 26px; height: 26px; font-size: 11px; }
+  .top-link { padding: 0 6px; }
+  .top-link .ic { width: 16px; height: 16px; }
+  .sidebar { max-height: 38vh; }
+  .main { padding: 12px; gap: 12px; }
 }
