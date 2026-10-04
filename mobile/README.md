@@ -45,8 +45,9 @@ App 和小程序没有 cookie，登录时带请求头 `X-Client: app`，服务�
 | 口播 | `pages/speak/index` | 待练口播、评测记录 |
 | 录制 | `pages/speak/record` | 录前试镜（前置摄像头、光线和音量）、场景预设（室外 / 车上 / 室内）、提词器录制、防息屏 |
 | 评测结果 | `pages/speak/result` | 总分、逐句问题，点一句跳到提词器对应位置重录 |
-| 灵感 | `pages/inspire/index` | 语音记 / 打字记 / 拍照记 / 剪贴板导入；显示每条是否已同步 |
-| 记一条 | `pages/inspire/edit` | 存到选题池或素材库，关联账号；没网先存本机 |
+| 灵感 | `pages/inspire/index` | 主入口「快速存到素材库」；语音 / 记选题 / 拍照 / 剪贴板；显示每条是否已同步 |
+| 快速存素材 | `pages/inspire/quick` | 写完就存进素材库：标题取第一句，可选内容性质标签，不问账号 |
+| 记一条 | `pages/inspire/edit` | 完整表单：选题池或素材库；素材不强制挂账号；没网先存本机 |
 | 对标速存 | `pages/inspire/benchmark` | 贴链接或正文，只存标题、提纲和摘要；可转成素材或写法框架 |
 | 任务 | `pages/jobs` | 出图、口播评测这些后台任务：进行中 / 已完成 / 失败，取消、重试、看结果 |
 | 回填数据 | `pages/metrics/fill` | 发布后第 1、7 天填阅读、点赞等 |

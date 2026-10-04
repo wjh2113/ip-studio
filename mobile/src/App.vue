@@ -36,7 +36,7 @@ onShow(() => {
   const arg = String(plus.runtime.arguments || '').trim();
   if (arg && !/^\{/.test(arg)) {
     plus.runtime.arguments = '';
-    uni.navigateTo({ url: `/pages/inspire/edit?input=share&text=${encodeURIComponent(arg.slice(0, 2000))}` });
+    uni.navigateTo({ url: `/pages/inspire/quick?text=${encodeURIComponent(arg.slice(0, 2000))}` });
   }
   // #endif
 });
