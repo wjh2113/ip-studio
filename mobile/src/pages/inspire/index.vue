@@ -7,10 +7,10 @@
     </TopBar>
     <!-- 主入口：快速存素材；选题池和拍照仍走完整「记一条」 -->
     <view class="hero" @tap="go('inspire/quick')">
-      <view class="hero-ic"><Ic name="inbox" :size="48" color="#2f6bff" /></view>
+      <view class="hero-ic"><Ic name="mic" :size="48" color="#2f6bff" /></view>
       <view class="grow">
-        <view class="hero-t">快速存到素材库</view>
-        <view class="hero-p">写完就存，标题自动取，不问账号</view>
+        <view class="hero-t">语音存到素材库</view>
+        <view class="hero-p">点一下说，经网关转写后直接存</view>
       </view>
       <Ic name="chev-right" :size="30" color="#98a2b3" />
     </view>
@@ -45,7 +45,7 @@
     </view>
     <view v-if="!list.length" class="empty">
       <Ic name="bulb" :size="96" color="#98a2b3" />
-      <view>{{ filter === 'pending' ? '都同步好了' : '还没记过。点上面「快速存到素材库」，路上想到什么先记一条。' }}</view>
+      <view>{{ filter === 'pending' ? '都同步好了' : '还没记过。点上面麦克风入口，说一段就能存进素材库。' }}</view>
     </view>
     <view style="height: 40rpx"></view>
   </view>

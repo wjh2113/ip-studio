@@ -15,7 +15,7 @@
     { "path": "pages/create/illus", "style": { "navigationBarTitleText": "配图" } },
     { "path": "pages/speak/record", "style": { "navigationStyle": "custom", "disableScroll": true, "app-plus": { "popGesture": "none" } } },
     { "path": "pages/speak/result", "style": { "navigationBarTitleText": "口播评测" } },
-    { "path": "pages/inspire/quick", "style": { "navigationBarTitleText": "快速存素材" } },
+    { "path": "pages/inspire/quick", "style": { "navigationBarTitleText": "语音存素材" } },
     { "path": "pages/inspire/edit", "style": { "navigationBarTitleText": "记一条" } },
     { "path": "pages/inspire/benchmark", "style": { "navigationBarTitleText": "对标速存" } },
     { "path": "pages/jobs/index", "style": { "navigationBarTitleText": "任务", "enablePullDownRefresh": true } },
