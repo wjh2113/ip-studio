@@ -75,7 +75,7 @@
       <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
 
       <textarea v-show="s.mode === 'edit'" class="editor" id="editor" ref="editor" spellcheck="false" :class="{ 'mark-over': markOver }"
-        :value="s.draft?.content || ''" @input="onEditorInput" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
+        :value="s.draft?.content || ''" @input="onEditorInput" @keydown="onEditorKeydown" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
         @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
 
       <CuesPane v-if="s.mode === 'cue' && !v.current" />
@@ -336,7 +336,7 @@ watch(() => s.mode, async (mode) => {
 watch(() => s.draft?.content, () => { if (s.mode === 'edit') nextTick(autosize); });
 
 function onEditorInput(e) {
-  ed.onInput(e.target.value);
+  ed.onInput(e.target.value, { typing: true });
   autosize();
   keepCaretVisible();
   detectSlash();
@@ -479,7 +479,59 @@ function onDocMouseDown(e) {
   ed.menus.slash = null;
 }
 
+/* 撤销后把光标放到改动的地方：从两头找第一处不同，光标落在新文本里改动段的末尾 */
+function changeEnd(a, b) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+  let ja = a.length;
+  let jb = b.length;
+  while (ja > i && jb > i && a[ja - 1] === b[jb - 1]) { ja -= 1; jb -= 1; }
+  return jb;
+}
+
+/* Ctrl+Z 撤销、Ctrl+Shift+Z / Ctrl+Y 重做（Mac 上是 ⌘）。编辑框里接管浏览器自带的撤销；
+   阅读模式下（焦点不在别的输入框里）也能撤回刚才的 AI 改写、采纳 */
+function undoKey(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing) return null;
+  const k = e.key.toLowerCase();
+  if (k === 'z') return e.shiftKey ? 'redo' : 'undo';
+  if (k === 'y' && !e.shiftKey) return 'redo';
+  return null;
+}
+function runUndo(which, { inEditor }) {
+  const r = which === 'undo' ? ed.undo() : ed.redo();
+  if (!r) return;
+  if (!inEditor) { toast(which === 'undo' ? '已撤销' : '已重做'); return; }
+  nextTick(() => {
+    const ta = editor.value;
+    if (!ta) return;
+    const at = changeEnd(r.before, r.after);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = at;
+    autosize();
+    keepCaretVisible();
+  });
+}
+function onEditorKeydown(e) {
+  const which = undoKey(e);
+  if (!which) return;
+  e.preventDefault();
+  ed.menus.slash = null;
+  ed.menus.sel = null;
+  runUndo(which, { inEditor: true });
+}
+
 function onKey(e) {
+  const which = undoKey(e);
+  if (which && s.mode === 'read' && !anyLayerOpen()) {
+    const t = e.target;
+    const typingElsewhere = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if (!typingElsewhere && (which === 'undo' ? ed.canUndo : ed.canRedo)) {
+      e.preventDefault();
+      runUndo(which, { inEditor: false });
+    }
+    return;
+  }
   if (e.key !== 'Escape' || anyLayerOpen()) return;
   if (menu.value) { closeMenu(); return; }
   if (ed.menus.sel || ed.menus.slash) { ed.menus.sel = null; ed.menus.slash = null; return; }

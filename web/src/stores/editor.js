@@ -125,6 +125,7 @@ export const useEditorStore = defineStore('editor', () => {
         else if (event === 'done') {
           if (st.draft?.id !== draft.id) return;     // 生成期间被切走了（理论上会拦住，这里再兜一层）
           st.draft = data.draft;
+          resetHistory();                    // 新生成的正文：之前的撤销记录不再适用
           live.title = '';
           useBriefStore().goStep(3, { done: true, scroll: false });
           useHistoryStore().load();
@@ -221,19 +222,67 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /* 编辑框里改了字 */
-  function onInput(value, { voice = false } = {}) {
+  /* ---------- 撤销 / 重做（Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y） ----------
+     浏览器自带的撤销只认键盘敲的字：正文一被脚本改过（AI 改写、采纳检查、插图片标记、语音改稿），
+     自带的撤销记录就断了，Ctrl+Z 什么都不做。所以撤销自己记：每次改正文前存一份「改之前」，
+     连续打字（两次输入间隔不到 1.2 秒）算一步，AI 和采纳这类改动各自算一步。换一篇稿子、重新生成就清空。 */
+  const UNDO_MAX = 200;
+  const TYPE_GAP = 1200;
+  const hist = reactive({ id: null, undo: [], redo: [] });
+  let typingAt = 0;
+
+  function resetHistory() {
+    hist.id = s().draft?.id ?? null;
+    hist.undo = [];
+    hist.redo = [];
+    typingAt = 0;
+  }
+
+  function record(before, typing) {
     const st = s();
-    if (!st.draft) return;
+    if (hist.id !== st.draft?.id) resetHistory();
+    const now = Date.now();
+    if (typing && typingAt && now - typingAt < TYPE_GAP) { typingAt = now; return; }   // 同一段连续输入
+    hist.undo.push(before);
+    if (hist.undo.length > UNDO_MAX) hist.undo.shift();
+    hist.redo = [];
+    typingAt = typing ? now : 0;
+  }
+
+  const canUndo = computed(() => hist.id === s().draft?.id && hist.undo.length > 0);
+  const canRedo = computed(() => hist.id === s().draft?.id && hist.redo.length > 0);
+
+  /* 回到上一步 / 下一步；返回 { before, after } 给编辑框放光标，没得撤就返回 null */
+  function step(from, to) {
+    const st = s();
+    if (!st.draft || hist.id !== st.draft.id || !from.length || st.streaming) return null;
+    const before = st.draft.content;
+    const after = from.pop();
+    to.push(before);
+    typingAt = 0;
+    voiceNote.value = null;
+    st.draft.content = after;
+    markDirty();
+    return { before, after };
+  }
+  const undo = () => step(hist.undo, hist.redo);
+  const redo = () => step(hist.redo, hist.undo);
+
+  /* 编辑框里改了字。typing = 键盘输入（连续的合成一步撤销）；其余（插标记、删斜杠、语音改稿）各算一步 */
+  function onInput(value, { voice = false, typing = false } = {}) {
+    const st = s();
+    if (!st.draft || value === st.draft.content) return;
     if (!voice) voiceNote.value = null;          // 手动改过了，语音改稿的「撤销」就不作数了
+    record(st.draft.content, typing);
     st.draft.content = value;
     markDirty();
   }
 
-  /* 改写、采纳检查意见这类直接改正文的 */
+  /* 改写、采纳检查意见这类直接改正文的：单独算一步，Ctrl+Z 能撤回 */
   function replaceContent(next) {
     const st = s();
-    if (!st.draft) return;
+    if (!st.draft || next === st.draft.content) return;
+    record(st.draft.content, false);
     st.draft.content = next;
     markDirty();
   }
@@ -565,7 +614,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     live, streamingView, generate, setMode,
-    save, markDirty, flushSave, onInput, replaceContent,
+    save, markDirty, flushSave, onInput, replaceContent, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,
     voice, voiceNote, toggleVoice, undoVoice, stopVoice,

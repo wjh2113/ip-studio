@@ -61,8 +61,21 @@ await step('编辑框里划词 → 改写菜单 → 替换', async () => {
   await page.waitForSelector('#selMenu:not(.hidden)');
   await page.click('#selMenu [data-action="shorten"]');
   await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
+  const beforeAi = await page.inputValue('#editor');
   await page.click('#assistReplace');
   await page.waitForFunction((n) => document.querySelector('#editor').value.length !== n, len);
+  // AI 改写后 Ctrl+Z 能撤回（浏览器自带的撤销在脚本改过正文后就断了），Ctrl+Shift+Z 再做回来
+  const afterAi = await page.inputValue('#editor');
+  await page.focus('#editor');
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction((t) => document.querySelector('#editor').value === t, beforeAi);
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForFunction((t) => document.querySelector('#editor').value === t, afterAi);
+  // 连续打的字算一步
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('一二三四五');
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction((t) => document.querySelector('#editor').value === t, afterAi);
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   return 'ok';

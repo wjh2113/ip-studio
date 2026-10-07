@@ -67,7 +67,7 @@ export const useReviewStore = defineStore('review', () => {
     handled.add(i);
     const raw = s.draft.content;
     if (!raw.includes(issue.quote)) return null;      // 原文已经改过，这条对不上了
-    s.draft.content = raw.replace(issue.quote, issue.fix);
+    useEditorStore().replaceContent(raw.replace(issue.quote, issue.fix));   // 走编辑器，Ctrl+Z 能撤回这次采纳
     return true;
   }
 
