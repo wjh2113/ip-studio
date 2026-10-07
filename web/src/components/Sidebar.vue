@@ -1,5 +1,14 @@
 <template>
-    <aside class="sidebar">
+    <aside class="sidebar" :data-mtab="libMode ? null : layout.mtab">
+      <!-- 手机上账号和创作记录摞在一起太长，创作记录会被挤到看不见：用两个页签切换（桌面不显示） -->
+      <div v-if="!libMode" class="side-mtabs" id="sideMTabs" role="tablist">
+        <button type="button" role="tab" data-mtab="history" :class="{ on: layout.mtab === 'history' }" :aria-selected="layout.mtab === 'history'" @click="layout.mtab = 'history'">
+          创作记录<span class="n">{{ s.historyMode === 'speaks' ? (s.speakCount || '') : (h.counts.active || '') }}</span>
+        </button>
+        <button type="button" role="tab" data-mtab="account" :class="{ on: layout.mtab === 'account' }" :aria-selected="layout.mtab === 'account'" @click="layout.mtab = 'account'">
+          账号<span class="n">{{ current?.name || '全部' }}</span>
+        </button>
+      </div>
       <!-- 素材库页（含新增 / 编辑）：上半截换成素材分类；选题池要挑账号在表单右侧的「目标」里 -->
       <MaterialKinds v-if="libMode" />
       <div v-else class="persona-bar">
@@ -15,7 +24,7 @@
         <div class="persona-card">
           <div class="persona-list" id="personaList">
             <button v-for="x in s.personas" :key="x.id" type="button" class="persona-row" :class="{ on: x.id === s.personaId }"
-              :data-persona="x.id" @click="account.select(x.id)">
+              :data-persona="x.id" @click="pickPersona(x.id)">
               <span class="persona-avatar" :data-tone="tone(x.name)">{{ x.name?.[0] || '·' }}</span>
               <span class="persona-name">
                 <span class="pn-line"><b>{{ x.name }}</b><span class="pf-tag">{{ s.platformLabel(x.platform) }}</span></span>
@@ -23,7 +32,7 @@
               </span>
               <span v-if="x.id === s.personaId" class="persona-gear" data-edit="1" title="编辑账号设定" @click.stop="account.open(x)"><Icon name="gear" :size="15" /></span>
             </button>
-            <button type="button" class="persona-row all" :class="{ on: !s.personaId }" data-persona="" @click="account.select(null)">
+            <button type="button" class="persona-row all" :class="{ on: !s.personaId }" data-persona="" @click="pickPersona(null)">
               <span class="persona-avatar"><Icon name="layers" :size="15" /></span>
               <span class="persona-name"><span class="pn-line"><b>全部创作</b></span>
                 <span class="persona-focus">{{ s.personas.length ? '不限账号，新建时不带账号语境' : '还没有账号设定' }}</span>
@@ -42,7 +51,7 @@
       </div>
 
       <!-- 创作记录只在创作相关的页面出现；素材库的侧栏只放素材分类 -->
-      <template v-if="!libMode">
+      <div v-if="!libMode" class="side-history">
       <div class="sidebar-head">
         <span class="sh-title">创作记录<Icon name="clock" :size="14" /></span>
         <button class="btn primary small" id="newBtn" @click="newDraft"><Icon name="plus" :size="14" />新建</button>
@@ -88,12 +97,12 @@
       <div class="history-foot" id="historyFoot" :class="{ hidden: s.historyMode === 'speaks' || s.showArchived || !h.counts.activeDone }">
         <BusyBtn class="btn ghost small" id="archiveDoneBtn" :busy="h.archivingDone" @click="h.archiveDone()">把 {{ h.counts.activeDone }} 篇已完成的收起来</BusyBtn>
       </div>
-      </template>
+      </div>
     </aside>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
 import Icon from './common/Icon.vue';
 import { useStudioStore } from '../stores/studio.js';
@@ -137,8 +146,22 @@ const ownerName = (d) => s.personas.find((p) => p.id === d.persona_id)?.name || 
 
 const emptyTitle = computed(() => (current.value ? `「${current.value.name}」还没有创作记录` : '还没有创作记录'));
 
-function openDraft(id) {
-  h.open(id);
+/* 手机上侧栏和正文是上下摞的：点开一篇 / 新建后滚到正文那里，不然看起来像没反应 */
+const narrow = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 820px)').matches;
+function scrollToWork(sel) {
+  if (!narrow()) return;
+  nextTick(() => document.querySelector(sel)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+/* 手机上选好账号就翻回创作记录，看这个号写过什么 */
+function pickPersona(id) {
+  account.select(id);
+  if (narrow()) layout.mtab = 'history';
+}
+
+async function openDraft(id) {
+  await h.open(id);
+  scrollToWork('#contentCard');
 }
 
 function newDraft() {
@@ -146,5 +169,6 @@ function newDraft() {
   brief.reset();
   useFrameworksStore().choose(null);
   brief.focusSubject += 1;
+  scrollToWork('#steps');
 }
 </script>

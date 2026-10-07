@@ -152,6 +152,8 @@
 .rail-btn:hover { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
 .sh-acts { display: inline-flex; align-items: center; gap: 8px; }
 
+.side-mtabs { display: none; }
+.side-history { display: contents; }
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--panel);
@@ -300,11 +302,22 @@
   .side-rail { height: auto; position: static; flex-direction: row; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--border); }
   .rail-label { writing-mode: horizontal-tb; letter-spacing: 0; }
   .sidebar {
-    position: static; height: auto; max-height: 46vh; overflow-y: auto;
+    position: static; height: auto; max-height: none; overflow: visible;
     border-right: 0; border-bottom: 1px solid var(--border);
   }
   .persona-bar { max-height: none; }
-  .history { overflow: visible; }
+  /* 手机：账号 / 创作记录两个页签，只显示一边；记录列表自己滚，不把正文挤到很远 */
+  .side-mtabs { display: flex; gap: 6px; padding: 10px 16px 0; }
+  .side-mtabs button {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
+    height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+    color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .side-mtabs button.on { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+  .side-mtabs .n { font-size: 12px; font-weight: 400; opacity: .8; max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar[data-mtab="history"] .persona-bar { display: none; }
+  .sidebar[data-mtab="account"] .side-history { display: none; }
+  .history { overflow-y: auto; max-height: 52vh; }
   .main { padding: 16px; }
   .topbar { padding: 0 14px; }
   .tabs-nav button { padding: 0 8px; }
@@ -348,6 +361,5 @@
   .user-avatar { width: 26px; height: 26px; font-size: 11px; }
   .top-link { padding: 0 6px; }
   .top-link .ic { width: 16px; height: 16px; }
-  .sidebar { max-height: 38vh; }
   .main { padding: 12px; gap: 12px; }
 }

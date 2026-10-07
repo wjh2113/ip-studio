@@ -18,7 +18,10 @@ export const useLayoutStore = defineStore('layout', () => {
     try { localStorage.setItem(KEY, JSON.stringify({ side: s, work: w })); } catch { /* 隐私模式 */ }
   });
 
+  // 手机上侧栏的页签：创作记录 / 账号（只在窄屏用，不记）
+  const mtab = ref('history');
+
   const toggleSide = () => { side.value = !side.value; };
   const toggleWork = () => { work.value = !work.value; };
-  return { side, work, toggleSide, toggleWork };
+  return { side, work, mtab, toggleSide, toggleWork };
 });
