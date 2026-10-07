@@ -20,7 +20,8 @@
           <span class="acc-no">{{ i + 1 }}</span>
           <span class="acc-nav-txt"><b><Icon :name="TAB_ICON[t.key]" :size="15" />{{ t.label }}<em v-if="t.needsSaved && !page.id" class="acc-lock"><Icon name="lock" :size="11" />先保存账号</em></b><i>{{ t.hint }}</i></span>
         </button>
-        <p v-if="!page.id" class="acc-nav-note"><Icon name="info" :size="14" />未保存账号时，素材库和语气样本不能用。先保存账号，再继续完善。</p>
+        <p v-if="!page.id" class="acc-nav-note"><Icon name="info" :size="14" />未保存账号时，语气样本不能用。先保存账号，再继续完善。</p>
+        <p class="acc-nav-note acc-nav-elsewhere" id="accountElsewhere"><Icon name="info" :size="14" /><span>你的经历和数据在右上角<button type="button" class="link-btn" id="accountToProfile" @click="toProfile">个人档案</button>里，所有账号共用；文章、链接、图片这些外部资料在顶部的「素材库」。</span></p>
       </nav>
 
       <div class="acc-main" ref="main">
@@ -96,14 +97,6 @@
           </fieldset>
         </section>
 
-        <section class="acc-panel" data-panel="profile" v-show="page.tab === 'profile'">
-          <ProfilePanel v-if="seen.profile" />
-        </section>
-
-        <section class="acc-panel" data-panel="material" v-show="page.tab === 'material'">
-          <MaterialPanel />
-        </section>
-
         <section class="acc-panel" data-panel="style" v-show="page.tab === 'style'">
           <fieldset v-if="page.id" class="subsection" id="styleSection">
             <legend>语气样本<span>喂你自己写的文章，学你真实的语感——越多越准，最多 {{ a.style.max }} 篇</span></legend>
@@ -160,8 +153,6 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
 import Icon from './common/Icon.vue';
-import MaterialPanel from './MaterialPanel.vue';
-import ProfilePanel from './ProfilePanel.vue';
 import MePanel from './MePanel.vue';
 import { useLearningStore } from '../stores/learning.js';
 import { ACCOUNT_TABS, useAccountStore } from '../stores/account.js';
@@ -177,10 +168,10 @@ const main = ref(null);
 const nameBox = ref(null);
 const rebuild = useBusy();
 const L = useLearningStore();
-const TAB_ICON = { basic: 'doc', persona: 'user', profile: 'book', material: 'layers', style: 'mic', me: 'eye' };
+const TAB_ICON = { basic: 'doc', persona: 'user', style: 'mic', me: 'eye' };
 const SRC = { manual: '手动', published: '发布', import: '导入', quickstart: '建号' };
-/* 个人档案、AI 眼中的我第一次点开才挂载（各自会去拉数据） */
-const seen = reactive({ profile: false, me: false });
+/* AI 眼中的我第一次点开才挂载（会去拉数据） */
+const seen = reactive({ me: false });
 watch(() => page.tab, (t) => { if (t in seen) seen[t] = true; }, { immediate: true });
 
 // 后台学习任务做完：样本列表的「待学 / 已学」跟着变
@@ -201,6 +192,12 @@ const filled = (k) => (page.quickFilled.has(k) ? 'quick-filled' : '');
 function unmark(e) {
   const k = e.target?.name;
   if (k && page.quickFilled.has(k)) page.quickFilled.delete(k);
+}
+
+/* 经历、数据在个人档案：关掉账号设定，打开个人档案 */
+function toProfile() {
+  a.close();
+  L.openProfile();
 }
 
 function showTab(key) {

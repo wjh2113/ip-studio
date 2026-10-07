@@ -258,23 +258,27 @@ test('接口可以配成完整网址；密钥错了报服务端的话、cursor �
   assert.match(notices.at(-1), /先在插件设置里填服务器地址/);
 });
 
-test('配图下载失败：停在这一篇，前面的已写好，下次从它重试', async () => {
+test('配图文件在服务器上已经没有了：跳过这张图，这篇照样同步（以前会卡在这一篇，每次都报「图片不存在」）', async () => {
   const { p, app } = await makePlugin();
   await p.syncNow();
   const d = await D.Drafts.create(uid, { subject: '缺图', platform: 'xiaohongshu', tone: '实用干货', audience: '', keywords: '', length: 600 });
-  await D.Drafts.saveContent(d.id, uid, '有图 <此处放图片>');
+  await D.Drafts.saveContent(d.id, uid, '有图 <此处放图片>\n\n后面的正文');
   const pic = `${d.id}-__main__-0.png`;
   await D.Drafts.setIllus(d.id, uid, { __main__: { items: [{ i: 0, alt: '图', image: { file: `${uid}/${pic}`, at: '1' } }] } });
-  const cursor = p.state.cursor;
-  assert.equal(await p.syncNow(), null);
-  assert.match(p.state.lastResult, /图片不存在/);
-  assert.equal(p.state.cursor, cursor, '失败的这一篇不能被跳过');
+  const listed = await api('/api/export/drafts?limit=50', { token: key });
+  assert.deepEqual(listed.data.items.find((x) => x.id === d.id).images, []);
 
-  await writeFile(join(process.env.DATA_DIR, 'images', String(uid), pic), Buffer.from(PNG, 'base64'));
   const stat = await p.syncNow();
+  assert.ok(stat, p.state.lastResult);
   assert.equal(stat.created, 1);
-  assert.equal(stat.images, 1);
-  assert.ok(app.vault.getMarkdownFiles().some((f) => f.content.includes(`![[自媒体助手/附件/ips-${d.id}-${pic}]]`)));
+  assert.equal(stat.images, 0);
+  const note = app.vault.getMarkdownFiles().find((f) => f.content.includes('后面的正文'));
+  assert.ok(note);
+  assert.ok(!note.content.includes('ips-image:'), '没下载到的图要去掉，不能留占位');
+
+  // 插件这边也兜底：列出来了但下载时 404（比如刚好被删），跳过不报错
+  const missing = await p.downloadImages({ id: d.id, images: [{ name: pic, url: `/api/export/images/${pic}` }] }, BASE, {});
+  assert.deepEqual(missing, {});
 });
 
 test('设置页能画出来；网页能下载插件文件', async () => {

@@ -8,7 +8,7 @@
  * 正文直接给 Obsidian 能用的 Markdown：插图放回原位，写成 ![说明](ips-image:文件名)，
  * 客户端把图下载到自己的附件目录后替换成本地路径。 */
 import { createHash, randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DATA_DIR, Personas, SyncKeys, exportDrafts } from '../db.js';
 import { fromRoot } from '../paths.js';
@@ -138,6 +138,7 @@ export async function handleExportDrafts(req, res, body, params, url) {
   const page = rows.slice(0, limit);
   const names = new Map((await Personas.list(user.id)).map((p) => [p.id, p.name]));
   const items = page.map((d) => exportItem(d, names.get(d.persona_id)));
+  await dropMissingImages(user.id, items);
   const last = page[page.length - 1];
   json(res, 200, {
     user: user.username,
@@ -146,6 +147,23 @@ export async function handleExportDrafts(req, res, body, params, url) {
     cursor: last ? `${last.updated_at}|${last.id}` : (afterAt ? `${afterAt}|${afterId}` : ''),
     more: rows.length > limit,
   });
+}
+
+/* 稿子里记着、但服务器上已经没有文件的图（重新出图后旧文件被清掉、换过服务器、手动删过）：不列给插件。
+ * 以前照样列出来，插件下载拿到 404 就停在这一篇，之后每次同步都卡在同一个地方。
+ * 去掉的图在 Markdown 里的占位，插件按「没下载到的图」处理（直接去掉那一行）。 */
+async function dropMissingImages(userId, items) {
+  const dir = join(DATA_DIR, 'images', String(userId));
+  const seen = new Map();
+  const exists = (name) => {
+    if (!seen.has(name)) seen.set(name, access(join(dir, name)).then(() => true, () => false));
+    return seen.get(name);
+  };
+  const keep = async (list) => (await Promise.all((list || []).map(async (img) => ((await exists(img.name)) ? img : null)))).filter(Boolean);
+  for (const it of items) {
+    it.images = await keep(it.images);
+    for (const v of it.variants) v.images = await keep(v.images);
+  }
 }
 
 /* 插图：只给密钥主人自己的图 */

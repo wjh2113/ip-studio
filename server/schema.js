@@ -389,7 +389,7 @@ export const profileEntries = pgTable('profile_entries', {
   result: text('result').notNull().default(''),
   tags: text('tags').notNull().default(''),
   visibility: text('visibility').notNull().default('public'),
-  source: text('source').notNull().default('manual'),   // manual | resume | article | voice
+  source: text('source').notNull().default('manual'),   // manual | resume | article | voice | material（从素材库挪过来）
   used_count: integer('used_count').notNull().default(0),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),

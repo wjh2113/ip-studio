@@ -516,6 +516,23 @@ export const useLibraryStore = defineStore('library', () => {
     } catch (err) { toast(err.message); }
   }
 
+  /* 素材库只放外部资料。以前存进来的自己的经历、数据，挪到个人档案（写稿时才会当作「我」的事来写） */
+  async function toProfile(m) {
+    const ok = await ask.confirm({
+      title: `把「${m.title}」挪到个人档案？`,
+      body: '个人档案放你本人的经历和数据，写稿时按第一人称取材；挪过去以后素材库里就没有这条了。挪完可以在个人档案里改类型（工作经历 / 项目经历 / 数据成果）。',
+      ok: '挪到个人档案',
+    });
+    if (!ok) return;
+    try {
+      await api(`/materials/${m.id}/to-profile`, { method: 'POST', body: { kind: 'other' } });
+      if (selectedId.value === m.id) selectedId.value = null;
+      checked.value = checked.value.filter((id) => id !== m.id);
+      await loadMaterials();
+      toast('已挪到个人档案（右上角头像里）');
+    } catch (err) { toast(err.message); }
+  }
+
   async function addPool() {
     const subject = poolForm.subject.trim();
     if (!subject) { toast('题材不能为空'); return; }
@@ -573,7 +590,7 @@ export const useLibraryStore = defineStore('library', () => {
     toggleFormTag, formHasTag,
     startCreate, setMode, setKind, setTarget, extractPreview, clearPreview, pickImage, toggleRecord,
     importClipboard, importFromUrl, importFolder, refreshFolder, isLocalFolder,
-    startEdit, cancelForm, saveForm, addTag, removeChecked, remove,
+    startEdit, cancelForm, saveForm, addTag, removeChecked, remove, toProfile,
     addPool, datePool, removePool, writePool,
   };
 });

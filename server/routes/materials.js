@@ -1,5 +1,6 @@
 /* 路由 · materials：素材库与选题池。从原 routes.js 原样拆出。 */
-import { bigrams, MATERIAL_KINDS, Materials, overlapScore, Personas, Pool } from '../db.js';
+import { bigrams, MATERIAL_KINDS, Materials, overlapScore, Personas, Pool, Profile, PROFILE_KINDS, PROFILE_MAX } from '../db.js';
+import { withTx } from '../client.js';
 import { rankHybrid } from '../semantic.js';
 import { HttpError } from '../auth.js';
 import { extractHtml, extractText, fetchPage, FetchError } from '../webpage.js';
@@ -97,6 +98,24 @@ export async function handleMaterialDelete(req, res, body, params) {
   const user = await requireUser(req);
   if (!await Materials.remove(Number(params.mid), user.id)) throw new HttpError(404, '素材不存在');
   json(res, 200, { ok: true });
+}
+
+/* POST /api/materials/:mid/to-profile —— 以前素材库里也放了作者自己的经历和数据，现在这些归个人档案：
+   挪过去（建一条档案，删掉这条素材），kind 由作者选：work / project / data / opinion / other */
+export async function handleMaterialToProfile(req, res, body, params) {
+  const user = await requireUser(req);
+  const m = await Materials.byId(Number(params.mid), user.id);
+  if (!m) throw new HttpError(404, '素材不存在');
+  if (await Profile.count(user.id) >= PROFILE_MAX) throw new HttpError(400, `个人档案最多 ${PROFILE_MAX} 条`);
+  const kind = PROFILE_KINDS.includes(body?.kind) ? body.kind : 'other';
+  const entry = await withTx(async () => {
+    const e = await Profile.create(user.id, {
+      kind, title: m.title.slice(0, 60), body: m.body.slice(0, 1000), tags: m.tags.slice(0, 120),
+    }, 'material');
+    await Materials.remove(m.id, user.id);
+    return e;
+  });
+  json(res, 200, { entry });
 }
 
 /* POST /api/materials/extract-url —— 抓链接正文，前端再确认存库 */

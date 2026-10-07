@@ -1,5 +1,5 @@
 /* 越写越懂：个人档案（跟着人走，所有账号共用）与「AI 眼中的我」（某个账号学到的语气档案、改稿习惯、学习记录）。
- * 账号设定页的「个人档案」「语气样本」「AI 眼中的我」三块用它。学习本身在服务端（server/learning.js）。 */
+ * 右上角「个人档案」页，以及账号设定页的「语气样本」「AI 眼中的我」用它。学习本身在服务端（server/learning.js）。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api, upload } from '../lib/api.js';
@@ -7,11 +7,15 @@ import { ask, toast } from '../lib/feedback.js';
 import { useJobsStore } from './jobs.js';
 import { on } from '../lib/bus.js';
 
-export const PROFILE_KIND = { work: '工作经历', project: '项目经历', opinion: '观点', other: '其他' };
+export const PROFILE_KIND = { work: '工作经历', project: '项目经历', data: '数据成果', opinion: '观点', other: '其他' };
 const EMPTY = { kind: 'work', title: '', period: '', org: '', role: '', body: '', result: '', tags: '', visibility: 'public' };
 
 export const useLearningStore = defineStore('learning', () => {
-  /* ---------- 个人档案 ---------- */
+  /* ---------- 个人档案（右上角头像打开，整屏页面） ---------- */
+  const profileOpen = ref(false);
+  function openProfile() { profileOpen.value = true; }
+  function closeProfile() { profileOpen.value = false; }
+
   const profile = reactive({ entries: [], max: 300, loading: false, error: '' });
   const editing = ref(null);               // 正在改的那条 id；'new' = 新增
   const form = reactive({ ...EMPTY });
@@ -235,6 +239,7 @@ export const useLearningStore = defineStore('learning', () => {
 
   return {
     learnedAt,
+    profileOpen, openProfile, closeProfile,
     profile, editing, form, parse, loadProfile, startNew, startEdit, cancelEdit, saveEntry, removeEntry, runParse, saveParsed,
     me, newRule, loadMe, setAutoLearn, rebuild, addRule, updateRule, editRule, removeRule, acceptCandidates, dismissCandidates,
     imp, pickFiles, pickResume, runImport,

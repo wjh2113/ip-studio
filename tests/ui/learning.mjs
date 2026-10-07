@@ -33,8 +33,10 @@ await step('注册、建号、打开账号设定', async () => {
   return (await page.$$eval('#accountNav [data-tab]', (els) => els.map((e) => e.dataset.tab))).join(',');
 });
 
-await step('个人档案：贴简历 → 拆成条目 → 勾掉一条 → 存进去', async () => {
-  await page.click('#accountNav [data-tab="profile"]');
+await step('个人档案：账号设定里没有了，从右上角头像打开 → 贴简历 → 拆成条目 → 勾掉一条 → 存进去', async () => {
+  await page.click('#personaCloseBtn');
+  await page.click('#profileBtn');
+  await page.waitForSelector('#profilePage:not(.hidden)');
   await page.fill('#profileParseText', '2019 年入职某某电商公司，担任运营主管，负责 5 个人的小组\n那年双十一把转化率从 2% 拉到 3.5%\n我认为管理就是翻译');
   await page.click('#profileParseBtn');
   await page.waitForSelector('#profileCandidates .pf-cand');
@@ -64,6 +66,9 @@ await step('个人档案：选 Word 简历 → 文字读进拆解框', async () 
 });
 
 await step('语气样本：选 Word + 扫描件 PDF → 一篇读出来，一篇说明读不了', async () => {
+  await page.click('#profileCloseBtn');
+  await page.click(`[data-persona="${pid}"] [data-edit]`);
+  await page.waitForSelector('#personaModal:not(.hidden)');
   await page.click('#accountNav [data-tab="style"]');
   await page.setInputFiles('#importFiles', [FIX + 'article.docx', FIX + 'image-only.pdf']);
   await page.waitForSelector('#importPicked');

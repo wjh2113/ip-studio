@@ -38,6 +38,8 @@
         </div>
       </div>
 
+      <!-- 创作记录只在创作相关的页面出现；素材库的侧栏只放素材分类 -->
+      <template v-if="!libMode">
       <div class="sidebar-head">
         <span class="sh-title">创作记录<Icon name="clock" :size="14" /></span>
         <button class="btn primary small" id="newBtn" @click="newDraft"><Icon name="plus" :size="14" />新建</button>
@@ -83,6 +85,7 @@
       <div class="history-foot" id="historyFoot" :class="{ hidden: s.historyMode === 'speaks' || s.showArchived || !h.counts.activeDone }">
         <BusyBtn class="btn ghost small" id="archiveDoneBtn" :busy="h.archivingDone" @click="h.archiveDone()">把 {{ h.counts.activeDone }} 篇已完成的收起来</BusyBtn>
       </div>
+      </template>
     </aside>
 </template>
 
@@ -129,15 +132,12 @@ const ownerName = (d) => s.personas.find((p) => p.id === d.persona_id)?.name || 
 
 const emptyTitle = computed(() => (current.value ? `「${current.value.name}」还没有创作记录` : '还没有创作记录'));
 
-/* 在素材库页点创作记录：回到创作页再打开 */
 function openDraft(id) {
-  if (s.view === 'library') s.view = 'write';
   h.open(id);
 }
 
 function newDraft() {
   if (s.streaming) return;
-  if (s.view === 'library') s.view = 'write';
   brief.reset();
   useFrameworksStore().choose(null);
   brief.focusSubject += 1;

@@ -250,6 +250,21 @@ test('素材库：用户级创建、列表、链接提取、增删改（不挂�
   assert.equal(r.status, 200, r.text);
   r = await api.call('GET', '/api/materials');
   assert.ok(!r.data.materials.some((m) => m.id === mid));
+
+  // 以前存在素材库里的自己的经历、数据：挪到个人档案（建一条档案、删掉素材）
+  r = await api.call('POST', '/api/materials', { kind: '文章', title: '公众号三个月涨粉 2 万', body: '从 3000 涨到 23000，靠的是固定周更。', tags: '数据' });
+  const own = r.data.material.id;
+  r = await api.call('POST', `/api/materials/${own}/to-profile`, { kind: 'data' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.entry.kind, 'data');
+  assert.equal(r.data.entry.source, 'material');
+  assert.equal(r.data.entry.title, '公众号三个月涨粉 2 万');
+  r = await api.call('GET', '/api/materials');
+  assert.ok(!r.data.materials.some((m) => m.id === own));
+  r = await api.call('GET', '/api/profile');
+  assert.ok(r.data.entries.some((e) => e.title === '公众号三个月涨粉 2 万' && e.kind === 'data'));
+  r = await api.call('POST', `/api/materials/${own}/to-profile`, {});
+  assert.equal(r.status, 404);
 });
 
 test('管理后台：设置列表、保存设置报错、Eval 运行', async () => {

@@ -140,6 +140,7 @@ const ROUTES = [
   ['POST', /^\/api\/personas\/(?<id>\d+)\/materials$/, R.handleMaterialCreate],
   ['PUT', /^\/api\/materials\/(?<mid>\d+)$/, R.handleMaterialUpdate],
   ['DELETE', /^\/api\/materials\/(?<mid>\d+)$/, R.handleMaterialDelete],
+  ['POST', /^\/api\/materials\/(?<mid>\d+)\/to-profile$/, R.handleMaterialToProfile],
   ['GET', /^\/api\/frameworks$/, R.handleFrameworkList],
   ['GET', /^\/api\/frameworks\/recommend$/, R.handleFrameworkRecommend],
   ['POST', /^\/api\/frameworks\/extract$/, R.handleFrameworkExtract],

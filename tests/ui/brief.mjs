@@ -29,30 +29,24 @@ await step('注册 → 引导卡；跳过 → 简报（不带账号，参数可�
   await page.waitForSelector('#briefCard', { state: 'visible' });
   return `引导时简报可见=${briefBefore}｜${(await page.textContent('#inheritNote')).trim()}｜参数表单可见=${await vis('#paramGrid')}`;
 });
-await step('新建账号 → 留在设定页，素材库解锁，存一条素材再改', async () => {
+await step('新建账号 → 留在设定页，语气样本解锁；账号设定里不再有个人档案和素材库', async () => {
   await page.click('#newPersonaBtn');
   await page.waitForSelector('#personaModal:not(.hidden)');
-  const locked = await page.$eval('#accountNav [data-tab="material"]', (b) => b.disabled);
+  const locked = await page.$eval('#accountNav [data-tab="style"]', (b) => b.disabled);
+  const tabs = await page.$$eval('#accountNav [data-tab]', (els) => els.map((e) => e.dataset.tab).join(','));
+  if (/profile|material/.test(tabs)) throw new Error(`账号设定里还有：${tabs}`);
   await page.fill('#personaForm [name=name]', '下班厨房');
   await page.selectOption('#personaForm [name=platform]', { index: 1 });
   await page.fill('#personaForm [name=content_focus]', '工作日三十分钟家常菜');
   await page.fill('#personaForm [name=audience]', '独居上班族');
   await page.click('#personaSaveBtn');
   await page.waitForFunction(() => /已创建/.test(document.querySelector('#personaSaveHint').textContent));
-  await page.click('#accountNav [data-tab="material"]');
-  await page.fill('#matTitle', '第一次备菜翻车');
-  await page.fill('#matBody', '买了五斤排骨，冻成一整块，周三才化开。');
-  await page.click('#matSaveBtn');
-  await page.waitForSelector('#matList .mat-item');
-  await page.click('#matList [data-edit]');
-  await page.fill('#matList .mat-item.editing input[maxlength="80"]', '第一次备菜就翻车');
-  await page.click('#matList [data-save]');
-  await page.waitForFunction(() => /就翻车/.test(document.querySelector('#matList').textContent));
+  if (await page.$eval('#accountNav [data-tab="style"]', (b) => b.disabled)) throw new Error('保存后语气样本还锁着');
   await page.click('#accountNav [data-tab="style"]');
   const style = (await page.textContent('#styleHint')).trim();
   await page.click('#personaCloseBtn');
   await page.waitForSelector('#personaModal.hidden', { state: 'attached' });
-  return `新建时素材库锁着=${locked}｜${(await page.textContent('#matHint').catch(() => '')).trim().slice(0, 12)}｜${style}`;
+  return `新建时语气样本锁着=${locked}｜${tabs}｜${style}`;
 });
 await step('侧栏：当前账号、展开完整设定', async () => {
   const on = (await page.textContent('#personaList .persona-row.on b')).trim();

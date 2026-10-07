@@ -754,7 +754,8 @@ export const Samples = {
 };
 
 /* 个人档案（跟着用户走，所有账号共用） */
-export const PROFILE_KINDS = ['work', 'project', 'opinion', 'other'];
+/* data = 数据成果：粉丝数、业绩、增长这类可核查的数字（以前有人放在素材库里，现在统一归个人档案） */
+export const PROFILE_KINDS = ['work', 'project', 'data', 'opinion', 'other'];
 export const PROFILE_MAX = 300;
 const profileValues = (e) => ({
   kind: PROFILE_KINDS.includes(e.kind) ? e.kind : 'work',

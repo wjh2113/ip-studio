@@ -127,6 +127,7 @@
                   <button v-if="lib.isLocalFolder(m)" type="button" class="lib-act" title="重新读取本地文件夹"
                     :data-refresh-folder="m.id" @click="pickFolderRefresh(m)"><Icon name="refresh" :size="15" /></button>
                   <button type="button" class="lib-act" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="15" /></button>
+                  <button type="button" class="lib-act" title="这是我自己的经历或数据：挪到个人档案" :data-to-profile="m.id" @click="lib.toProfile(m)"><Icon name="user" :size="15" /></button>
                   <button type="button" class="lib-act rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="15" /></button>
                 </span>
               </div>
@@ -151,6 +152,7 @@
                   <span>用过 {{ m.used_count || 0 }} · {{ stamp(m.updated_at || m.created_at) }}</span>
                   <span class="lib-acts" @click.stop>
                     <button type="button" class="lib-act" title="编辑" @click="lib.startEdit(m)"><Icon name="pen" :size="15" /></button>
+                    <button type="button" class="lib-act" title="这是我自己的经历或数据：挪到个人档案" @click="lib.toProfile(m)"><Icon name="user" :size="15" /></button>
                     <button type="button" class="lib-act rm" title="删除" @click="lib.remove(m)"><Icon name="trash" :size="15" /></button>
                   </span>
                 </div>

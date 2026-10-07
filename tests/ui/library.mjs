@@ -29,6 +29,11 @@ await step('注册 → 进素材库：侧栏换成素材分类', async () => {
   await page.click('[data-view="library"]');
   await page.waitForSelector('#libKinds [data-kind-nav="文章"]');
   if (await page.isVisible('#personaList')) throw new Error('素材库页不该显示账号设定');
+  if (await page.$('#historyFilter')) throw new Error('素材库页不该显示创作记录');
+  await page.click('[data-view="write"]');
+  await page.waitForSelector('#historyFilter');
+  await page.click('[data-view="library"]');
+  await page.waitForSelector('#libKinds');
   return `${await page.$$eval('#libKinds .kind-nav', (els) => els.length)} 个分类`;
 });
 

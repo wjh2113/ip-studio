@@ -13,7 +13,7 @@
       <button class="top-btn jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
         title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()"><Icon name="bolt" />任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
       <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><Icon name="crown" /><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
-      <span class="user-chip"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span></span>
+      <button type="button" class="user-chip" id="profileBtn" title="个人档案：你的工作经历、项目经历、数据成果和观点，所有账号共用" @click="learning.openProfile()"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span><span class="user-sub">个人档案</span></button>
       <button class="top-link icon-only" id="syncBtn" type="button" title="同步到 Obsidian：把成稿定期写进知识库" aria-label="同步到 Obsidian" @click="sync.open()"><Icon name="refresh" /></button>
       <a class="top-link" href="/prompts" target="_blank" rel="noopener"
          title="提示词说明书；要改内容需先登录管理后台"><Icon name="book" />说明书</a>
@@ -30,12 +30,14 @@ import { usePlanStore } from '../stores/plan.js';
 import { useJobsStore } from '../stores/jobs.js';
 import { useSessionStore } from '../stores/session.js';
 import { useSyncStore } from '../stores/sync.js';
+import { useLearningStore } from '../stores/learning.js';
 
 const s = useStudioStore();
 const plan = usePlanStore();
 const jobs = useJobsStore();
 const session = useSessionStore();
 const sync = useSyncStore();
+const learning = useLearningStore();
 const quota = computed(() => plan.quota);
 
 const llmText = computed(() => {

@@ -25,6 +25,7 @@
   <JobsModal />
   <TitleModal />
   <PersonaPage />
+  <ProfilePage />
   <PlanModal />
   <MetricsModal />
   <InsightsModal />
@@ -53,6 +54,7 @@ import QuickstartModal from './components/QuickstartModal.vue';
 import JobsModal from './components/JobsModal.vue';
 import TitleModal from './components/TitleModal.vue';
 import PersonaPage from './components/PersonaPage.vue';
+import ProfilePage from './components/ProfilePage.vue';
 import PlanModal from './components/PlanModal.vue';
 import MetricsModal from './components/MetricsModal.vue';
 import InsightsModal from './components/InsightsModal.vue';

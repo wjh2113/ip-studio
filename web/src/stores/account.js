@@ -16,12 +16,11 @@ export const PERSONA_FIELDS = [
   'creator_age', 'creator_gender', 'creator_industry', 'creator_role', 'creator_traits',
 ];
 
-/* 账号设定的板块。needsSaved 的要先有账号才有意义——素材、样本都挂在账号 id 上 */
+/* 账号设定的板块。needsSaved 的要先有账号才有意义——样本都挂在账号 id 上。
+   个人档案（经历、数据）跟着人走，在右上角头像里；素材库是独立的一级页面，都不在账号设定里 */
 export const ACCOUNT_TABS = [
   { key: 'basic', label: '基本设定', hint: '这个号是谁、写给谁' },
   { key: 'persona', label: '个人人设', hint: '第一人称用谁的口吻' },
-  { key: 'profile', label: '个人档案', hint: '工作、项目经历，所有账号共用' },
-  { key: 'material', label: '素材库', hint: '你的真实经历与数据', needsSaved: true },
   { key: 'style', label: '语气样本', hint: '喂文章学你的语感', needsSaved: true },
   { key: 'me', label: 'AI 眼中的我', hint: '学到了什么，可改可删', needsSaved: true },
 ];
@@ -102,13 +101,11 @@ export const useAccountStore = defineStore('account', () => {
     }
     page.quickFilled = new Set();
     page.error = '';
-    page.hint = persona ? '' : '先填名称并保存，才能设置素材库和语气样本';
+    page.hint = persona ? '' : '先填名称并保存，才能设置语气样本';
     if (ACCOUNT_TABS.find((t) => t.key === page.tab)?.needsSaved && !page.id) page.tab = 'basic';
     page.open = true;
     pendingSamples = [];
     loadSamples(page.id);
-    mat.editing = null;
-    loadMaterials(page.id);
   }
 
   function editCurrent() {
@@ -133,11 +130,10 @@ export const useAccountStore = defineStore('account', () => {
       s.skipOnboard = false;
       page.quickFilled = new Set();
       if (!id) {
-        // 新建之后留在页面上：素材库、样本都要有账号 id 才能设，这会儿关掉等于逼人再点开一次
+        // 新建之后留在页面上：语气样本要有账号 id 才能设，这会儿关掉等于逼人再点开一次
         page.id = persona.id;
-        page.hint = '已创建 —— 左边的素材库、语气样本现在可以设了';
+        page.hint = '已创建 —— 左边的语气样本现在可以设了';
         loadSamples(persona.id);
-        loadMaterials(persona.id);
         await loadPersonas(persona.id);
         useBriefStore().reset();
         useHistoryStore().load();
@@ -284,58 +280,10 @@ export const useAccountStore = defineStore('account', () => {
     } catch (err) { toast(err.message); }
   }
 
-  /* ---------- 素材库：作者的真实经历、数据、案例，写作时按题材召回 ---------- */
-  const mat = reactive({ list: [], kinds: [], editing: null, edit: null, error: '' });
-
-  async function loadMaterials(pid) {
-    if (!pid) { mat.list = []; return; }
-    try {
-      const { materials, kinds } = await api(`/personas/${pid}/materials`);
-      if (page.id !== pid) return;
-      mat.list = materials;
-      mat.kinds = kinds;
-    } catch { mat.list = []; }
-  }
-
-  async function addMaterial(body) {
-    mat.error = '';
-    if (!body.title || !body.body) { mat.error = '标题和内容都要填'; return false; }
-    try {
-      await api('/materials', { method: 'POST', body });
-      await loadMaterials(page.id);
-      toast('已存进素材库');
-      return true;
-    } catch (err) { mat.error = err.message; return false; }
-  }
-
-  function startEditMaterial(m) {
-    mat.editing = m.id;
-    mat.edit = { kind: m.kind, title: m.title, body: m.body, tags: m.tags || '' };
-  }
-
-  async function saveMaterial(id) {
-    const e = mat.edit;
-    try {
-      await api(`/materials/${id}`, { method: 'PUT', body: { kind: e.kind, title: e.title.trim(), body: e.body.trim(), tags: e.tags.trim() } });
-      mat.editing = null;
-      await loadMaterials(page.id);
-      toast('已更新');
-    } catch (err) { toast(err.message); }
-  }
-
-  async function deleteMaterial(m) {
-    if (!await ask.confirm({ title: `删掉素材「${m.title}」？`, ok: '删除', danger: true })) return;
-    try {
-      await api(`/materials/${m.id}`, { method: 'DELETE' });
-      await loadMaterials(page.id);
-    } catch (err) { toast(err.message); }
-  }
-
   return {
     summaryOpen, loadPersonas, select,
     page, editingPersona, open, editCurrent, close, save, remove,
     quick, runQuick,
     style, loadSamples, deleteSample, rebuildDigest, learn,
-    mat, loadMaterials, addMaterial, startEditMaterial, saveMaterial, deleteMaterial,
   };
 });

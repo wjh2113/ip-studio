@@ -229,6 +229,7 @@ class IpStudioSync extends Plugin {
         stat.created && `新增 ${stat.created} 篇`,
         stat.updated && `更新 ${stat.updated} 篇`,
         stat.images && `下载配图 ${stat.images} 张`,
+        stat.missing && `${stat.missing} 张配图服务器上已经没有了，跳过`,
       ].filter(Boolean);
       this.state.lastResult = changed ? parts.join('，') : '没有新的成稿';
       await this.save();
@@ -259,7 +260,8 @@ class IpStudioSync extends Plugin {
     }
   }
 
-  /* 配图：下载过的不再下；失败就抛出，这一篇下次重试 */
+  /* 配图：下载过的不再下。服务器上已经没有这张图（404）就跳过、正文里去掉这张；
+     别的失败（网络断了、服务器出错）才抛出，这一篇下次重试 */
   async downloadImages(item, base, stat) {
     const local = {};
     const all = [...(item.images || []), ...(this.settings.includeVariants ? (item.variants || []).flatMap((v) => v.images || []) : [])];
@@ -270,7 +272,13 @@ class IpStudioSync extends Plugin {
       if (local[img.name]) continue;
       const path = normalizePath(`${dir}/ips-${item.id}-${safeName(img.name, 120)}`);
       if (!this.app.vault.getAbstractFileByPath(path)) {
-        const res = await this.request(new URL(img.url, base));
+        let res;
+        try {
+          res = await this.request(new URL(img.url, base));
+        } catch (err) {
+          if (err.status === 404) { stat.missing = (stat.missing || 0) + 1; continue; }
+          throw err;
+        }
         await this.app.vault.createBinary(path, res.arrayBuffer);
         stat.images += 1;
       }
