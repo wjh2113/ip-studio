@@ -247,11 +247,39 @@ function toggleRevs() {
 }
 
 /* ---------- 编辑框 ---------- */
+/* 编辑框跟着内容撑高。
+ * 以前每次输入都先把高度设成 auto 再量：那一瞬间框缩回一屏高，页面变短，浏览器把滚动位置夹到顶上去，
+ * 打一个字页面就跳、光标跑到屏幕最底下。现在：
+ *   - 只是变长（打字的常态）：直接加高，不缩；
+ *   - 要变短（删了内容）：缩之前记下页面和各层滚动位置，量完原样放回。 */
 function autosize() {
   const ta = editor.value;
   if (!ta) return;
+  const min = 360;
+  if (ta.scrollHeight > ta.clientHeight) {
+    ta.style.height = `${Math.max(min, ta.scrollHeight + (ta.offsetHeight - ta.clientHeight))}px`;
+    return;
+  }
+  const scrollers = [];
+  for (let el = ta.parentElement; el; el = el.parentElement) if (el.scrollTop) scrollers.push([el, el.scrollTop]);
+  const page = document.scrollingElement || document.documentElement;
+  const pageTop = page.scrollTop;
+  const before = ta.offsetHeight;
   ta.style.height = 'auto';
-  ta.style.height = `${Math.max(360, ta.scrollHeight)}px`;
+  const next = `${Math.max(min, ta.scrollHeight + (ta.offsetHeight - ta.clientHeight))}px`;
+  ta.style.height = before && parseFloat(next) >= before ? `${before}px` : next;
+  for (const [el, top] of scrollers) el.scrollTop = top;
+  page.scrollTop = pageTop;
+}
+
+/* 打字时光标别躲到吸底的工具条后面：光标低于工具条上沿就把页面往上推一点 */
+function keepCaretVisible() {
+  const ta = editor.value;
+  if (!ta || document.activeElement !== ta) return;
+  const bar = document.getElementById('editorBar');
+  const limit = (bar ? bar.getBoundingClientRect().top : window.innerHeight) - 12;
+  const { bottom } = caretRect(ta, ta.selectionEnd);
+  if (bottom > limit) window.scrollBy(0, bottom - limit);
 }
 
 // 进编辑模式：撑开高度、放光标；内容被别处改了（采纳、语音改稿）也要重新撑
@@ -267,6 +295,7 @@ watch(() => s.draft?.content, () => { if (s.mode === 'edit') nextTick(autosize);
 function onEditorInput(e) {
   ed.onInput(e.target.value);
   autosize();
+  keepCaretVisible();
   detectSlash();
 }
 
