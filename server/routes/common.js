@@ -7,6 +7,11 @@ import { PROVIDER } from '../llm.js';
 import { loadPricing } from '../pricing.js';
 import { liveSystem } from '../promptrev.js';
 import { waitFor } from '../jobs.js';
+import { indexLater, rankHybrid } from '../semantic.js';
+import { onContentChanged } from '../db.js';
+
+// 素材、档案、样本有增改：后台补向量
+onContentChanged((userId) => indexLater(userId));
 
 loadPricing();
 
@@ -29,24 +34,23 @@ export const requireUser = async (req) => {
 
 export const sys = (key, builtin) => liveSystem(key, builtin);
 
-/* 语气锚点：档案已经蒸馏过，这里只取两篇原文做语感参考——和这次题材最像的两篇，都不像就取最近的 */
+/* 语气锚点：档案已经蒸馏过，这里只取两篇原文做语感参考——和这次题材最像的两篇（语义 + 字面），都不像就取最近的 */
 export const styleSamples = async (persona, userId, hint = '') =>
   (persona?.id && persona.style_digest)
-    ? await Samples.pickSimilar(persona.id, userId, hint, 2)
+    ? await Samples.pickSimilar(persona.id, userId, hint, 2,
+      async (rows, lexOf) => (await rankHybrid(userId, 'sample', rows, hint, lexOf)).map((x) => x.item.id))
     : [];
 
-/* 个人档案召回：按题材的字面重合挑最相关的几条（同素材召回的办法），太低的分不给 */
+/* 个人档案召回：语义 + 字面混合（见 semantic.js），字面上只要命中够多也照样入选 */
 export async function recallProfile(userId, hint, limit = 5) {
   const all = await Profile.list(userId);
   if (!all.length) return [];
   const grams = bigrams(hint);
-  if (!grams.size) return [];
-  return all
-    .map((e) => ({ e, score: overlapScore(grams, `${e.title} ${e.tags} ${e.tags} ${e.org} ${e.role} ${e.body.slice(0, 300)} ${e.result}`) }))
-    .filter((x) => x.score >= 3)
-    .sort((a, b) => b.score - a.score || (b.e.used_count || 0) - (a.e.used_count || 0))
+  const lexOf = (e) => overlapScore(grams, `${e.title} ${e.tags} ${e.tags} ${e.org} ${e.role} ${e.body.slice(0, 300)} ${e.result}`);
+  return (await rankHybrid(userId, 'profile', all, hint, lexOf))
+    .sort((a, b) => b.score - a.score || (b.item.used_count || 0) - (a.item.used_count || 0))
     .slice(0, limit)
-    .map((x) => x.e);
+    .map((x) => x.item);
 }
 
 /* 写作时「懂作者」的那部分上下文：个人档案里相关的几条 + 这个号的改稿偏好。

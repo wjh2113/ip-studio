@@ -1,10 +1,13 @@
 /* 路由 · learning：个人档案（跟着用户走）与「AI 眼中的我」（每个账号学到的语气、改稿偏好、学习记录）。
  * 学习逻辑在 server/learning.js，这里只管读写和校验。 */
-import { LearnLog, PREF_MAX, PROFILE_KINDS, PROFILE_MAX, Personas, Prefs, Profile, SAMPLE_MAX, Samples } from '../db.js';
+import { Embeddings, LearnLog, PREF_MAX, PROFILE_KINDS, PROFILE_MAX, Personas, Prefs, Profile, SAMPLE_MAX, Samples } from '../db.js';
 import { HttpError } from '../auth.js';
 import { userLimit } from '../limit.js';
 import { FULL_EVERY, enqueueLearn, parseProfile } from '../learning.js';
 import { presentJob } from '../jobs.js';
+import { dataFindings, performanceOf } from '../performance.js';
+import { semanticOn } from '../semantic.js';
+import { Worker } from 'node:worker_threads';
 import { json, requireUser } from './common.js';
 
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
@@ -95,6 +98,10 @@ export async function handleLearning(req, res, body, params) {
     prefMax: PREF_MAX,
     profileCount: await Profile.count(user.id),
     log: await LearnLog.list(user.id, persona.id, 40),
+    // 数据告诉我们：这个号上哪种标题、开头、方向数据好（回填够 6 篇才说）
+    data: dataFindings(await performanceOf(user.id, persona.id)),
+    // 写作时按意思找经历和素材：建了多少条索引
+    semantic: { on: semanticOn(), indexed: await Embeddings.stats(user.id) },
   });
 }
 
@@ -143,4 +150,32 @@ export async function handleLogDismiss(req, res, body, params) {
   const user = await requireUser(req);
   if (!await LearnLog.setStatus(Number(params.lid), user.id, 'done')) throw new HttpError(404, '这条记录不存在');
   json(res, 200, { ok: true });
+}
+
+/* ---------------- Word / PDF 导入：只取文字，不存文件 ----------------
+   语气样本、个人档案（简历）都用它：前端拿到文字后照旧走原来的导入 / 拆解接口，用户能先看一眼再存。 */
+const EXTRACT_TIMEOUT = 20_000;
+
+export function extractInWorker(buffer, name) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../filetext-worker.js', import.meta.url), {
+      workerData: { buffer, name },
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+    });
+    const timer = setTimeout(() => { void worker.terminate(); reject(new HttpError(422, '这个文件太复杂了，20 秒没读完。可以复制文字粘贴')); }, EXTRACT_TIMEOUT);
+    worker.once('message', (m) => {
+      clearTimeout(timer);
+      void worker.terminate();
+      if (m.ok) resolve(m.result); else reject(new HttpError(m.status, m.message));
+    });
+    worker.once('error', (err) => { clearTimeout(timer); reject(new HttpError(422, `文件读不了：${err.message}`)); });
+  });
+}
+
+export async function handleFileExtract(req, res, file) {
+  const user = await requireUser(req);
+  userLimit(user.id, 'file-extract', 60, 60 * 60_000);
+  if (!file?.buffer?.length) throw new HttpError(400, '文件是空的');
+  const out = await extractInWorker(file.buffer, file.name);
+  json(res, 200, { ...out, name: file.name, chars: out.text.length });
 }

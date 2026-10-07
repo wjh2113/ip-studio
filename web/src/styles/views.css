@@ -1203,6 +1203,7 @@
 .pf-vis { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .pf-vis input { width: 15px; height: 15px; margin: 0; }
 .imp-file { position: relative; cursor: pointer; }
+.imp-issues { margin: 4px 0 0; padding-left: 18px; font-size: 12px; display: grid; gap: 2px; }
 .sample-src {
   flex: none; font-size: 11px; padding: 1px 7px; border-radius: 6px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
 }
@@ -1226,6 +1227,9 @@
 .me-pref .grow b { font-weight: 500; }
 .me-pref small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .me-pref-on input { width: 15px; height: 15px; margin: 0; }
+.me-data-line { margin: 4px 0; font-size: 13px; line-height: 1.6; }
+.me-data-line::before { content: "· "; color: var(--muted); }
+.me-sem { margin-top: 8px; }
 .me-log { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; line-height: 1.6; }
 .me-log:last-child { border-bottom: 0; }
 .me-log-when { flex: none; width: 128px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }

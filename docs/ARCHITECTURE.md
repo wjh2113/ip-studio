@@ -180,7 +180,7 @@ uni-app（Vue 3 + Pinia）的 Vite 命令行工程，一套代码出 H5、安卓
 |---|---|
 | 账号与会话 | `users`、`sessions`、`admins`、`admin_sessions` |
 | 账号设定 | `personas`、`sections`、`style_samples`（`notes` 是每篇单独提炼的写作习惯） |
-| 越写越懂 | `profile_entries`（个人档案，跟着用户）、`style_prefs`（改稿偏好，按账号）、`learn_log`（学习记录与待确认的经历候选）；`drafts.context_json` 记成稿时参考了什么，`drafts.learned_at` 记学没学过偏好 |
+| 越写越懂 | `profile_entries`（个人档案，跟着用户）、`style_prefs`（改稿偏好，按账号）、`learn_log`（学习记录与待确认的经历候选）；`drafts.context_json` 记成稿时参考了什么，`drafts.learned_at` 记学没学过偏好；`embeddings`（素材 / 档案 / 样本的向量，迁移 9）、`personas.digest_full_at`（上次从头梳理语气档案的时间） |
 | 创作 | `drafts`、`draft_revisions`、`speak_takes`、`frameworks` |
 | 复盘 | `draft_metrics`（发布数据快照，一次回填一行） |
 | 后台任务 | `jobs`（出图、口播转写与评测；worker 在 `server/jobs.js`） |

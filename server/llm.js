@@ -380,6 +380,103 @@ async function readChatResponse(res, stream, onDelta) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 向量化：网关 /api/ai/embeddings（能力 embedding，维度和库里一致）
+ *
+ * 只有网关这一路：Anthropic 没有向量接口，OpenAI 兼容的各家维度不一，混用会让旧向量全部作废。
+ *   gateway —— 配了 LLM_GATEWAY_API_KEY 就用（不管文本走哪一路）
+ *   mock    —— 演示模式和测试：按 2 字滑窗散列成固定维度，字面越像越近，结果稳定可复现
+ *   off     —— 都没有，或 EMBEDDING_PROVIDER=off：召回退回纯字面
+ * 向量不占用户额度（一次几分之一分钱），只记用量，后台能看到花了多少。
+ * ------------------------------------------------------------------ */
+export const EMBED_DIMS = 1024;
+const EMBED_BATCH = 16;
+const EMBED_TIMEOUT = Number(process.env.EMBEDDING_TIMEOUT_MS) || 10_000;
+
+export function embedProvider() {
+  const forced = String(process.env.EMBEDDING_PROVIDER || '').toLowerCase();
+  if (forced === 'off' || forced === 'none') return 'off';
+  if (forced === 'mock' || (!forced && PROVIDER === 'mock')) return 'mock';
+  return GATEWAY_KEY ? 'gateway' : 'off';
+}
+
+/* 一批文本 → 一批单位向量（顺序和输入一致）。不可用时抛错，调用方自己决定退回字面召回 */
+export async function embedTexts(texts, meta = {}) {
+  const list = (Array.isArray(texts) ? texts : [texts]).map((t) => String(t || '').slice(0, 4000));
+  const provider = embedProvider();
+  if (provider === 'off') throw Object.assign(new Error('向量接口未配置'), { code: 'EMBED_OFF' });
+  if (!list.length) return [];
+  const started = Date.now();
+  const out = [];
+  let tokens = 0;
+  try {
+    for (let i = 0; i < list.length; i += EMBED_BATCH) {
+      const chunk = list.slice(i, i + EMBED_BATCH);
+      if (provider === 'mock') {
+        out.push(...chunk.map(mockEmbed));
+        continue;
+      }
+      const res = await fetch(`${GATEWAY_URL}/api/ai/embeddings`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(EMBED_TIMEOUT),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GATEWAY_KEY}` },
+        body: JSON.stringify({
+          tenantId: GATEWAY_TENANT,
+          capability: process.env.LLM_CAPABILITY_EMBEDDING || 'embedding',
+          input: chunk,
+          dimensions: EMBED_DIMS,
+          dataClass: 'internal',
+          fallback: true,
+          ...(meta.userId ? { userId: String(meta.userId) } : {}),
+        }),
+      });
+      if (!res.ok) throw new Error(`向量接口返回 ${res.status}：${(await res.text()).slice(0, 200)}`);
+      const data = await res.json();
+      const rows = [...(data.data || [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+      if (rows.length !== chunk.length) throw new Error(`向量接口返回了 ${rows.length} 条，应为 ${chunk.length} 条`);
+      for (const r of rows) {
+        const v = r.embedding;
+        // 维度不对的向量存进去会让整列失效：宁可这次不用
+        if (!Array.isArray(v) || v.length !== EMBED_DIMS) throw new Error(`向量维度不对（${v?.length}），应为 ${EMBED_DIMS}`);
+        out.push(normalize(v));
+      }
+      tokens += Number(data.usage?.total_tokens || data.usage?.prompt_tokens || 0);
+    }
+    usageSink?.({
+      feature: '向量化', ...meta, provider: provider === 'mock' ? 'mock' : 'gateway', model: 'embedding', ok: true,
+      ms: Date.now() - started, inputTokens: tokens, outputTokens: 0, units: tokens, unit: 'token',
+    });
+    return out;
+  } catch (err) {
+    usageSink?.({
+      feature: '向量化', ...meta, provider, model: 'embedding', ok: false,
+      ms: Date.now() - started, error: String(err?.message || err),
+    });
+    throw err;
+  }
+}
+
+function normalize(v) {
+  let s = 0;
+  for (const x of v) s += x * x;
+  const n = Math.sqrt(s) || 1;
+  return v.map((x) => x / n);
+}
+
+/* 演示用的「向量」：2 字滑窗散列到 1024 维再归一化。只有字面相似，没有语义——够测试流程 */
+export function mockEmbed(text) {
+  const v = new Array(EMBED_DIMS).fill(0);
+  const src = String(text || '').toLowerCase();
+  for (let i = 0; i < src.length - 1; i += 1) {
+    const g = src.slice(i, i + 2);
+    if (!/[一-龥a-z0-9]{2}/.test(g)) continue;
+    let h = 2166136261;
+    for (let k = 0; k < g.length; k += 1) h = Math.imul(h ^ g.charCodeAt(k), 16777619);
+    v[(h >>> 0) % EMBED_DIMS] += 1;
+  }
+  return normalize(v);
+}
+
+/* ------------------------------------------------------------------ *
  * 工具
  * ------------------------------------------------------------------ */
 export function parseJSON(text) {

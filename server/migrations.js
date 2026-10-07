@@ -166,6 +166,33 @@ export const MIGRATIONS = [
       ALTER TABLE drafts ADD COLUMN IF NOT EXISTS learned_at text NOT NULL DEFAULT '';
     `);
   } },
+  { version: 9, name: '语义召回：素材、档案、样本的向量；语气档案定期梳理', up: async (db) => {
+    // 向量存成 real[]，表结构不依赖 pgvector：装了扩展就在库里算余弦距离，没装就在 Node 里算，召回照常
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id          integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id     integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind        text NOT NULL,
+        ref_id      integer NOT NULL,
+        hash        text NOT NULL,
+        vec         real[] NOT NULL,
+        updated_at  text NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_embed_ref ON embeddings(kind, ref_id);
+      CREATE INDEX IF NOT EXISTS idx_embed_user ON embeddings(user_id, kind);
+      -- 上次从头梳理语气档案的时间：每月定期梳理看它
+      ALTER TABLE personas ADD COLUMN IF NOT EXISTS digest_full_at text NOT NULL DEFAULT '';
+    `);
+    // 扩展装到 public（测试每个进程一个 schema，装在自己 schema 里会随 schema 一起删掉）。
+    // 没装 pgvector、没权限、或者别的进程正在装：都不算失败，退回 Node 里算
+    await db.exec('SAVEPOINT vec_ext');
+    try {
+      await db.exec('CREATE EXTENSION IF NOT EXISTS vector SCHEMA public');
+      await db.exec('RELEASE SAVEPOINT vec_ext');
+    } catch {
+      await db.exec('ROLLBACK TO SAVEPOINT vec_ext');
+    }
+  } },
 ];
 
 function toPg(text) {

@@ -1,7 +1,7 @@
 /* 表结构（Drizzle）。列名沿用原来的蛇形，读出来的字段和以前的 SQLite 行一致。
  * 改表请在 migrations.js 末尾追加编号迁移，并在这里同步字段。 */
 import { sql } from 'drizzle-orm';
-import { doublePrecision, index, integer, pgTable, primaryKey, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
+import { doublePrecision, index, integer, pgTable, primaryKey, real, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
 
 const id = () => integer('id').primaryKey().generatedAlwaysAsIdentity();
 
@@ -55,6 +55,7 @@ export const personas = pgTable('personas', {
   style_updated_at: text('style_updated_at').notNull().default(''),
   auto_learn: integer('auto_learn').notNull().default(1),            // 迁移 8：发布后自动学
   digest_full_count: integer('digest_full_count').notNull().default(0), // 上次从头梳理档案时有几篇样本
+  digest_full_at: text('digest_full_at').notNull().default(''),        // 迁移 9：上次从头梳理的时间
   subject_ideas: text('subject_ideas').notNull().default('[]'),
   hotspot_json: text('hotspot_json').notNull().default('null'),
   created_at: text('created_at').notNull(),
@@ -393,6 +394,18 @@ export const profileEntries = pgTable('profile_entries', {
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
 }, (t) => [index('idx_profile_user').on(t.user_id, t.id)]);
+
+/* 迁移 9：向量。kind = material | profile | sample，ref_id 指向对应表的行；hash 是向量化那段文字的指纹，
+ * 内容没变就不重算。vec 是归一化过的 1024 维向量（real[]）。装了 pgvector 就在库里算距离 */
+export const embeddings = pgTable('embeddings', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  ref_id: integer('ref_id').notNull(),
+  hash: text('hash').notNull(),
+  vec: real('vec').array().notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [uniqueIndex('idx_embed_ref').on(t.kind, t.ref_id), index('idx_embed_user').on(t.user_id, t.kind)]);
 
 /* 迁移 8：改稿偏好。从「AI 初稿 → 作者定稿」的差别里学到的习惯，按账号存 */
 export const stylePrefs = pgTable('style_prefs', {

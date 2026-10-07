@@ -200,9 +200,26 @@ export function performanceBlock(perf, use = 'topics') {
   const weak = byLift.filter(([, g]) => g.lift <= 0.7);
   const fmt = (list) => list.map(([k, g]) => `「${k}」阅读中位数 ${g.median}（${g.n} 篇）`).join('；');
   const lines = [];
+  const split = (group) => {
+    const list = Object.entries(group || {}).sort((a, b) => b[1].lift - a[1].lift);
+    return [list.filter(([, g]) => g.lift >= 1.3), list.filter(([, g]) => g.lift <= 0.7)];
+  };
   if (use === 'topics') {
     if (good.length) lines.push(`数据好的方向类型：${fmt(good)}`);
     if (weak.length) lines.push(`数据弱的方向类型：${fmt(weak)}`);
+    const [tg, tw] = split(perf.byTitle);
+    if (tg.length) lines.push(`数据好的标题写法：${fmt(tg)}`);
+    if (tw.length) lines.push(`数据弱的标题写法：${fmt(tw)}`);
+  }
+  if (use === 'content') {
+    const [og, ow] = split(perf.byOpening);
+    if (og.length) lines.push(`数据好的开头方式：${fmt(og)}`);
+    if (ow.length) lines.push(`数据弱的开头方式：${fmt(ow)}`);
+    if (!lines.length) return '';
+    return `—— 这个号过往的发布数据（${perf.n} 篇，阅读中位数 ${perf.overall}）——
+${fence('performance', lines.join('\n'))}
+${DATA_NOTE}
+参考用法：开篇可以往数据好的开头方式上靠，但选定方向的开篇钩子和事实要求优先，不要为了套路改掉方向。`;
   }
   if (perf.top?.length) lines.push(`数据最好的几篇：${perf.top.map((t) => `《${t.title}》阅读 ${t.views}`).join('；')}`);
   if (!lines.length) return '';
@@ -228,11 +245,11 @@ export const CONTENT_SYSTEM =
 7. 若给出了写法框架，按框架的段落顺序和各段篇幅比例组织全文；框架只决定结构，事实仍然只能来自作者素材和简报。
 8. 全部使用简体中文。`;
 
-export const contentUser = (d, topic, persona, samples, materials = [], me = null) =>
+export const contentUser = (d, topic, persona, samples, materials = [], me = null, perf = '') =>
 `按下面选定的方向写出完整成稿。
 
 ${brief(d, persona, samples, me)}
-${materialsBlock(materials) ? `\n${materialsBlock(materials)}\n` : ''}
+${materialsBlock(materials) ? `\n${materialsBlock(materials)}\n` : ''}${perf ? `\n${perf}\n` : ''}
 
 —— 选定方向 ——
 标题：${topic.title}

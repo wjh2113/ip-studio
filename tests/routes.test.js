@@ -205,6 +205,23 @@ test('语气样本：加一篇就重建语气档案（以前 .map is not a funct
   assert.equal(r.data.added, 1);
 });
 
+test('Word / PDF 导入：传原始字节取文字；读不了的回 4xx 和办法', async () => {
+  const { readFileSync } = await import('node:fs');
+  const docx = readFileSync(fromRoot('tests/fixtures/files/article.docx'));
+  let r = await api.call('POST', '/api/files/extract', new Uint8Array(docx), { 'content-type': 'application/octet-stream', 'x-filename': encodeURIComponent('我的文章.docx') });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.kind, 'docx');
+  assert.equal(r.data.title, '我做产品经理的第五年');
+  assert.equal(r.data.name, '我的文章.docx');
+  assert.ok(r.data.chars > 100);
+  const pdf = readFileSync(fromRoot('tests/fixtures/files/image-only.pdf'));
+  r = await api.call('POST', '/api/files/extract', new Uint8Array(pdf), { 'x-filename': 'scan.pdf' });
+  assert.equal(r.status, 422);
+  assert.match(r.data.error, /扫描件/);
+  r = await fetch(`${BASE}/api/files/extract`, { method: 'POST', body: docx });
+  assert.equal(r.status, 401);
+});
+
 test('素材库：用户级创建、列表、链接提取、增删改（不挂账号）', async () => {
   let r = await api.call('POST', '/api/materials', {
     kind: '文章', title: '第一次带队翻车', body: '把人带走一半之后才学会复盘。', tags: '管理,复盘',

@@ -2,7 +2,7 @@
  * 账号设定页的「个人档案」「语气样本」「AI 眼中的我」三块用它。学习本身在服务端（server/learning.js）。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
-import { api } from '../lib/api.js';
+import { api, upload } from '../lib/api.js';
 import { ask, toast } from '../lib/feedback.js';
 import { useJobsStore } from './jobs.js';
 import { on } from '../lib/bus.js';
@@ -15,7 +15,7 @@ export const useLearningStore = defineStore('learning', () => {
   const profile = reactive({ entries: [], max: 300, loading: false, error: '' });
   const editing = ref(null);               // 正在改的那条 id；'new' = 新增
   const form = reactive({ ...EMPTY });
-  const parse = reactive({ text: '', running: false, candidates: [], error: '' });
+  const parse = reactive({ text: '', running: false, reading: false, candidates: [], error: '' });
 
   async function loadProfile() {
     profile.loading = true;
@@ -83,7 +83,7 @@ export const useLearningStore = defineStore('learning', () => {
   /* ---------- AI 眼中的我（按账号） ---------- */
   const me = reactive({
     personaId: null, digest: '', digestUpdatedAt: '', autoLearn: true, samples: { count: 0, max: 200, untilFull: 10 },
-    prefs: [], prefMax: 40, profileCount: 0, log: [], loading: false, error: '',
+    prefs: [], prefMax: 40, profileCount: 0, log: [], data: null, semantic: null, loading: false, error: '',
   });
   const newRule = ref('');
 
@@ -160,23 +160,55 @@ export const useLearningStore = defineStore('learning', () => {
   }
 
   /* ---------- 批量导入文章（语气样本） ---------- */
-  const imp = reactive({ files: [], paste: '', pasteTitle: '', running: false, result: null });
+  const imp = reactive({ files: [], failed: [], paste: '', pasteTitle: '', running: false, reading: false, result: null });
 
-  /* 选 .md / .txt：文件名当标题，正文第一行是 # 标题的用它 */
+  /* 选文件：.md / .txt 在浏览器里读；Word（.docx）和 PDF 传给服务端取文字。
+     文件名当标题，正文第一行是 # 标题的、或者文档里带标题的用它。读不了的列出来告诉作者为什么 */
+  const DOC_RE = /\.(docx|pdf)$/i;
+  async function readFileText(f) {
+    if (DOC_RE.test(f.name)) {
+      const out = await upload('/files/extract', f, f.name);
+      return { title: out.title, text: out.text, warnings: out.warnings || [] };
+    }
+    const text = (await f.text()).trim();
+    return { title: text.match(/^#\s+(.+)$/m)?.[1] || '', text, warnings: [] };
+  }
+
   async function pickFiles(fileList) {
     const out = [];
-    for (const f of [...(fileList || [])].slice(0, 20)) {
-      if (!/\.(md|markdown|txt)$/i.test(f.name)) continue;
-      const text = (await f.text()).trim();
-      const h = text.match(/^#\s+(.+)$/m);
-      out.push({ title: (h?.[1] || f.name.replace(/\.[^.]+$/, '')).slice(0, 120), content: text });
-    }
+    const failed = [];
+    const list = [...(fileList || [])].filter((f) => /\.(md|markdown|txt|docx|pdf)$/i.test(f.name)).slice(0, 20);
+    if (!list.length) { toast('支持 .docx、.pdf、.md、.txt'); return; }
+    imp.reading = true;
+    try {
+      for (const f of list) {
+        try {
+          const r = await readFileText(f);
+          out.push({ title: (r.title || f.name.replace(/\.[^.]+$/, '')).slice(0, 120), content: r.text.trim(), file: f.name, warnings: r.warnings });
+        } catch (err) { failed.push({ file: f.name, reason: err.message }); }
+      }
+    } finally { imp.reading = false; }
     imp.files = out;
-    if (!out.length) toast('只支持 .md 和 .txt 文件');
+    imp.failed = failed;
+    if (failed.length && !out.length) toast(`没读出来：${failed[0].reason}`);
+  }
+
+  /* 简历是 Word / PDF：读出文字放进「贴简历」的框里，作者看一眼再拆 */
+  async function pickResume(file) {
+    if (!file) return;
+    parse.error = '';
+    parse.reading = true;
+    try {
+      const r = await readFileText(file);
+      const text = r.text.trim();
+      parse.text = text.slice(0, 12000);
+      if (text.length > 12000) toast('简历超过 1.2 万字，只放进了前面一部分，剩下的可以分次拆');
+      else if (r.warnings.length) toast(r.warnings[0]);
+    } catch (err) { parse.error = err.message; } finally { parse.reading = false; }
   }
 
   async function runImport(personaId) {
-    const articles = [...imp.files];
+    const articles = imp.files.map(({ title, content }) => ({ title, content }));
     if (imp.paste.trim()) articles.push({ title: imp.pasteTitle.trim(), content: imp.paste.trim() });
     if (!articles.length) { toast('先选文件或粘贴一篇'); return null; }
     imp.running = true;
@@ -185,6 +217,7 @@ export const useLearningStore = defineStore('learning', () => {
       if (out.job) useJobsStore().track(out.job);
       imp.result = out;
       imp.files = [];
+      imp.failed = [];
       imp.paste = '';
       imp.pasteTitle = '';
       toast(out.added ? `导入了 ${out.added} 篇，正在后台学习` : '没有导入成功的文章');
@@ -204,6 +237,6 @@ export const useLearningStore = defineStore('learning', () => {
     learnedAt,
     profile, editing, form, parse, loadProfile, startNew, startEdit, cancelEdit, saveEntry, removeEntry, runParse, saveParsed,
     me, newRule, loadMe, setAutoLearn, rebuild, addRule, updateRule, editRule, removeRule, acceptCandidates, dismissCandidates,
-    imp, pickFiles, runImport,
+    imp, pickFiles, pickResume, runImport,
   };
 });

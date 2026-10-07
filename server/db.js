@@ -10,7 +10,7 @@ import { editRatio } from './quality.js';
 import {
   adminSessions, admins, benchmarks, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
   frameworks, inboxKeys, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
-  learnLog, profileEntries, speakTakes, stylePrefs, styleSamples, syncKeys, topicPool, usageEvents, users,
+  embeddings, learnLog, profileEntries, speakTakes, stylePrefs, styleSamples, syncKeys, topicPool, usageEvents, users,
 } from './schema.js';
 
 const fileRoot = process.env.DATA_DIR
@@ -36,6 +36,11 @@ async function read(statement) {
   return result.rows ?? result;
 }
 const same = (col, val) => sql`${col} IS NOT DISTINCT FROM ${val}`;
+
+/* 素材、个人档案、语气样本有增改时通知一声（semantic.js 挂上去在后台补向量）。数据层不直接依赖它 */
+let changeHook = null;
+export const onContentChanged = (fn) => { changeHook = fn; };
+const changed = (userId) => { try { changeHook?.(userId); } catch { /* 通知失败不影响写库 */ } };
 
 export const Admins = {
   async count() {
@@ -265,8 +270,17 @@ export const Personas = {
   },
   async setDigest(id, userId, digest, { fullCount } = {}) {
     const set = { style_digest: digest, style_updated_at: now() };
-    if (fullCount !== undefined) set.digest_full_count = fullCount;
+    if (fullCount !== undefined) { set.digest_full_count = fullCount; set.digest_full_at = now(); }
     await orm().update(personas).set(set).where(and(eq(personas.id, id), eq(personas.user_id, userId)));
+  },
+  /* 该定期梳理的账号：开着自动学习、有档案、上次从头梳理（没有就看建档时间）早于 before、之后又加过样本 */
+  async dueForRefresh(before, limit = 50) {
+    return read(sql`
+      SELECT p.id, p.user_id FROM personas p
+      WHERE p.auto_learn = 1 AND p.style_digest <> ''
+        AND COALESCE(NULLIF(p.digest_full_at, ''), p.style_updated_at) < ${before}
+        AND (SELECT COUNT(*) FROM style_samples s WHERE s.persona_id = p.id) > p.digest_full_count
+      ORDER BY p.id LIMIT ${limit}`);
   },
   async setAutoLearn(id, userId, on) {
     const rows = await orm().update(personas).set({ auto_learn: on ? 1 : 0 })
@@ -503,15 +517,18 @@ export const Materials = {
   /* 素材归用户，不挂账号；persona_id 一律写 null（列保留兼容旧数据与召回）。 */
   async create(userId, m) {
     const t = now();
-    return one(orm().insert(materials).values({
+    const row = await one(orm().insert(materials).values({
       user_id: userId, persona_id: null, kind: m.kind, title: m.title,
       body: m.body || '', tags: m.tags || '', created_at: t, updated_at: t,
     }).returning());
+    changed(userId);
+    return row;
   },
   async update(id, userId, m) {
     const rows = await orm().update(materials).set({
       kind: m.kind, title: m.title, body: m.body || '', tags: m.tags || '', updated_at: now(),
     }).where(and(eq(materials.id, id), eq(materials.user_id, userId))).returning({ id: materials.id });
+    if (rows.length) changed(userId);
     return rows.length ? this.byId(id, userId) : null;
   },
   async byId(id, userId) {
@@ -522,6 +539,7 @@ export const Materials = {
   },
   async remove(id, userId) {
     const rows = await orm().delete(materials).where(and(eq(materials.id, id), eq(materials.user_id, userId))).returning({ id: materials.id });
+    if (rows.length) await Embeddings.drop('material', id);
     return rows.length > 0;
   },
   async markUsed(ids, userId) {
@@ -658,10 +676,17 @@ export { bigrams };
 
 export const Samples = {
   async create(userId, personaId, { draftId = null, title = '', content, source = 'manual', weight = 1, notes = '' }) {
-    return one(orm().insert(styleSamples).values({
+    const row = await one(orm().insert(styleSamples).values({
       user_id: userId, persona_id: personaId, draft_id: draftId, title, content, created_at: now(),
       source, weight, notes,
     }).returning());
+    changed(userId);
+    return row;
+  },
+  /* 这个用户全部样本的开头一段（向量化用） */
+  async heads(userId) {
+    return orm().select({ id: styleSamples.id, title: styleSamples.title, head: sql`left(${styleSamples.content}, 1200)` })
+      .from(styleSamples).where(eq(styleSamples.user_id, userId)).orderBy(desc(styleSamples.id));
   },
   async list(personaId, userId, { withContent = false, limit = SAMPLE_MAX } = {}) {
     const where = and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId));
@@ -701,25 +726,29 @@ export const Samples = {
     await orm().update(styleSamples).set({ notes }).where(and(eq(styleSamples.id, id), eq(styleSamples.user_id, userId)));
   },
   /* 写作时的语感锚点：和这次题材最像的 n 篇（看标题和开头），都不像就取最近的 */
-  async pickSimilar(personaId, userId, hint, n = 2) {
+  /* rank：可选的排序函数（semantic.js 的语义 + 字面混合），拿候选和字面分函数，回入选的 id 顺序；不给就只看字面 */
+  async pickSimilar(personaId, userId, hint, n = 2, rank = null) {
     const rows = await orm().select({
-      id: styleSamples.id, title: styleSamples.title, head: sql`left(${styleSamples.content}, 800)`, weight: styleSamples.weight,
+      id: styleSamples.id, title: styleSamples.title, head: sql`left(${styleSamples.content}, 1200)`, weight: styleSamples.weight,
     }).from(styleSamples).where(and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId)))
       .orderBy(desc(styleSamples.id)).limit(SAMPLE_MAX);
     if (!rows.length) return [];
     const grams = bigrams(hint);
-    const scored = rows.map((r, i) => ({
-      id: r.id,
-      score: grams.size ? overlapScore(grams, `${r.title} ${r.head}`) * (Number(r.weight) || 1) : 0,
-      i,
-    }));
-    const pick = scored.filter((x) => x.score >= 3).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, n).map((x) => x.id);
+    const lexOf = (r) => (grams.size ? overlapScore(grams, `${r.title} ${r.head.slice(0, 800)}`) * (Number(r.weight) || 1) : 0);
+    let pick;
+    if (rank) {
+      pick = (await rank(rows, lexOf)).slice(0, n);
+    } else {
+      pick = rows.map((r, i) => ({ id: r.id, score: lexOf(r), i }))
+        .filter((x) => x.score >= 3).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, n).map((x) => x.id);
+    }
     for (const r of rows) { if (pick.length >= n) break; if (!pick.includes(r.id)) pick.push(r.id); }
     const full = await this.byIds(pick, userId);
     return pick.map((id) => full.find((r) => r.id === id)).filter(Boolean);
   },
   async remove(id, userId) {
     const rows = await orm().delete(styleSamples).where(and(eq(styleSamples.id, id), eq(styleSamples.user_id, userId))).returning({ id: styleSamples.id });
+    if (rows.length) await Embeddings.drop('sample', id);
     return rows.length > 0;
   },
 };
@@ -746,23 +775,82 @@ export const Profile = {
   },
   async create(userId, e, source = 'manual') {
     const t = now();
-    return one(orm().insert(profileEntries).values({
+    const row = await one(orm().insert(profileEntries).values({
       user_id: userId, ...profileValues(e), source, created_at: t, updated_at: t,
     }).returning());
+    changed(userId);
+    return row;
   },
   async update(id, userId, e) {
     const rows = await orm().update(profileEntries).set({ ...profileValues(e), updated_at: now() })
       .where(and(eq(profileEntries.id, id), eq(profileEntries.user_id, userId))).returning();
+    if (rows.length) changed(userId);
     return rows[0] || null;
   },
   async remove(id, userId) {
     const rows = await orm().delete(profileEntries).where(and(eq(profileEntries.id, id), eq(profileEntries.user_id, userId))).returning({ id: profileEntries.id });
+    if (rows.length) await Embeddings.drop('profile', id);
     return rows.length > 0;
   },
   async markUsed(ids, userId) {
     if (!ids.length) return;
     await orm().update(profileEntries).set({ used_count: sql`${profileEntries.used_count} + 1` })
       .where(and(inArray(profileEntries.id, ids), eq(profileEntries.user_id, userId)));
+  },
+};
+
+/* 向量（迁移 9）。召回时按「这个用户的这一类」取，装了 pgvector 就让库算余弦相似度，没装就取回来在 Node 里算。
+ * 向量都归一化过，余弦相似度 = 点积 = 1 - 余弦距离。 */
+let vectorSchema;           // undefined = 还没查；null = 没装 pgvector；字符串 = 扩展所在的 schema
+export async function pgvectorSchema() {
+  if (vectorSchema !== undefined) return vectorSchema;
+  if (process.env.PGVECTOR === 'off') return (vectorSchema = null);   // 强制在 Node 里算（测试两条路都要走到）
+  try {
+    const [row] = await read(sql`SELECT n.nspname AS s FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'vector'`);
+    vectorSchema = row?.s && /^[a-z_][a-z0-9_]*$/i.test(row.s) ? row.s : null;
+  } catch { vectorSchema = null; }
+  return vectorSchema;
+}
+const dot = (a, b) => {
+  let s = 0;
+  for (let i = 0; i < a.length && i < b.length; i += 1) s += a[i] * b[i];
+  return s;
+};
+export const Embeddings = {
+  async hashes(userId, kind, refIds) {
+    if (!refIds.length) return new Map();
+    const rows = await orm().select({ ref_id: embeddings.ref_id, hash: embeddings.hash }).from(embeddings)
+      .where(and(eq(embeddings.user_id, userId), eq(embeddings.kind, kind), inArray(embeddings.ref_id, refIds)));
+    return new Map(rows.map((r) => [r.ref_id, r.hash]));
+  },
+  async put(userId, kind, refId, hash, vec) {
+    const t = now();
+    await orm().insert(embeddings).values({ user_id: userId, kind, ref_id: refId, hash, vec, updated_at: t })
+      .onConflictDoUpdate({ target: [embeddings.kind, embeddings.ref_id], set: { user_id: userId, hash, vec, updated_at: t } });
+  },
+  async drop(kind, refId) {
+    await orm().delete(embeddings).where(and(eq(embeddings.kind, kind), eq(embeddings.ref_id, refId)));
+  },
+  /* 和 query 的相似度：ref_id → [-1, 1]。只算 refIds 里的（调用方已经按账号、按归属筛过） */
+  async similarity(userId, kind, refIds, query) {
+    if (!refIds.length) return new Map();
+    const schema = await pgvectorSchema();
+    if (schema) {
+      const q = `[${query.join(',')}]`;
+      const vt = sql.raw(`${schema}.vector`);
+      const op = sql.raw(`OPERATOR(${schema}.<=>)`);
+      const rows = await read(sql`
+        SELECT ref_id, 1 - ((vec::${vt}) ${op} (${q}::${vt})) AS sim
+        FROM embeddings WHERE user_id = ${userId} AND kind = ${kind} AND ref_id = ANY(string_to_array(${refIds.join(',')}, ',')::int[])`);
+      return new Map(rows.map((r) => [Number(r.ref_id), Number(r.sim)]));
+    }
+    const rows = await orm().select({ ref_id: embeddings.ref_id, vec: embeddings.vec }).from(embeddings)
+      .where(and(eq(embeddings.user_id, userId), eq(embeddings.kind, kind), inArray(embeddings.ref_id, refIds)));
+    return new Map(rows.map((r) => [r.ref_id, dot(r.vec, query)]));
+  },
+  async stats(userId) {
+    const rows = await read(sql`SELECT kind, COUNT(*)::int AS n FROM embeddings WHERE user_id = ${userId} GROUP BY kind`);
+    return Object.fromEntries(rows.map((r) => [r.kind, Number(r.n)]));
   },
 };
 
@@ -983,7 +1071,8 @@ export const Drafts = {
   async withMetrics(userId, personaId) {
     const byPersona = personaId !== undefined && personaId !== null;
     return read(sql`
-      SELECT id, subject, title, platform, section_id, chosen, topics_json, metrics_json, framework_json, published_at, created_at
+      SELECT id, subject, title, platform, section_id, chosen, topics_json, metrics_json, framework_json, published_at, created_at,
+             left(content, 600) AS head
       FROM drafts
       WHERE user_id = ${userId} AND metrics_json != 'null' ${byPersona ? sql`AND persona_id = ${personaId}` : sql`AND TRUE`}
       ORDER BY published_at DESC, id DESC LIMIT 200`);

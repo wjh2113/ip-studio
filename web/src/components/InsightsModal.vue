@@ -55,6 +55,8 @@ const groups = computed(() => (r.value ? [
   { title: '平台', rows: r.value.byPlatform, hint: '同一篇发不同平台，表现差很多' },
   { title: '栏目', rows: r.value.bySection, hint: '哪个栏目的读者最买账' },
   { title: '方向类型', rows: r.value.byLabel, hint: '反常识 / 方法拆解 / 个人经历…哪类更吃香' },
+  { title: '标题写法', rows: r.value.byTitle || [], hint: '提问式 / 数字清单 / 反差对比…按标题自动归类' },
+  { title: '开头方式', rows: r.value.byOpening || [], hint: '场景故事 / 抛出问题 / 数据事实…按正文第一段自动归类' },
 ] : []));
 
 /* 走势：「第 1 天 1200 → 第 7 天 5400」，只回填过一次就不显示 */

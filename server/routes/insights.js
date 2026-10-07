@@ -1,6 +1,7 @@
 /* 路由 · insights：发布数据回填与复盘。从原 routes.js 原样拆出。 */
 import { Drafts, METRIC_FIELDS, Metrics, Sections } from '../db.js';
 import { chosenTopic } from '../performance.js';
+import { openingType, titleType } from '../shapes.js';
 import { HttpError } from '../auth.js';
 import { json, requireUser } from './common.js';
 import { onPublished } from '../learning.js';
@@ -141,6 +142,8 @@ export async function handleReview2(req, res, body, params, url) {
         platform,
         section: sections[r.section_id] || '',
         label: chosen?.label || '',
+        titleType: titleType(r.title || chosen?.title || ''),
+        opening: openingType(r.head || ''),
         published_at: r.published_at,
         metrics: Object.fromEntries([...METRIC_FIELDS, 'note'].map((k) => [k, last[k]])),
         views7: near7(trend),
@@ -182,6 +185,8 @@ export async function handleReview2(req, res, body, params, url) {
     byPlatform: group('platform'),
     bySection: group('section'),
     byLabel: group('label'),
+    byTitle: group('titleType'),
+    byOpening: group('opening'),
     note: items.length < 6
       ? `只回填了 ${items.length} 篇，还看不出规律——攒到十几篇再看。`
       : '用中位数不是平均数：自媒体数据长尾重，一条爆款会把平均值拉到没有参考价值。样本少于 3 篇的维度不给结论。',

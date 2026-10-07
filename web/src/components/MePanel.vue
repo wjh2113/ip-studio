@@ -61,6 +61,17 @@
       </div>
     </div>
 
+    <!-- 数据告诉我们：发布数据里看出来的规律（回填够 6 篇才说），写作时作为参考喂给模型 -->
+    <div class="me-block" id="meData">
+      <h4><Icon name="chart" :size="15" />数据告诉我们<span class="hint">按你回填的发布数据比阅读中位数；选题和开头会参考，但不强求</span></h4>
+      <template v-if="L.me.data?.enough">
+        <p v-for="(x, i) in L.me.data.lines" :key="i" class="me-data-line">{{ x.text }}</p>
+        <p v-if="!L.me.data.lines.length" class="hint">{{ L.me.data.n }} 篇里各种写法差别不大，还看不出明显规律。</p>
+      </template>
+      <p v-else class="hint">回填了 {{ L.me.data?.n || 0 }} 篇的发布数据，攒够 {{ L.me.data?.need || 6 }} 篇再看哪种标题、哪种开头在你这儿更吃香。</p>
+      <p v-if="L.me.semantic?.on" class="hint me-sem" id="meSemantic">写作时按意思找相关的经历和素材（不只看字面）：已建索引 {{ semCount }} 条</p>
+    </div>
+
     <!-- 学习记录 -->
     <div class="me-block" id="meLog">
       <h4><Icon name="clock" :size="15" />学习记录</h4>
@@ -97,6 +108,7 @@ const open = reactive({});
 
 const pending = computed(() => L.me.log.filter((x) => x.kind === 'candidates' && !x.status));
 const history = computed(() => L.me.log.filter((x) => x.kind !== 'candidates'));
+const semCount = computed(() => Object.values(L.me.semantic?.indexed || {}).reduce((n, v) => n + v, 0));
 
 /* 新出现的候选默认全选 */
 watch(pending, (list) => {

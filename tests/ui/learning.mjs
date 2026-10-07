@@ -55,7 +55,28 @@ await step('个人档案：手动加一条项目经历（回车不提交账号�
   if (shot) await page.screenshot({ path: `${shot}-profile.png` });
 });
 
+const FIX = new URL('../fixtures/files/', import.meta.url).pathname;
+await step('个人档案：选 Word 简历 → 文字读进拆解框', async () => {
+  await page.setInputFiles('#profileResumeFile', FIX + 'article.docx');
+  await page.waitForFunction(() => document.querySelector('#profileParseText').value.includes('第一年当组长'));
+  await page.fill('#profileParseText', '');
+  return 'ok';
+});
+
+await step('语气样本：选 Word + 扫描件 PDF → 一篇读出来，一篇说明读不了', async () => {
+  await page.click('#accountNav [data-tab="style"]');
+  await page.setInputFiles('#importFiles', [FIX + 'article.docx', FIX + 'image-only.pdf']);
+  await page.waitForSelector('#importPicked');
+  await page.waitForSelector('#importIssues');
+  const picked = await page.textContent('#importPicked');
+  if (!/已选 1 篇：我做产品经理的第五年/.test(picked)) throw new Error(picked);
+  const issues = await page.textContent('#importIssues');
+  if (!/image-only\.pdf：.*扫描件/.test(issues)) throw new Error(issues);
+  return issues.trim().slice(0, 40);
+});
+
 await step('语气样本：粘贴一篇导入 → 后台学完显示「已学」', async () => {
+  await page.click('#importClear');          // 上一步选的文件不导入：只测粘贴这一篇
   await page.click('#accountNav [data-tab="style"]');
   await page.fill('#importPasteTitle', '带团队第一年');
   await page.fill('#importPaste', ARTICLE);

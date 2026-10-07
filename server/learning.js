@@ -287,12 +287,36 @@ defineJob('learn', {
       return { learned: done.length };
     }
     if (type === 'rebuild') {
-      await updateDigest(userId, personaId, { full: true, reason: '手动从头梳理' });
+      await updateDigest(userId, personaId, { full: true, reason: payload.reason || '手动从头梳理' });
       return { ok: true };
     }
     throw new HttpError(400, `不认识的学习任务：${type}`);
   },
 });
+
+/* ---------------- 每月定期梳理 ----------------
+   每 10 篇新样本会从头梳理一次；写得慢的号可能几个月攒不到 10 篇，档案一直是「合并」出来的，越合并越走样。
+   所以再加一条：上次从头梳理过了一个月、之后又有新样本的，后台从头梳理一遍（最近的文章分量更重）。
+   每 6 小时看一次，一次最多排 50 个号；任务按账号去重，同一个号不会排两条。 */
+export const REFRESH_DAYS = 30;
+export async function refreshDue(nowMs = Date.now()) {
+  const before = new Date(nowMs - REFRESH_DAYS * 86400_000).toISOString();
+  const due = await Personas.dueForRefresh(before);
+  for (const p of due) {
+    await enqueueLearn(p.user_id, p.id, { type: 'rebuild', reason: '每月定期梳理' }, '语气档案每月梳理')
+      .catch((err) => console.warn('[learn] 排每月梳理失败', err?.message));
+  }
+  return due.length;
+}
+
+let refreshTimer = null;
+export function startMonthlyRefresh() {
+  if (refreshTimer || process.env.LEARN_REFRESH === 'off') return;
+  const tick = () => void refreshDue().catch((err) => console.warn('[learn] 每月梳理检查失败', err?.message));
+  setTimeout(tick, 5 * 60_000).unref();
+  refreshTimer = setInterval(tick, 6 * 3600_000);
+  refreshTimer.unref();
+}
 
 /* ---------------- 演示模式 ---------------- */
 

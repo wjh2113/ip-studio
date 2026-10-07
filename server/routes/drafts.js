@@ -208,6 +208,8 @@ export async function handleContent(req, res, body, params) {
     materials: recalled.map((m) => ({ id: m.id, title: m.title, kind: m.kind })),
     prefs: me.prefs.length,
   };
+  // 发布数据：这个号上哪种开头数据好（不够 6 篇回填数据时是空的）
+  const contentPerf = performanceBlock(await performanceOf(user.id, draft.persona_id ?? null), 'content');
   const contentVariant = await pickVariant('content', sys('content', CONTENT_SYSTEM));
 
   res.writeHead(200, {
@@ -235,7 +237,7 @@ export async function handleContent(req, res, body, params) {
     const content = await streamText({
       meta: { feature: '成稿', userId: user.id, variant: contentVariant.name },
       system: contentVariant.system,
-      user: contentUser(draft, topic, draft.persona, samples, recalled, me),
+      user: contentUser(draft, topic, draft.persona, samples, recalled, me, contentPerf),
       onDelta: (text) => send('delta', { text }),
       mock: () => mockContent(draft, topic),
       signal: controller.signal,

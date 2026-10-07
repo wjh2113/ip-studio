@@ -25,6 +25,9 @@ await syncPromptBuiltins();
 const { recoverJobs, startQueue } = await import('./jobs.js');
 await recoverJobs();
 await startQueue();
+// 语气档案每月定期梳理（每 6 小时看一次哪些号到期了）
+const { startMonthlyRefresh } = await import('./learning.js');
+startMonthlyRefresh();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {
@@ -65,6 +68,7 @@ const ROUTES = [
   ['POST', /^\/api\/profile$/, R.handleProfileCreate],
   ['POST', /^\/api\/profile\/parse$/, R.handleProfileParse],
   ['POST', /^\/api\/profile\/batch$/, R.handleProfileBatch],
+  ['POST', /^\/api\/files\/extract$/, R.handleFileExtract],
   ['PUT', /^\/api\/profile\/(?<pid>\d+)$/, R.handleProfileUpdate],
   ['DELETE', /^\/api\/profile\/(?<pid>\d+)$/, R.handleProfileDelete],
   ['GET', /^\/api\/personas\/(?<id>\d+)\/learning$/, R.handleLearning],
@@ -237,6 +241,11 @@ async function dispatch(req, res) {
         else await R.handleSpeakCreate(req, res, file, params, url);
         return;
       }
+      // Word / PDF 导入：原始字节，只取文字不落盘
+      if (req.method === 'POST' && path === '/api/files/extract') {
+        await R.handleFileExtract(req, res, await readFile15(req));
+        return;
+      }
       // 支付回调要原文验签，不能先被 JSON.parse 吃掉
       const raw = req.method === 'POST' && /^\/api\/pay\/notify\//.test(path);
       // 视频测评不带请求体：视频已在服务端，整段交给网关，这里不收截帧
@@ -344,6 +353,21 @@ async function readJSON(req, max = MAX_BODY) {
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new HttpError(400, '请求体不是合法 JSON'); }
+}
+
+/* Word / PDF：上限和 filetext.js 的 MAX_FILE 一致，文件名从 X-Filename 带过来（认格式用） */
+async function readFile15(req) {
+  const { MAX_FILE } = await import('./filetext.js');
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_FILE) throw new HttpError(413, '文件请小于 15MB');
+    chunks.push(chunk);
+  }
+  let name = String(req.headers['x-filename'] || '');
+  try { name = decodeURIComponent(name); } catch { /* 按原样 */ }
+  return { buffer: Buffer.concat(chunks), name: name.slice(0, 200) };
 }
 
 const MAX_AUDIO = 24 * 1024 * 1024;

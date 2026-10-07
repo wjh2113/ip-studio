@@ -109,11 +109,17 @@
             <legend>语气样本<span>喂你自己写的文章，学你真实的语感——越多越准，最多 {{ a.style.max }} 篇</span></legend>
 
             <div class="imp-box" id="importBox">
-              <div class="pf-parse-head"><Icon name="download" :size="15" /><b>导入以前写的文章</b><span class="hint">选 .md / .txt 文件（一次最多 20 篇），或者粘贴一篇；导入后在后台逐篇学习</span></div>
+              <div class="pf-parse-head"><Icon name="download" :size="15" /><b>导入以前写的文章</b><span class="hint">选 Word、PDF、.md 或 .txt（一次最多 20 篇），或者粘贴一篇；导入后在后台逐篇学习</span></div>
               <div class="pf-row">
-                <label class="btn ghost small imp-file"><Icon name="doc" :size="13" />选文件<input id="importFiles" type="file" accept=".md,.markdown,.txt" multiple class="sr-only" @change="L.pickFiles($event.target.files); $event.target.value = ''" /></label>
-                <span v-if="L.imp.files.length" class="hint" id="importPicked">已选 {{ L.imp.files.length }} 篇：{{ L.imp.files.map((x) => x.title).join('、').slice(0, 60) }}</span>
+                <label class="btn ghost small imp-file"><Icon name="doc" :size="13" />选文件<input id="importFiles" type="file" accept=".docx,.pdf,.md,.markdown,.txt" multiple class="sr-only" @change="L.pickFiles($event.target.files); $event.target.value = ''" /></label>
+                <span v-if="L.imp.reading" class="hint">正在读文件…</span>
+                <span v-else-if="L.imp.files.length" class="hint" id="importPicked">已选 {{ L.imp.files.length }} 篇：{{ L.imp.files.map((x) => x.title).join('、').slice(0, 60) }}</span>
+                <button v-if="L.imp.files.length || L.imp.failed.length" type="button" class="link-btn" id="importClear" @click="L.imp.files = []; L.imp.failed = []">清空</button>
               </div>
+              <ul v-if="L.imp.failed.length || L.imp.files.some((x) => x.warnings?.length)" class="imp-issues" id="importIssues">
+                <li v-for="x in L.imp.failed" :key="'f' + x.file" class="form-error">{{ x.file }}：{{ x.reason }}</li>
+                <li v-for="x in L.imp.files.filter((y) => y.warnings?.length)" :key="'w' + x.file" class="hint">{{ x.file }}：{{ x.warnings[0] }}</li>
+              </ul>
               <input id="importPasteTitle" v-model="L.imp.pasteTitle" maxlength="120" placeholder="粘贴的这篇的标题（选填）" @keydown.enter.prevent />
               <textarea id="importPaste" v-model="L.imp.paste" rows="4" placeholder="或者把一篇文章粘贴在这里（至少 100 字）"></textarea>
               <div class="pf-row">

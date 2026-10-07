@@ -1,5 +1,6 @@
 /* 路由 · materials：素材库与选题池。从原 routes.js 原样拆出。 */
-import { MATERIAL_KINDS, Materials, Personas, Pool } from '../db.js';
+import { bigrams, MATERIAL_KINDS, Materials, overlapScore, Personas, Pool } from '../db.js';
+import { rankHybrid } from '../semantic.js';
 import { HttpError } from '../auth.js';
 import { extractHtml, extractText, fetchPage, FetchError } from '../webpage.js';
 import { json, requireUser } from './common.js';
@@ -17,32 +18,20 @@ const BODY_MAX = 15000;
 
 /* 按题材召回素材。
  *
- * 刻意**不做向量检索**：素材是几十到几百条的量级，标题/标签/正文的字面重合
- * 已经够用，而且结果可解释——用户能看懂"为什么是这几条"。
+ * 字面重合（2 字滑窗）+ 语义相似（向量）混合排序，见 semantic.js。
+ * 字面上命中够多的照样入选；语义只是把「意思相近、字面不同」的那几条也找回来。
  * 上限 6 条：再多会挤占正文该占的上下文，模型也开始硬塞。 */
 export async function recallMaterials(userId, _personaId, text, limit = 6) {
   const all = await Materials.list(userId);
   if (!all.length) return [];
-
-  // 中文没有空格分词，按 2 字滑窗取词——够粗但对"AI组织变革"这类词组够用
-  const src = String(text || '');
-  const grams = new Set();
-  for (let i = 0; i < src.length - 1; i += 1) {
-    const g = src.slice(i, i + 2);
-    if (/[\u4e00-\u9fa5A-Za-z0-9]{2}/.test(g)) grams.add(g);
-  }
-  if (!grams.size) return [];
-
-  const scored = all.map((m) => {
+  const grams = bigrams(text);
+  const lexOf = (m) => {
     const hay = `${m.title} ${m.tags} ${m.body.slice(0, 300)}`;
-    let hit = 0;
-    for (const g of grams) if (hay.includes(g)) hit += 1;
     // 标签命中权重高一些——标签是作者自己标的，比正文里的偶然重合可信
     const tagHit = m.tags ? [...grams].filter((g) => m.tags.includes(g)).length : 0;
-    return { m, score: hit + tagHit * 2 };
-  }).filter((x) => x.score >= 3);          // 太低的分是噪声，宁可不给
-
-  return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.m);
+    return overlapScore(grams, hay) + tagHit * 2;
+  };
+  return (await rankHybrid(userId, 'material', all, text, lexOf)).slice(0, limit).map((x) => x.item);
 }
 
 /* 账号范围（选题池仍按账号筛）：不传 = 全部；none = 未绑账号；数字 = 该账号 */

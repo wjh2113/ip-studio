@@ -5,10 +5,11 @@
 
     <!-- 贴简历拆解 -->
     <div class="pf-parse">
-      <div class="pf-parse-head"><Icon name="wand" :size="15" /><b>贴一段简历或经历回顾，帮你拆成一条条</b><span class="hint">拆完你勾选、改好再存；写了公司名的默认「只作背景」，写作时不点名</span></div>
+      <div class="pf-parse-head"><Icon name="wand" :size="15" /><b>贴一段简历或经历回顾（或者直接选 Word / PDF 简历），帮你拆成一条条</b><span class="hint">拆完你勾选、改好再存；写了公司名的默认「只作背景」，写作时不点名</span></div>
       <textarea id="profileParseText" v-model="L.parse.text" rows="5" maxlength="12000"
         placeholder="例：2019-2022 在一家电商公司做运营主管，带 5 个人的小组。那年双十一把转化率从 2% 拉到 3.5%……"></textarea>
       <div class="pf-row">
+        <label class="btn ghost small imp-file" :class="{ busy: L.parse.reading }"><Icon name="doc" :size="13" />{{ L.parse.reading ? '正在读…' : '选简历文件' }}<input id="profileResumeFile" type="file" accept=".docx,.pdf,.md,.txt" class="sr-only" @change="L.pickResume($event.target.files[0]); $event.target.value = ''" /></label>
         <BusyBtn class="btn primary small" id="profileParseBtn" :busy="L.parse.running" busy-text="正在拆…" @click="L.runParse()">拆成条目</BusyBtn>
         <span class="form-error">{{ L.parse.error }}</span>
       </div>
