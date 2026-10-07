@@ -395,6 +395,14 @@
 }
 .pseg-cues span { padding: 6px 12px; border-radius: 8px; background: #131a2b; border-left: 3px solid #2f6bff; color: #a9c1ff; white-space: normal; }
 .pseg-cues b { color: #6f86b8; font-weight: 400; margin-right: 4px; }
+/* 拍摄标注：不念，小字灰色放在这段字上面 */
+.pseg-scenes { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 4px; margin-bottom: .3em; font-size: 15px; line-height: 1.5; color: #8a93a6; font-weight: 400; }
+.pseg-scenes.tail { margin: 0 0 1em; padding-left: calc(200px + 28px); }
+.pseg-scene b { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: #262b36; color: #c3cad8; font-weight: 500; font-size: 13px; }
+.pseg.has-scene .pseg-text { grid-row: 2; }
+.pseg.has-scene .pseg-cues { grid-row: 2; }
+.prompter.no-cues .pseg-scenes { grid-column: 1; }
+.prompter.no-cues .pseg-scenes.tail { padding-left: 0; }
 .prompter.no-cues .pseg { grid-template-columns: minmax(0, 1fr); }
 .prompter.no-cues .pseg-text { grid-column: 1; }
 .prompter.no-cues .pseg-cues { display: none; }
@@ -407,6 +415,9 @@
   .pseg { grid-template-columns: 1fr; }
   .pseg-text { grid-column: 1; }
   .pseg-cues { grid-row: auto; flex-direction: row; flex-wrap: wrap; font-size: 12px; }
+  .pseg-scenes { grid-column: 1; }
+  .pseg-scenes.tail { padding-left: 0; }
+  .pseg.has-scene .pseg-text, .pseg.has-scene .pseg-cues { grid-row: auto; }
   .prompter-help { display: none; }
 }
 

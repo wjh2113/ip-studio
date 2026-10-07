@@ -2,6 +2,7 @@ import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scriptLanguage, cueLook, isAudioOnly, settleReview, applyDim, scoreAppearance } from '../server/speak.js';
+import { sceneNotes } from '../web/src/lib/scenes.js';
 
 test('语种：假名→ja，拉丁字母明显多→en，其余→zh', async () => {
   assert.equal(scriptLanguage('こんにちは、今日は'), 'ja');
@@ -48,4 +49,15 @@ test('applyDim：出镜 null 是合法结果，不当 0 分', async () => {
   const next = applyDim(base, '出镜', null, '没有看到出镜的人');
   assert.equal(next.dims.find((d) => d.key === '出镜').score, null);
   assert.equal(next.score, 80);
+});
+
+test('拍摄标注：【画面】【字幕】挂到后面那一段口播上，最后的放 tail；不念的不进提示', async () => {
+  const text = '【画面】博主出镜，字幕弹出：别等\n\n【口播】别等数据治理做完再上大模型。\n\n【画面】字幕：中台建完了\n\n【口播】上次流行这句话。结果中台建完了。\n\n【字幕】 \n\n【转场】黑场';
+  const cues = [{ quote: '别等数据治理做完再上大模型。' }, { quote: '上次流行这句话。' }, { quote: '结果中台建完了。' }, { quote: '不在稿子里' }];
+  const sc = sceneNotes(text, cues);
+  assert.deepEqual(sc.before[0], [{ tag: '画面', text: '博主出镜，字幕弹出：别等' }]);
+  assert.deepEqual(sc.before[1], [{ tag: '画面', text: '字幕：中台建完了' }]);
+  assert.deepEqual(sc.before[2], []);
+  assert.deepEqual(sc.tail, [{ tag: '转场', text: '黑场' }]);     // 空的【字幕】不算
+  assert.deepEqual(sceneNotes('没有标注的稿子', cues).tail, []);
 });

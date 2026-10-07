@@ -12,6 +12,7 @@ import { useStudioStore } from './studio.js';
 import { useJobsStore } from './jobs.js';
 import { useBriefStore } from './brief.js';
 import { useEditorStore } from './editor.js';
+import { sceneNotes } from '../lib/scenes.js';
 
 export const MAX_TAKE = 24 * 1024 * 1024;
 
@@ -65,6 +66,9 @@ export const useSpeakStore = defineStore('speak', () => {
     return version.value ? String(d.variants?.[version.value]?.content || '') : String(d.content || '');
   });
   watch(() => s().draft?.id, () => { version.value = ''; });
+
+  /* 【画面】【字幕】这类拍摄标注：挂到后面那一段口播上，口播区、提词器、复制口播稿都显示 */
+  const scenes = computed(() => sceneNotes(trackText.value, cues.value?.cues));
 
   function putTrackCues(draft, ver, got) {
     if (!ver) { draft.cues = got; return; }
@@ -164,7 +168,10 @@ export const useSpeakStore = defineStore('speak', () => {
     const o = c.overall || {};
     const head = [`【整体基调】${o.tone || '—'}`, `【语速节奏】${o.pace || '—'}`, o.note ? `【出镜提醒】${o.note}` : null]
       .filter(Boolean).join('\n');
-    const body = c.cues.map((x) => {
+    const sc = scenes.value;
+    const hasScene = sc.tail.length > 0 || sc.before.some((a) => a.length);
+    const sceneLines = (arr) => arr.map((y) => `【${y.tag}】${y.text}\n`).join('');
+    const body = c.cues.map((x, i) => {
       const marks = [
         x.emotion ? `语气：${x.emotion}` : null,
         x.stress?.length ? `重读：${x.stress.join('、')}` : null,
@@ -172,8 +179,8 @@ export const useSpeakStore = defineStore('speak', () => {
         x.expression ? `表情：${x.expression}` : null,
         x.gesture ? `动作：${x.gesture}` : null,
       ].filter(Boolean).join('　');
-      return `${x.quote}\n（${marks}）`;
-    }).join('\n\n');
+      return `${sceneLines(sc.before[i] || [])}${hasScene ? '【口播】' : ''}${x.quote}${marks ? `\n（${marks}）` : ''}`;
+    }).join('\n\n') + (sc.tail.length ? `\n\n${sceneLines(sc.tail).trimEnd()}` : '');
     try {
       await navigator.clipboard.writeText(`${head}\n\n${'—'.repeat(20)}\n\n${body}\n`);
       toast('口播稿已复制');
@@ -426,7 +433,7 @@ export const useSpeakStore = defineStore('speak', () => {
   });
 
   return {
-    cues, cuesRunning, cuesError, runCues, copyCues, version, tracks, track, trackText, hasTrack, saveCue, saveOverall, cueSaving,
+    cues, cuesRunning, cuesError, runCues, copyCues, version, tracks, track, trackText, hasTrack, scenes, saveCue, saveOverall, cueSaving,
     list, history, orphan, uploading, loadDraftSpeaks, loadHistory, submitTake,
     isChecking, runCheck, retry, retrying, remove, toggleOpen, openRecord, reset,
     pageTab, todo, readyCues, detail, pageLoading, pageError, q, loadPage, selectSpeak, practiceDraft,

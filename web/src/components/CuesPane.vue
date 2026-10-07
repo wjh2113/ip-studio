@@ -41,8 +41,9 @@
       <template v-if="sp.cuesRunning"><div v-for="i in 3" :key="i" class="idea-skeleton"></div></template>
       <div v-else-if="sp.cuesError" class="ideas-state error">{{ sp.cuesError }}</div>
       <template v-else-if="c">
-        <p class="hint cue-edit-tip">每一段都能改：点「改」可以改要念的词，以及语气、重读、停顿、表情、动作。改词会同步改稿子。</p>
+        <p class="hint cue-edit-tip">每一段都能改：点「改」可以改要念的词，以及语气、重读、停顿、表情、动作。改词会同步改稿子。<template v-if="hasScene">灰底的是稿子里的【画面】【字幕】这类拍摄标注，不念，拍的时候看。</template></p>
         <div v-for="(x, i) in c.cues" :key="i" class="cue" :class="{ editing: editing === i }" :data-cue="i">
+          <div v-for="(y, j) in sp.scenes.before[i]" :key="`s${j}`" class="cue-scene" :data-scene="i"><b>{{ y.tag }}</b>{{ y.text }}</div>
           <template v-if="editing === i">
             <label class="cue-field wide"><b>念的词</b><textarea v-model="form.quote" rows="3" class="cue-quote-input"></textarea></label>
             <label class="cue-field"><b>语气</b><input v-model="form.emotion" maxlength="40" placeholder="例：带点自嘲" /></label>
@@ -63,6 +64,7 @@
             </div>
           </template>
         </div>
+        <div v-for="(y, j) in sp.scenes.tail" :key="`t${j}`" class="cue-scene tail" data-scene="tail"><b>{{ y.tag }}</b>{{ y.text }}</div>
       </template>
     </div>
     <div class="speak-box" id="speakBox">
@@ -106,6 +108,7 @@ import { toast } from '../lib/feedback.js';
 const s = useStudioStore();
 const sp = useSpeakStore();
 const ver = useVersionsStore();
+const hasScene = computed(() => sp.scenes.tail.length > 0 || sp.scenes.before.some((a) => a.length));
 /* 切口播版本：上面的版本栏也跟着切过去（还没生成的视频号版除外），正文和口播看的是同一版 */
 function pickTrack(t) {
   sp.version = t.key;

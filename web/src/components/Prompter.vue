@@ -41,9 +41,16 @@
     <div class="prompter-scroll" id="pScroll">
       <!-- 滚动位移和镜像必须写在同一个 transform 里：行内 transform 会整个覆盖 CSS 里的规则，分开写镜像就没了 -->
       <div class="prompter-body" id="pBody" ref="body" :style="{ fontSize: `${p.cfg.size}px`, transform: `translateY(${-offset}px)${p.cfg.mirror ? ' scaleX(-1)' : ''}` }">
-        <div v-for="(c, i) in cues" :key="i" class="pseg">
+        <div v-for="(c, i) in cues" :key="i" class="pseg" :class="{ 'has-scene': sp.scenes.before[i]?.length }">
+          <!-- 【画面】【字幕】这类拍摄标注：不念，小字放在这一段上面 -->
+          <div v-if="sp.scenes.before[i]?.length" class="pseg-scenes">
+            <div v-for="(y, j) in sp.scenes.before[i]" :key="j" class="pseg-scene"><b>{{ y.tag }}</b>{{ y.text }}</div>
+          </div>
           <div class="pseg-text" v-html="highlightStress(c.quote, c.stress)"></div>
           <div v-if="segMarks(c).length" class="pseg-cues"><span v-for="[k, val] in segMarks(c)" :key="k"><b>{{ k }}</b> {{ val }}</span></div>
+        </div>
+        <div v-if="sp.scenes.tail.length" class="pseg-scenes tail">
+          <div v-for="(y, j) in sp.scenes.tail" :key="j" class="pseg-scene"><b>{{ y.tag }}</b>{{ y.text }}</div>
         </div>
       </div>
     </div>
