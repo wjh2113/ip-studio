@@ -1,0 +1,5 @@
+{
+  "//": "Obsidian 插件按 CommonJS 加载；这个文件只是让仓库里的测试也按 CommonJS 读 main.js，装插件不需要它",
+  "private": true,
+  "type": "commonjs"
+}

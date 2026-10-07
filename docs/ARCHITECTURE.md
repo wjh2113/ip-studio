@@ -78,6 +78,7 @@ flowchart LR
 | `jobs.js` | 任务中心：长任务的进度、取消、重试 |
 | `mobile.js` | 手机 App：今天、内容日历与标记发布、离线收件箱、发布包 |
 | `benchmarks.js` | 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架（抓取与 SSRF 防护在 `server/webpage.js`） |
+| `export.js` | 同步到 Obsidian：同步密钥、成稿增量导出、配图与插件文件下载 |
 
 ## 移动端接口
 
@@ -107,6 +108,27 @@ flowchart LR
 （含 IPv6 和 `::ffff:` 映射）就拒绝，并且用检查过的地址去连（防 DNS 重绑定）；重定向自己跟，最多 3 跳；8 秒超时；正文 2MB 封顶；
 只收 `text/html`、`text/plain`。另外按用户限流（10 分钟 30 次，`limit.js` 的 `userLimit`）。测试里要抓本机的小网站，
 只有 `NODE_ENV=test` 且 `BENCHMARK_ALLOW_PRIVATE=1` 时才放过内网地址。
+
+## 同步到 Obsidian
+
+`obsidian-plugin/` 是一个不用编译的 Obsidian 插件（说明见 [obsidian-plugin/README.md](../obsidian-plugin/README.md)），
+定期把成稿写进用户的知识库。服务端只为它加了同步密钥和只读导出（`server/routes/export.js`，迁移 7 建 `sync_keys` 表）。
+
+**同步密钥**：`ips_` + 40 位十六进制，服务端只存 sha256，`prefix` 留明文前几位给人认。每个用户最多 5 把。
+密钥**只认 `/api/export/*`**——`currentUser` 不认它，所以拿密钥调别的接口等于没登录；泄露了也只能读成稿。
+用的时候记 `last_used_at`（最多一分钟写一次）。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET / POST | `/api/sync-keys` | 登录后：列表（不含密钥）/ 生成（明文只在这次回包里出现）。`{ name }` 可选 |
+| DELETE | `/api/sync-keys/:kid` | 作废，立即失效 |
+| GET | `/api/export/drafts?cursor=&limit=` | 同步密钥或登录态。只给 `status = done` 且有正文的稿子，按 `(updated_at, id)` 升序增量翻页（`limit` 默认 50、最多 100）。回 `{ user, items, cursor, more }`：客户端存下 `cursor` 下次接着拿；没有新的时 `cursor` 原样返回。也收 `since=<ISO 时间>`。每条带标题、账号、平台、发布日期、栏目、框架、话题标签、`markdown`、`images`、`variants`（其他平台版本，结构同正文） |
+| GET | `/api/export/images/:name` | 同步密钥或登录态，只给本人 `data/images/<用户>/` 下的图 |
+| GET | `/api/export/plugin/:file` | 公开：插件的 `main.js` / `manifest.json` / `styles.css`，网页「同步」里直接下载 |
+
+导出的 `markdown` 已经是 Obsidian 能用的：插图按 `shared/place.js` 的规则放回原位（有「此处放图片」标记的占标记的位置，
+模型挑位置的插在锚点那段之后，没出图的位置去掉），写成 `![说明](ips-image:文件名)`，插件下载图片后换成 `![[附件路径]]`。
+`updated_at` 在改正文、标题、配图、多平台版本、发布日期时都会变，所以这些改动都会被同步到。
 
 ## 手机 App（mobile/）
 

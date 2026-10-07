@@ -113,8 +113,9 @@
   color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
 .top-link:hover { background: var(--hover); color: var(--accent-ink); }
+.top-link.icon-only { width: 32px; padding: 0; justify-content: center; }
 
-@media (max-width: 1180px) {
+@media (max-width: 1420px) {
   .topbar { gap: 16px; }
   .topbar .brand { min-width: 0; }
   .user-name, .top-link { font-size: 0; }

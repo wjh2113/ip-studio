@@ -163,6 +163,13 @@ const ROUTES = [
   ['POST', /^\/api\/personas\/(?<id>\d+)\/benchmarks$/, R.handleBenchmarkCreate],
   ['DELETE', /^\/api\/benchmarks\/(?<bid>\d+)$/, R.handleBenchmarkDelete],
   ['POST', /^\/api\/benchmarks\/(?<bid>\d+)\/save$/, R.handleBenchmarkSave],
+  // 同步到 Obsidian：密钥管理（登录后）、只读导出（同步密钥）
+  ['GET', /^\/api\/sync-keys$/, R.handleSyncKeyList],
+  ['POST', /^\/api\/sync-keys$/, R.handleSyncKeyCreate],
+  ['DELETE', /^\/api\/sync-keys\/(?<kid>\d+)$/, R.handleSyncKeyDelete],
+  ['GET', /^\/api\/export\/drafts$/, R.handleExportDrafts],
+  ['GET', /^\/api\/export\/images\/(?<name>[^/]+)$/, R.handleExportImage],
+  ['GET', /^\/api\/export\/plugin\/(?<file>[\w.-]+)$/, R.handlePluginFile],
 ];
 
 const MIME = {

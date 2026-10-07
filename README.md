@@ -954,6 +954,7 @@ web/              前端（Vue 3 + Pinia，Vite 构建到 dist/）
   src/admin/ · src/prompts/ · src/landing/ · src/promo/   后台、提示词说明书、落地页、投放页
   src/styles/     样式（设计令牌在 base.css 开头）
 mobile/           手机 App（uni-app：H5 / App / 微信小程序），说明见 mobile/README.md
+obsidian-plugin/  Obsidian 插件：成稿同步到知识库，说明见 obsidian-plugin/README.md
 tests/            node:test 单测（npm test）；tests/ui/ 浏览器回归（npm run test:ui）
 scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdcloud.sh 部署
 ```
@@ -1084,6 +1085,17 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | DELETE | `/api/benchmarks/:bid` | `handleBenchmarkDelete` | benchmarks.js |
 | POST | `/api/benchmarks/:bid/save` | `handleBenchmarkSave` | benchmarks.js |
 | POST | `/api/transcribe` | `handleTranscribe` | editor.js |
+| GET / POST | `/api/sync-keys` | `handleSyncKeyList` / `handleSyncKeyCreate` | export.js |
+| DELETE | `/api/sync-keys/:kid` | `handleSyncKeyDelete` | export.js |
+| GET | `/api/export/drafts` | `handleExportDrafts`（同步密钥） | export.js |
+| GET | `/api/export/images/:name` | `handleExportImage`（同步密钥） | export.js |
+| GET | `/api/export/plugin/:file` | `handlePluginFile` | export.js |
+
+## 同步到 Obsidian
+
+`obsidian-plugin/` 是 Obsidian 插件：成稿定期写进知识库（每篇一个 .md，属性里有账号、平台、发布日期、标签，配图下载到知识库并嵌在原位），
+标题改了跟着改名，每篇末尾「我的笔记」以下不会被覆盖。同步间隔、服务器地址和导出接口都在插件设置里改。
+网页右上角「同步」里下载插件文件、生成只读的同步密钥。安装步骤见 [obsidian-plugin/README.md](obsidian-plugin/README.md)。
 
 ## 手机 App
 

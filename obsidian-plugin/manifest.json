@@ -1,0 +1,9 @@
+{
+  "id": "ip-studio-sync",
+  "name": "自媒体助手同步",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "把自媒体助手里的成稿定期同步到知识库，配图一起下载。",
+  "author": "jonny",
+  "isDesktopOnly": false
+}

@@ -92,6 +92,23 @@ export const MIGRATIONS = [
       ALTER TABLE frameworks ADD COLUMN IF NOT EXISTS example text NOT NULL DEFAULT '';
     `);
   } },
+  { version: 7, name: '同步密钥：Obsidian 插件只读导出成稿', up: async (db) => {
+    // 密钥只存 sha256；prefix 是明文的前几位，列表里给人认是哪一把
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_keys (
+        id           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name         text NOT NULL DEFAULT '',
+        key_hash     text NOT NULL,
+        prefix       text NOT NULL,
+        created_at   text NOT NULL,
+        last_used_at text NOT NULL DEFAULT ''
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_keys_hash ON sync_keys(key_hash);
+      CREATE INDEX IF NOT EXISTS idx_sync_keys_user ON sync_keys(user_id);
+      CREATE INDEX IF NOT EXISTS idx_drafts_user_updated ON drafts(user_id, updated_at, id);
+    `);
+  } },
 ];
 
 function toPg(text) {

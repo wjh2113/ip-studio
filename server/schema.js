@@ -354,3 +354,15 @@ export const benchmarks = pgTable('benchmarks', {
   excerpt: text('excerpt').notNull().default(''),
   created_at: text('created_at').notNull(),
 }, (t) => [index('idx_benchmarks_persona').on(t.user_id, t.persona_id, t.id)]);
+
+/* 迁移 7：同步密钥。给 Obsidian 插件这类「只读、长期挂着」的客户端用：
+ * 只存 sha256，不存明文；只能调 /api/export/*，不能当登录用 */
+export const syncKeys = pgTable('sync_keys', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull().default(''),
+  key_hash: text('key_hash').notNull(),
+  prefix: text('prefix').notNull(),
+  created_at: text('created_at').notNull(),
+  last_used_at: text('last_used_at').notNull().default(''),
+}, (t) => [uniqueIndex('idx_sync_keys_hash').on(t.key_hash), index('idx_sync_keys_user').on(t.user_id)]);

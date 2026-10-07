@@ -10,7 +10,7 @@ import { editRatio } from './quality.js';
 import {
   adminSessions, admins, benchmarks, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
   frameworks, inboxKeys, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
-  speakTakes, styleSamples, topicPool, usageEvents, users,
+  speakTakes, styleSamples, syncKeys, topicPool, usageEvents, users,
 } from './schema.js';
 
 const fileRoot = process.env.DATA_DIR
@@ -1145,4 +1145,47 @@ function hydrate(row) {
   return {
     ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics, framework,
   };
+}
+
+/* 同步密钥（Obsidian 插件）：只存哈希。byHash 顺手记一下最后使用时间（最多一分钟写一次） */
+export const SyncKeys = {
+  async create(userId, { name, hash, prefix }) {
+    return one(orm().insert(syncKeys).values({
+      user_id: userId, name, key_hash: hash, prefix, created_at: now(),
+    }).returning({ id: syncKeys.id, name: syncKeys.name, prefix: syncKeys.prefix, created_at: syncKeys.created_at, last_used_at: syncKeys.last_used_at }));
+  },
+  async list(userId) {
+    return orm().select({
+      id: syncKeys.id, name: syncKeys.name, prefix: syncKeys.prefix,
+      created_at: syncKeys.created_at, last_used_at: syncKeys.last_used_at,
+    }).from(syncKeys).where(eq(syncKeys.user_id, userId)).orderBy(desc(syncKeys.id));
+  },
+  async count(userId) {
+    const row = await one(orm().select({ n: count() }).from(syncKeys).where(eq(syncKeys.user_id, userId)));
+    return Number(row?.n || 0);
+  },
+  async remove(id, userId) {
+    const rows = await orm().delete(syncKeys).where(and(eq(syncKeys.id, id), eq(syncKeys.user_id, userId))).returning({ id: syncKeys.id });
+    return rows.length > 0;
+  },
+  async userByHash(hash) {
+    const row = await one(orm().select().from(syncKeys).where(eq(syncKeys.key_hash, hash)));
+    if (!row) return null;
+    const t = now();
+    if (!row.last_used_at || Date.parse(t) - Date.parse(row.last_used_at) > 60_000) {
+      await orm().update(syncKeys).set({ last_used_at: t }).where(eq(syncKeys.id, row.id));
+    }
+    return one(orm().select().from(users).where(eq(users.id, row.user_id)));
+  },
+};
+
+/* 导出：已成稿的稿子，按 (updated_at, id) 增量翻页。cursor 是上一页最后一条的 updated_at 和 id */
+export async function exportDrafts(userId, { afterAt = '', afterId = 0, limit = 50 } = {}) {
+  const rows = await orm().select().from(drafts).where(and(
+    eq(drafts.user_id, userId),
+    eq(drafts.status, 'done'),
+    sql`${drafts.content} <> ''`,
+    sql`(${drafts.updated_at}, ${drafts.id}) > (${afterAt}, ${afterId})`,
+  )).orderBy(asc(drafts.updated_at), asc(drafts.id)).limit(limit);
+  return rows.map(hydrate);
 }

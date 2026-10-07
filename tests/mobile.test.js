@@ -1,11 +1,14 @@
 /* 手机 App 接口：真的起服务走 HTTP（同 routes.test.js 的做法），数据用数据层直接造，省掉走模型的时间。
  * 覆盖：Bearer 登录与退出、今天（回填提醒的第 1 / 7 天规则、待发、选题池）、日历与标记发布、
- * 离线收件箱（去重、图片上传与只给本人看、路径穿越）、对标速存、发布包、语音记灵感的转写。 */
+ * 离线收件箱（去重、图片上传与只给本人看、路径穿越）、对标速存、发布包、语音记灵感的转写、
+ * 同步密钥与成稿导出（Obsidian 插件）。 */
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fromRoot } from '../server/paths.js';
 import { addDays, extractTags, markdownToText, metricsDueDay, todayUtc } from '../server/routes/mobile.js';
 
@@ -429,6 +432,108 @@ test('语音转文字：要登录、空录音报错、演示模式回固定转�
   assert.equal(r.status, 200);
   const data = await r.json();
   assert.ok(data.text.length >= 2, '应该回一段转写文字');
+});
+
+test('同步密钥：只回一次明文、列表不带密钥、最多 5 把、不能当登录用、作废后失效', async () => {
+  let r = await app.call('POST', '/api/sync-keys', { name: '我的 Obsidian' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.data.key, /^ips_[0-9a-f]{40}$/);
+  const key = r.data.key;
+  assert.equal(r.data.item.name, '我的 Obsidian');
+  assert.equal(r.data.item.prefix, key.slice(0, 10));
+  r = await app.call('GET', '/api/sync-keys');
+  assert.equal(r.data.keys.length, 1);
+  assert.ok(!JSON.stringify(r.data).includes(key), '列表里不能有明文');
+  assert.ok(!('key_hash' in r.data.keys[0]));
+
+  // 密钥只认导出接口：拿它调别的接口等于没登录
+  const k = client({ token: key });
+  assert.equal((await k.call('GET', '/api/me')).data.user, null);
+  assert.equal((await k.call('GET', '/api/today')).status, 401);
+  assert.equal((await k.call('GET', '/api/sync-keys')).status, 401);
+  assert.equal((await k.call('GET', '/api/export/drafts')).status, 200);
+  assert.equal((await client({ token: 'ips_' + '0'.repeat(40) }).call('GET', '/api/export/drafts')).status, 401);
+  assert.equal((await client().call('GET', '/api/export/drafts')).status, 401);
+
+  for (let i = 0; i < 4; i += 1) assert.equal((await app.call('POST', '/api/sync-keys', {})).status, 200);
+  r = await app.call('POST', '/api/sync-keys', {});
+  assert.equal(r.status, 400);
+  const keys = (await app.call('GET', '/api/sync-keys')).data.keys;
+  assert.equal(keys[keys.length - 1].name, '我的 Obsidian');
+  assert.ok(keys[keys.length - 1].last_used_at, '用过要记最后使用时间');
+  for (const x of keys.slice(0, 4)) assert.equal((await app.call('DELETE', `/api/sync-keys/${x.id}`)).status, 200);
+
+  const stranger = client({ token: (await client().call('POST', '/api/auth/login', { username: `x${process.pid}`, password: 'secret123' }, { 'x-client': 'app' })).data.token });
+  assert.equal((await stranger.call('DELETE', `/api/sync-keys/${keys[4].id}`)).status, 404, '别人的密钥删不了');
+  assert.equal((await app.call('DELETE', `/api/sync-keys/${keys[4].id}`)).status, 200);
+  assert.equal((await k.call('GET', '/api/export/drafts')).status, 401, '作废后立刻失效');
+});
+
+test('成稿导出：只给已成稿的、插图放回原位、多平台版本、按 cursor 增量翻页、图片只给本人', async () => {
+  const key = (await app.call('POST', '/api/sync-keys', { name: '导出测试' })).data.key;
+  const k = client({ token: key });
+  const all = async () => {
+    const out = [];
+    let cursor = '';
+    for (let i = 0; i < 50; i += 1) {
+      const r = await k.call('GET', `/api/export/drafts?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+      assert.equal(r.status, 200, r.text);
+      out.push(...r.data.items);
+      cursor = r.data.cursor;
+      if (!r.data.more) break;
+    }
+    return { items: out, cursor };
+  };
+  const before = await all();
+  assert.ok(before.items.length > 0);
+  assert.ok(before.items.every((x) => x.markdown), '只导出有正文的');
+
+  const id = await draft('导出配图');
+  await draft('还在选方向', { done: false });
+  await D.Drafts.saveContent(id, uid, '# 导出配图\n\n第一段 <此处放图片>\n\n第二段写完了。\n\n第三段 #周末备菜');
+  const pic = `${id}-__main__-0.png`;
+  await mkdir(join(process.env.DATA_DIR, 'images', String(uid)), { recursive: true });
+  await writeFile(join(process.env.DATA_DIR, 'images', String(uid), pic), Buffer.from(PNG, 'base64'));
+  await D.Drafts.setVariants(id, uid, { weibo: { content: '微博版 #周末备菜#', chars: 6 } });
+  await D.Drafts.setIllus(id, uid, {
+    __main__: { items: [
+      { i: 0, alt: '备菜[全景]', image: { file: `${uid}/${pic}`, at: '2026-01-01T00:00:00.000Z' } },
+      { i: 1, alt: '没出图', anchor: '第二段', at: 0, image: null },
+    ] },
+  });
+
+  // 从上次的 cursor 接着拿：只有新改的这一篇
+  let r = await k.call('GET', `/api/export/drafts?cursor=${encodeURIComponent(before.cursor)}`);
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.items.map((x) => x.id), [id]);
+  assert.equal(r.data.more, false);
+  const x = r.data.items[0];
+  assert.equal(x.title, '导出配图');
+  assert.deepEqual(x.platform, { key: 'xiaohongshu', label: '小红书' });
+  assert.equal(x.markdown, `# 导出配图\n\n第一段\n\n![备菜 全景](ips-image:${pic})\n\n第二段写完了。\n\n第三段 #周末备菜`);
+  assert.deepEqual(x.images, [{ name: pic, alt: '备菜 全景', url: `/api/export/images/${pic}` }]);
+  assert.deepEqual(x.tags, ['周末备菜']);
+  assert.deepEqual(x.variants.map((v) => [v.key, v.label, v.markdown]), [['weibo', '微博', '微博版 #周末备菜#']]);
+  assert.equal(x.archived, false);
+  assert.ok(x.updatedAt && x.createdAt);
+  assert.equal(r.data.user, `m${process.pid}`);
+
+  // 再拿一次：没有新的，cursor 原样回来
+  const again = await k.call('GET', `/api/export/drafts?cursor=${encodeURIComponent(r.data.cursor)}`);
+  assert.deepEqual(again.data.items, []);
+  assert.equal(again.data.cursor, r.data.cursor);
+  assert.equal((await k.call('GET', '/api/export/drafts?cursor=abc')).status, 400);
+
+  // 图片：密钥主人能拿，别人的密钥拿不到，路径穿越不行
+  const img = await k.call('GET', x.images[0].url);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.equal(img.buf.toString('base64'), PNG);
+  const stranger = client({ token: (await client().call('POST', '/api/auth/login', { username: `x${process.pid}`, password: 'secret123' }, { 'x-client': 'app' })).data.token });
+  const otherKey = client({ token: (await stranger.call('POST', '/api/sync-keys', {})).data.key });
+  assert.equal((await otherKey.call('GET', x.images[0].url)).status, 404);
+  assert.ok(!(await otherKey.call('GET', '/api/export/drafts')).data.items.some((d) => d.id === id));
+  assert.equal((await k.call('GET', '/api/export/images/..%2F..%2Fsecret.png')).status, 400);
 });
 
 test('停服务', { timeout: 40_000 }, async () => {
