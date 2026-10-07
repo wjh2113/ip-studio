@@ -17,6 +17,7 @@ echo "==> Stage to ${REMOTE}:${STAGING}"
 ssh "${REMOTE}" "rm -rf '${STAGING}' && mkdir -p '${STAGING}'"
 rsync -az \
   --exclude '.git' \
+  --exclude '.cc' \
   --exclude 'node_modules' \
   --exclude '.env' \
   --exclude 'data' \
