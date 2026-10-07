@@ -3,7 +3,7 @@
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { toast } from '../lib/feedback.js';
-import { useStudioStore } from './studio.js';
+import { useSpeakStore } from './speak.js';
 
 const DEFAULTS = { speed: 40, size: 40, cues: true, mirror: false };
 const KEY = 'cw.prompter';
@@ -24,7 +24,7 @@ export const usePrompterStore = defineStore('prompter', () => {
   }
 
   function open() {
-    if (!useStudioStore().draft?.cues?.cues?.length) { toast('先生成口播提示'); return; }
+    if (!useSpeakStore().cues?.cues?.length) { toast('先生成口播提示'); return; }
     loadCfg();
     show.value = true;
   }

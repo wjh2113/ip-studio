@@ -139,8 +139,8 @@
           <button class="btn ghost small" type="button" data-side="illus" :disabled="!s.draft?.content" @click="v.toggleIllus()">开始配图</button>
         </template>
       </WorkPanel>
-      <WorkPanel title="口播" icon="mic" :badge="s.draft?.cues ? `${s.draft.cues.cues?.length || 0} 段` : ''">
-        <p class="wp-text">{{ s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了。' : '把成稿切成段、标好语气，配合提词器照着念。' }}</p>
+      <WorkPanel title="口播" icon="mic" :badge="cueBadge">
+        <p class="wp-text">{{ cueText }}</p>
         <div class="wp-acts">
           <button v-if="s.draft?.cues" class="btn ghost small" type="button" data-side="prompter" @click="openPrompter">提词器</button>
           <button class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || Boolean(v.current)" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : s.draft?.cues ? '进入口播' : '生成口播提示' }}</button>
@@ -180,6 +180,16 @@ import { caretFromPoint, caretRect } from '../lib/caret.js';
 import { anyLayerOpen } from '../lib/escape.js';
 
 const layout = useLayoutStore();
+/* 口播面板：公众号这类文章有朗读版和视频号口播版两版，标出几版已经有提示 */
+const cueBadge = computed(() => {
+  const done = useSpeakStore().tracks.filter((t) => t.cues);
+  return done.length ? done.map((t) => t.label.replace(/口播|版/g, '')).join(' · ') : '';
+});
+const cueText = computed(() => {
+  const ts = useSpeakStore().tracks;
+  if (ts.length > 1) return '两版口播：原文朗读版（照着文章念），视频号口播版（改写成 1～3 分钟的脚本）。都能逐段改词和提示。';
+  return s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了，可以逐段改。' : '把成稿切成段、标好语气，配合提词器照着念。';
+});
 const RAIL = [
   { icon: 'clock', title: '版本对照' }, { icon: 'shield', title: '检查结果' }, { icon: 'layers', title: '多平台' },
   { icon: 'image', title: '配图' }, { icon: 'mic', title: '口播' },

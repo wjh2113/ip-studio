@@ -115,6 +115,7 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/review$/, R.handleReview],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/ai-tone$/, R.handleAiTone],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/cues$/, R.handleCues],
+  ['PUT', /^\/api\/drafts\/(?<id>\d+)\/cues$/, R.handleCuesSave],
   ['GET', /^\/api\/drafts\/(?<id>\d+)\/speaks$/, R.handleSpeakList],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/speaks$/, R.handleSpeakCreate],
   ['GET', /^\/api\/speaks$/, R.handleSpeakList],

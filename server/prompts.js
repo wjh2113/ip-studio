@@ -1268,10 +1268,13 @@ ${pronBlock}
 无`;
 };
 
-export const cuesUser = (draft, persona, text) => {
+export const cuesUser = (draft, persona, text, { mode = 'video' } = {}) => {
   const context = [
     creatorBlock(persona),
     `—— 发布平台 ——\n${platformSpec(draft.platform).label}${draft.tone ? `　调性：${draft.tone}` : ''}`,
+    mode === 'read'
+      ? `—— 这一版的用途：朗读 ——\n这是一篇给人看的${platformSpec(draft.platform).label}文章，作者要原样念出来（配朗读音频，或念全文的视频），不是短视频口播。\n按朗读文章的节奏标：句子长就标清楚在哪换气、哪里放慢；重读少而准；表情和动作基本不需要，留空。`
+      : '',
   ].filter(Boolean).join('\n\n');
 
   return `${context}

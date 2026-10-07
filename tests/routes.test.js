@@ -178,6 +178,45 @@ test('配图：改过的画面提示词随出图请求带上，存下来并用�
   assert.equal(d.illus.__main__.items[0].prompt, '窗边的一盆绿萝，清晨的光');
 });
 
+test('口播两版：公众号原文朗读版 + 视频号口播版；逐段改词和提示', async () => {
+  // 还没有视频号版本时不能直接标
+  let r = await api.call('POST', `/api/drafts/${draftId}/cues`, { version: 'shipinhao' });
+  assert.equal(r.status, 404, r.text);
+  r = await api.call('POST', `/api/drafts/${draftId}/variants`, { platform: 'shipinhao' });
+  assert.equal(r.status, 200, r.text);
+  r = await api.call('POST', `/api/drafts/${draftId}/cues`, { version: 'shipinhao' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.version, 'shipinhao');
+  assert.equal(r.data.cues.mode, 'video');
+  let d = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  const vc = d.variants.shipinhao.cues;
+  assert.ok(vc.cues.length > 0);
+
+  // 改视频号版第一段：换词 + 改语气、重读；稿子跟着改，原文不动
+  const before = d.content;
+  const first = vc.cues[0];
+  const quote = `${first.quote}（改过）`;
+  const text = d.variants.shipinhao.content.replace(first.quote, quote);
+  const cues = vc.cues.map((c, i) => (i === 0 ? { ...c, quote, emotion: '笑着说', stress: ['改过', '不存在的词'] } : c));
+  r = await api.call('PUT', `/api/drafts/${draftId}/cues`, { version: 'shipinhao', cues, text });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.cues.cues[0].emotion, '笑着说');
+  assert.deepEqual(r.data.cues.cues[0].stress, ['改过']);        // 不在这一段里的重读词丢掉
+  assert.ok(r.data.cues.edited);
+  d = r.data.draft;
+  assert.ok(d.variants.shipinhao.content.includes(quote));
+  assert.equal(d.content, before);
+
+  // 对不上稿子的段落：拒收
+  r = await api.call('PUT', `/api/drafts/${draftId}/cues`, { version: 'shipinhao', cues: [{ quote: '稿子里没有这句话' }] });
+  assert.equal(r.status, 400);
+
+  // 原文朗读版：公众号文章按朗读标
+  r = await api.call('POST', `/api/drafts/${draftId}/cues`, {});
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.cues.mode, 'read');
+});
+
 test('口播：上传录音（异步有任务号，同步等到总评），语音测评', async () => {
   let r = await api.call('POST', `/api/drafts/${draftId}/cues`, {});
   assert.equal(r.status, 200, r.text);

@@ -1,10 +1,28 @@
 <template>
   <div class="cues" id="cuesPane">
     <!-- 口播模式：上面是整体基调和逐段提示，下面是这篇的口播记录 -->
+    <!-- 几版口播：公众号这类文章有「朗读版」（原文）和「视频号口播版」（视频号版本）两版 -->
+    <div v-if="sp.tracks.length > 1" class="cue-tracks" id="cueTracks" role="tablist">
+      <button v-for="t in sp.tracks" :key="t.key" type="button" role="tab" :data-track="t.key || 'main'"
+        :class="{ on: sp.version === t.key }" :aria-selected="sp.version === t.key" @click="sp.version = t.key">
+        <b>{{ t.label }}</b><span>{{ t.cues ? `${t.cues.cues.length} 段` : (t.exists ? '还没标口播' : '还没生成') }}</span>
+      </button>
+    </div>
+    <p v-if="sp.track" class="hint cue-track-hint">{{ sp.track.hint }}</p>
     <div class="cues-head">
       <div class="cues-overall" id="cuesOverall">
-        <template v-if="c">
+        <template v-if="c && editingOverall">
+          <label class="cue-field"><b>整体基调</b><input v-model="ov.tone" maxlength="120" /></label>
+          <label class="cue-field"><b>语速节奏</b><input v-model="ov.pace" maxlength="120" /></label>
+          <label class="cue-field"><b>出镜提醒</b><input v-model="ov.note" maxlength="160" /></label>
+          <div class="cue-edit-acts">
+            <button type="button" class="btn primary small" id="overallSave" @click="saveOverall">保存</button>
+            <button type="button" class="btn ghost small" @click="editingOverall = false">取消</button>
+          </div>
+        </template>
+        <template v-else-if="c">
           <div v-for="[k, val] in overall" :key="k" class="row"><b>{{ k }}</b><span>{{ val }}</span></div>
+          <button type="button" class="link-btn" id="overallEdit" @click="startOverall">改整体基调</button>
           <div v-if="c.trimmed" class="cues-note">改稿后有 {{ c.trimmed }} 条对不上，已拿掉。还在的下一遍仍按这套提示评。</div>
           <div v-if="c.coverage < 60" class="cues-note">只覆盖了正文约 {{ c.coverage }}%——标题、标签这类不念的内容会跳过</div>
         </template>
@@ -16,16 +34,34 @@
           <button v-if="c" class="btn ghost small" id="copyCuesBtn" @click="sp.copyCues()">复制口播稿</button>
         </div>
         <span class="grow"></span>
-        <BusyBtn class="btn primary small" id="cuesRunBtn" :busy="sp.cuesRunning" @click="sp.runCues()">{{ c ? '重新生成' : '生成口播提示' }}</BusyBtn>
+        <BusyBtn class="btn primary small" id="cuesRunBtn" :busy="sp.cuesRunning" @click="regen">{{ c ? '重新生成' : (sp.version && !sp.track?.exists ? '生成视频号口播' : '生成口播提示') }}</BusyBtn>
       </div>
     </div>
     <div class="cue-list" id="cueList">
       <template v-if="sp.cuesRunning"><div v-for="i in 3" :key="i" class="idea-skeleton"></div></template>
       <div v-else-if="sp.cuesError" class="ideas-state error">{{ sp.cuesError }}</div>
       <template v-else-if="c">
-        <div v-for="(x, i) in c.cues" :key="i" class="cue" :data-cue="i">
-          <div class="cue-text" v-html="highlightStress(x.quote, x.stress)"></div>
-          <div class="cue-marks"><span v-for="[cls, k, val] in marks(x)" :key="k" class="cue-mark" :class="cls"><b>{{ k }}</b>{{ val }}</span></div>
+        <p class="hint cue-edit-tip">每一段都能改：点「改」可以改要念的词，以及语气、重读、停顿、表情、动作。改词会同步改稿子。</p>
+        <div v-for="(x, i) in c.cues" :key="i" class="cue" :class="{ editing: editing === i }" :data-cue="i">
+          <template v-if="editing === i">
+            <label class="cue-field wide"><b>念的词</b><textarea v-model="form.quote" rows="3" class="cue-quote-input"></textarea></label>
+            <label class="cue-field"><b>语气</b><input v-model="form.emotion" maxlength="40" placeholder="例：带点自嘲" /></label>
+            <label class="cue-field"><b>重读</b><input v-model="form.stress" maxlength="80" placeholder="要重读的词，用顿号隔开，必须是这段里的词" /></label>
+            <label class="cue-field"><b>停顿</b><input v-model="form.pause" maxlength="60" placeholder="例：说完「三小时」停一拍" /></label>
+            <label class="cue-field"><b>表情</b><input v-model="form.expression" maxlength="60" placeholder="不需要就留空" /></label>
+            <label class="cue-field"><b>动作</b><input v-model="form.gesture" maxlength="60" placeholder="不需要就留空" /></label>
+            <div class="cue-edit-acts">
+              <BusyBtn class="btn primary small" :data-cue-save="i" :busy="sp.cueSaving" @click="save(i)">保存</BusyBtn>
+              <button type="button" class="btn ghost small" @click="editing = -1">取消</button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="cue-text" v-html="highlightStress(x.quote, x.stress)"></div>
+            <div class="cue-marks">
+              <span v-for="[cls, k, val] in marks(x)" :key="k" class="cue-mark" :class="cls"><b>{{ k }}</b>{{ val }}</span>
+              <button type="button" class="link-btn cue-edit-btn" :data-cue-edit="i" @click="startEdit(i, x)">改</button>
+            </div>
+          </template>
         </div>
       </template>
     </div>
@@ -56,7 +92,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+import { ask } from '../lib/feedback.js';
 import BusyBtn from './common/BusyBtn.vue';
 import SpeakReview from './SpeakReview.vue';
 import { useStudioStore } from '../stores/studio.js';
@@ -70,7 +107,7 @@ const sp = useSpeakStore();
 const prompter = usePrompterStore();
 const file = ref(null);
 
-const c = computed(() => sp.cues);
+const c = computed(() => sp.cues);   // 当前选中这一版的口播提示
 const overall = computed(() => {
   const o = c.value?.overall || {};
   return [['整体基调', o.tone], ['语速节奏', o.pace], ['出镜提醒', o.note]].filter(([, val]) => val);
@@ -83,6 +120,36 @@ const marks = (x) => [
   x.expression ? ['exp', '表情', x.expression] : null,
   x.gesture ? ['ges', '动作', x.gesture] : null,
 ].filter(Boolean);
+
+/* 改某一段 */
+const editing = ref(-1);
+const form = reactive({ quote: '', emotion: '', stress: '', pause: '', expression: '', gesture: '' });
+function startEdit(i, x) {
+  Object.assign(form, { quote: x.quote, emotion: x.emotion, stress: (x.stress || []).join('、'), pause: x.pause, expression: x.expression, gesture: x.gesture });
+  editing.value = i;
+}
+async function save(i) {
+  if (await sp.saveCue(i, { ...form })) editing.value = -1;
+}
+watch(() => [sp.version, s.draft?.id], () => { editing.value = -1; editingOverall.value = false; });
+
+/* 改整体基调 */
+const editingOverall = ref(false);
+const ov = reactive({ tone: '', pace: '', note: '' });
+function startOverall() {
+  const o = c.value?.overall || {};
+  Object.assign(ov, { tone: o.tone || '', pace: o.pace || '', note: o.note || '' });
+  editingOverall.value = true;
+}
+async function saveOverall() {
+  if (await sp.saveOverall({ ...ov })) editingOverall.value = false;
+}
+
+/* 重新生成会把手改的提示冲掉：改过的先问一句 */
+async function regen() {
+  if (c.value?.edited && !await ask.confirm({ title: '重新生成口播提示？', body: '你手动改过的语气、重读这些会被新的提示替换（改过的词留在稿子里）。', ok: '重新生成' })) return;
+  await sp.runCues();
+}
 
 function pick() {
   if (!c.value?.cues?.length) { toast('先生成口播提示'); return; }

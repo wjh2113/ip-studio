@@ -4,7 +4,7 @@
  * 语音测评、视频测评要点开某一遍再做（也是后台任务，刷新页面不丢）。
  * 顶栏「口播」一级页：待练列表 + 全部评测记录（含音视频回看）。 */
 import { defineStore } from 'pinia';
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { api, upload } from '../lib/api.js';
 import { on } from '../lib/bus.js';
 import { ask, toast } from '../lib/feedback.js';
@@ -27,9 +27,41 @@ export const useSpeakStore = defineStore('speak', () => {
   /* ---------- 口播提示 ---------- */
   const cuesRunning = ref(false);
   const cuesError = ref('');
-  const cues = computed(() => s().draft?.cues || null);
 
-  async function runCues() {
+  /* 口播有几版：原文一版；原文是给人看的文章（公众号、知乎、小红书、微博）时，再加一版「视频号口播」——
+     它就是多平台里的视频号版本，口播提示存在那个版本上。version '' = 原文 */
+  const VIDEO = ['douyin', 'shipinhao', 'bilibili'];
+  const version = ref('');
+  const tracks = computed(() => {
+    const d = s().draft;
+    if (!d) return [];
+    const label = s().platformLabel(d.platform);
+    const isVideo = VIDEO.includes(d.platform);
+    const list = [{ key: '', label: isVideo ? `${label}口播` : `${label}朗读版`, hint: isVideo ? '照着原文念' : '原样念这篇文章，配朗读音频或念全文的视频', cues: d.cues || null, exists: true }];
+    if (!isVideo) {
+      const v = d.variants?.shipinhao;
+      list.push({ key: 'shipinhao', label: '视频号口播版', hint: '改写成 1～3 分钟、能直接念的视频号脚本（事实不变），再标口播', cues: v?.cues || null, exists: Boolean(v?.content) });
+    }
+    return list;
+  });
+  const track = computed(() => tracks.value.find((t) => t.key === version.value) || tracks.value[0] || null);
+  const cues = computed(() => track.value?.cues || null);
+  /* 这一版要念的稿子 */
+  const trackText = computed(() => {
+    const d = s().draft;
+    if (!d) return '';
+    return version.value ? String(d.variants?.[version.value]?.content || '') : String(d.content || '');
+  });
+  watch(() => s().draft?.id, () => { version.value = ''; });
+
+  function putTrackCues(draft, ver, got) {
+    if (!ver) { draft.cues = got; return; }
+    const variants = { ...(draft.variants || {}) };
+    variants[ver] = { ...(variants[ver] || {}), cues: got };
+    draft.variants = variants;
+  }
+
+  async function runCues(ver = version.value) {
     const st = s();
     const draft = st.draft;
     if (!draft?.content?.trim()) { toast('还没有正文'); return; }
@@ -38,13 +70,79 @@ export const useSpeakStore = defineStore('speak', () => {
     cuesRunning.value = true;
     cuesError.value = '';
     try {
-      const { cues: got } = await api(`/drafts/${draft.id}/cues`, { method: 'POST', body: {} });
-      if (st.draft?.id === draft.id) st.draft.cues = got;
+      // 视频号口播版：还没有视频号版本就先改写出来（和「多平台」出的是同一个版本）
+      if (ver && !draft.variants?.[ver]?.content) {
+        const { platform, variant } = await api(`/drafts/${draft.id}/variants`, { method: 'POST', body: { platform: ver } });
+        if (st.draft?.id !== draft.id) return;
+        draft.variants = { ...(draft.variants || {}), [platform]: variant };
+      }
+      const { cues: got } = await api(`/drafts/${draft.id}/cues`, { method: 'POST', body: { version: ver } });
+      if (st.draft?.id === draft.id) putTrackCues(st.draft, ver, got);
     } catch (err) {
       cuesError.value = err.message;
     } finally {
       cuesRunning.value = false;
     }
+  }
+
+  /* 改口播：改某一段的语气、重读、停顿、表情、动作，或者改这一段要念的词。
+     改词 = 改这一版的稿子（原文就是改正文，留一版历史）；其他段的提示不动 */
+  const cueSaving = ref(false);
+  async function saveCue(index, patch) {
+    const st = s();
+    const draft = st.draft;
+    const c = cues.value;
+    if (!draft || !c?.cues?.[index] || cueSaving.value) return false;
+    const old = c.cues[index];
+    let text = trackText.value;
+    const quote = String(patch.quote ?? old.quote);
+    if (!quote.trim()) { toast('这一段的词不能是空的'); return false; }
+    if (quote !== old.quote) {
+      // 在这一段原来的位置换词：从前一段之后开始找，免得换到别处同样的句子
+      let from = 0;
+      for (let i = 0; i < index; i += 1) {
+        const at = text.indexOf(c.cues[i].quote, from);
+        if (at >= 0) from = at + c.cues[i].quote.length;
+      }
+      const at = text.indexOf(old.quote, from) >= 0 ? text.indexOf(old.quote, from) : text.indexOf(old.quote);
+      if (at < 0) { toast('这一段在稿子里找不到了，刷新后再改'); return false; }
+      text = text.slice(0, at) + quote + text.slice(at + old.quote.length);
+    }
+    const stress = (Array.isArray(patch.stress) ? patch.stress : String(patch.stress ?? old.stress.join('、')).split(/[、,，\s]+/))
+      .map((w) => w.trim()).filter((w) => w && quote.includes(w));
+    const list = c.cues.map((x, i) => (i === index ? { ...x, ...patch, quote, stress } : x));
+    if (useEditorStore().save.kind === 'dirty' && !version.value) await useEditorStore().flushSave();
+    cueSaving.value = true;
+    try {
+      const out = await api(`/drafts/${draft.id}/cues`, { method: 'PUT', body: { version: version.value, cues: list, text } });
+      if (st.draft?.id !== draft.id) return false;
+      if (!version.value) {
+        st.draft = out.draft;
+      } else {
+        putTrackCues(st.draft, version.value, out.cues);
+        st.draft.variants[version.value].content = text;
+      }
+      toast(quote !== old.quote ? '已改，口播稿跟着改了' : '已保存');
+      return true;
+    } catch (err) {
+      toast(err.message);
+      return false;
+    } finally {
+      cueSaving.value = false;
+    }
+  }
+
+  async function saveOverall(overall) {
+    const st = s();
+    const draft = st.draft;
+    const c = cues.value;
+    if (!draft || !c) return false;
+    try {
+      const out = await api(`/drafts/${draft.id}/cues`, { method: 'PUT', body: { version: version.value, cues: c.cues, overall } });
+      if (st.draft?.id === draft.id) putTrackCues(st.draft, version.value, out.cues);
+      toast('已保存');
+      return true;
+    } catch (err) { toast(err.message); return false; }
   }
 
   /* 导出成可以直接照着念的稿子 */
@@ -167,7 +265,8 @@ export const useSpeakStore = defineStore('speak', () => {
     if (blob.size > MAX_TAKE) { toast('录音请小于 24MB'); return false; }
     uploading.value = true;
     try {
-      const data = await upload(`/drafts/${st.draft.id}/speaks?async=1`, blob, filename);
+      const ver = version.value ? `&version=${encodeURIComponent(version.value)}` : '';
+      const data = await upload(`/drafts/${st.draft.id}/speaks?async=1${ver}`, blob, filename);
       st.focusSpeakId = data.speak?.id || null;
       if (data.job) useJobsStore().track(data.job);
       if (st.mode !== 'cue') useEditorStore().setMode('cue');
@@ -315,7 +414,7 @@ export const useSpeakStore = defineStore('speak', () => {
   });
 
   return {
-    cues, cuesRunning, cuesError, runCues, copyCues,
+    cues, cuesRunning, cuesError, runCues, copyCues, version, tracks, track, trackText, saveCue, saveOverall, cueSaving,
     list, history, orphan, uploading, loadDraftSpeaks, loadHistory, submitTake,
     isChecking, runCheck, retry, retrying, remove, toggleOpen, openRecord, reset,
     pageTab, todo, readyCues, detail, pageLoading, pageError, q, loadPage, selectSpeak, practiceDraft,

@@ -39,6 +39,27 @@ await step('注册 → 成稿 → 口播上传', async () => {
   await page.waitForSelector('[data-speak-pron]', { timeout: 15000 });
 });
 
+await step('两版口播：切到视频号口播版生成；逐段改语气和词', async () => {
+  await page.waitForSelector('#cueTracks');
+  await page.click('#cueTracks [data-track="shipinhao"]');
+  await page.click('#cuesRunBtn');
+  await page.waitForSelector('#cueList [data-cue="0"] [data-cue-edit]', { timeout: 20000 });
+  await page.click('#cueList [data-cue-edit="0"]');
+  const q = await page.inputValue('#cueList .cue-quote-input');
+  await page.fill('#cueList .cue-quote-input', `${q}改`);
+  await page.fill('#cueList .cue.editing input[placeholder^="例：带点自嘲"]', '笑着说');
+  await page.click('#cueList [data-cue-save="0"]');
+  await page.waitForFunction(() => /笑着说/.test(document.querySelector('#cueList [data-cue="0"]')?.textContent || ''));
+  const v = await page.evaluate(async () => {
+    const id = document.querySelector('.history-item.active')?.dataset.id;
+    return (await (await fetch(`/api/drafts/${id}`)).json()).draft.variants.shipinhao;
+  });
+  if (!v.content.includes(`${q}改`)) throw new Error('改的词没进视频号版本');
+  await page.click('#cueTracks [data-track="main"]');
+  await page.waitForSelector('#cueList [data-cue="0"]');
+  return `${v.cues.cues.length} 段`;
+});
+
 await step('顶栏切到口播页，创作区藏起来', async () => {
   await page.click('#viewNav [data-view="speak"]');
   await page.waitForSelector('#speakView:not(.hidden)');

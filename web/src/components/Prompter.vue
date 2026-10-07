@@ -67,10 +67,11 @@ import { toast } from '../lib/feedback.js';
 
 const p = usePrompterStore();
 const s = useStudioStore();
+const sp = useSpeakStore();
 const stage = ref(null);
 const body = ref(null);
 
-const cues = computed(() => s.draft?.cues?.cues || []);
+const cues = computed(() => sp.cues?.cues || []);   // 当前选中的那一版口播（朗读版 / 视频号版）
 const segMarks = (c) => [
   c.emotion ? ['语气', c.emotion] : null,
   c.pause ? ['停顿', c.pause] : null,

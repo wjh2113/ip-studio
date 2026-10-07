@@ -10,23 +10,74 @@ import { applyDim, isAudioOnly, pronounceAudio, removeTakeFile, runSpeakPipeline
 import { CUES_SCHEMA, CUES_SYSTEM, cuesUser, TONE_TAGS } from '../prompts.js';
 import { JOB_WAIT_MS, json, requireUser, sys, wantsAsync, withRetry } from './common.js';
 
-/* ---------------- 口播提示 ---------------- */
+/* ---------------- 口播提示 ----------------
+ * 口播提示挂在「版本」上：version 为空 = 原文，否则是多平台版本的平台 key（存在那个版本的 cues 里）。
+ * 公众号这类给人看的文章有两版口播：原文的「朗读版」（配音频、念全文），和视频号版本的「视频号口播」。
+ * 原文本身就是短视频脚本（抖音 / 视频号 / B 站）的，只有原文这一版。 */
+export const VIDEO_PLATFORMS = ['douyin', 'shipinhao', 'bilibili'];
+
+/* 这一版要念的稿子和它现在的口播提示 */
+export function cueTrack(draft, version) {
+  const v = String(version || '');
+  if (!v || v === draft.platform) return { version: '', platform: draft.platform, text: String(draft.content || ''), cues: draft.cues || null };
+  const hit = draft.variants?.[v];
+  if (!hit) throw new HttpError(404, '还没有这个平台的版本，先生成它');
+  return { version: v, platform: v, text: String(hit.content || ''), cues: hit.cues || null };
+}
+
+async function saveTrackCues(draft, userId, track, cues, text = null) {
+  if (!track.version) {
+    await Drafts.setCues(draft.id, userId, cues);
+    return;
+  }
+  const variants = { ...(draft.variants || {}) };
+  const cur = { ...variants[track.version], cues };
+  if (text !== null) { cur.content = text; cur.chars = text.length; cur.editedAt = new Date().toISOString(); }
+  variants[track.version] = cur;
+  await Drafts.setVariants(draft.id, userId, variants);
+}
+
+const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+
+/* 一条提示 → 能存的样子；quote 对不上正文的丢掉，重读词必须在这一段里 */
+function cleanCue(c, text) {
+  const quote = String(c?.quote || '');
+  const stress = (Array.isArray(c?.stress) ? c.stress : String(c?.stress || '').split(/[、,，\s]+/))
+    .map((w) => String(w).trim())
+    .filter((w) => w && quote.includes(w))
+    .slice(0, 4);
+  return {
+    quote,
+    emotion: clip(c?.emotion, 40),
+    tone_tag: TONE_TAGS.includes(c?.tone_tag) ? c.tone_tag : '日常',
+    stress,
+    pause: clip(c?.pause, 60),
+    expression: clip(c?.expression, 60),
+    gesture: clip(c?.gesture, 60),
+    locatable: Boolean(quote) && text.includes(quote),
+  };
+}
+
+const coverageOf = (cues, text) => Math.min(100, Math.round((cues.reduce((n, c) => n + c.quote.length, 0) / (text.length || 1)) * 100));
 
 export async function handleCues(req, res, body, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  const text = String(draft.content || '').trim();
+  const track = cueTrack(draft, body?.version);
+  const text = track.text.trim();
   if (!text) throw new HttpError(400, '还没有正文');
   if (text.length > 12000) throw new HttpError(400, '正文过长，请分段生成');
 
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  // 原文不是短视频脚本（公众号、知乎……）时，这一版是「朗读」：照着文章念，不当短视频处理
+  const mode = VIDEO_PLATFORMS.includes(track.platform) ? 'video' : 'read';
 
   const data = await withRetry(async () => {
     const out = await generateJSON({
       meta: { feature: '口播提示', userId: user.id },
       system: sys('cues', CUES_SYSTEM),
-      user: cuesUser(draft, persona, text),
+      user: cuesUser({ ...draft, platform: track.platform }, persona, text, { mode }),
       schema: CUES_SCHEMA,
       mock: () => mockCues(text),
     });
@@ -34,41 +85,63 @@ export async function handleCues(req, res, body, params) {
     return out;
   }, '生成口播提示失败，请再试一次');
 
-  // quote 必须能在正文里找到，否则对不上位置；重读词也必须真的在这段里
-  const cues = data.cues.map((c) => {
-    const quote = String(c.quote || '');
-    const stress = (Array.isArray(c.stress) ? c.stress : [])
-      .map((w) => String(w).trim())
-      .filter((w) => w && quote.includes(w))
-      .slice(0, 4);
-    return {
-      quote,
-      emotion: String(c.emotion || '').trim(),
-      tone_tag: TONE_TAGS.includes(c.tone_tag) ? c.tone_tag : '日常',
-      stress,
-      pause: String(c.pause || '').trim(),
-      expression: String(c.expression || '').trim(),
-      gesture: String(c.gesture || '').trim(),
-      locatable: Boolean(quote) && text.includes(quote),
-    };
-  }).filter((c) => c.quote && c.locatable);
-
+  const cues = data.cues.map((c) => cleanCue(c, text)).filter((c) => c.quote && c.locatable);
   if (!cues.length) throw new HttpError(502, '提示和正文对不上，请再试一次');
 
-  const covered = cues.reduce((n, c) => n + c.quote.length, 0);
   const payload = {
     overall: {
-      tone: String(data.overall?.tone || '').trim(),
-      pace: String(data.overall?.pace || '').trim(),
-      note: String(data.overall?.note || '').trim(),
+      tone: clip(data.overall?.tone, 120),
+      pace: clip(data.overall?.pace, 120),
+      note: clip(data.overall?.note, 160),
     },
     cues,
-    coverage: Math.min(100, Math.round((covered / text.length) * 100)),
+    mode,
+    coverage: coverageOf(cues, text),
     dropped: data.cues.length - cues.length,
     at: new Date().toISOString(),
   };
-  await Drafts.setCues(draft.id, user.id, payload);
-  json(res, 200, { cues: payload });
+  await saveTrackCues(draft, user.id, track, payload);
+  json(res, 200, { version: track.version, cues: payload });
+}
+
+/* 改口播：PUT /api/drafts/:id/cues { version, cues, overall, text? }
+ * 作者改了语气、重读、停顿、表情、动作，或者改了某一段要念的词（text 是改完的整篇）。
+ * 原文的词一改就是改正文（留一版历史）；多平台版本的词改的是那个版本。 */
+export async function handleCuesSave(req, res, body, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const track = cueTrack(draft, body?.version);
+  const text = typeof body?.text === 'string' ? body.text : track.text;
+  if (!text.trim()) throw new HttpError(400, '口播稿不能是空的');
+  if (text.length > 60000) throw new HttpError(400, '正文过长');
+  const list = Array.isArray(body?.cues) ? body.cues.slice(0, 200) : [];
+  const cues = list.map((c) => cleanCue(c, text));
+  const lost = cues.filter((c) => !c.locatable).length;
+  if (lost) throw new HttpError(400, `有 ${lost} 段在稿子里找不到了，刷新后再改`);
+  if (!cues.length) throw new HttpError(400, '至少要有一段');
+
+  const textChanged = text !== track.text;
+  if (textChanged && !track.version) {
+    // 原文：走正常的保存（留历史、重新对位配图），再把改好的提示写上
+    await Drafts.saveContent(draft.id, user.id, text, { snapshot: true });
+  }
+  const prev = track.cues || {};
+  const payload = {
+    ...prev,
+    overall: {
+      tone: clip(body?.overall?.tone ?? prev.overall?.tone, 120),
+      pace: clip(body?.overall?.pace ?? prev.overall?.pace, 120),
+      note: clip(body?.overall?.note ?? prev.overall?.note, 160),
+    },
+    cues,
+    coverage: coverageOf(cues, text),
+    edited: new Date().toISOString(),
+  };
+  delete payload.trimmed;
+  const fresh = textChanged && !track.version ? await Drafts.byId(draft.id, user.id) : draft;
+  await saveTrackCues(fresh, user.id, track, payload, track.version && textChanged ? text : null);
+  json(res, 200, { version: track.version, cues: payload, draft: await Drafts.byId(draft.id, user.id) });
 }
 
 function presentSpeak(row, userId, detail = false) {
@@ -110,16 +183,18 @@ export async function handleSpeakCreate(req, res, file, params, url) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  if (!draft.cues?.cues?.length) throw new HttpError(400, '先生成口播提示，再上传录音');
-  const text = String(draft.content || '').trim();
+  // 录的是哪一版口播（原文朗读版，或某个平台版本）：?version=shipinhao
+  const track = cueTrack(draft, url?.searchParams.get('version'));
+  if (!track.cues?.cues?.length) throw new HttpError(400, '先生成口播提示，再上传录音');
+  const text = track.text.trim();
   if (!text) throw new HttpError(400, '还没有正文');
 
   const row = await Speaks.create({
     userId: user.id,
     draftId: draft.id,
-    title: draft.title || draft.subject || '未命名',
+    title: `${draft.title || draft.subject || '未命名'}${track.version ? `（${track.platform === 'shipinhao' ? '视频号版' : track.platform}）` : ''}`,
     script: text,
-    cues: draft.cues,
+    cues: track.cues,
     mime: file.mime,
     bytes: file.buffer.length,
   });
