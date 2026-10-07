@@ -5,11 +5,22 @@
 .main[data-step="3"] { max-width: 1440px; }
 
 .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+/* 右侧工具收起：一条窄边，图标点了也是展开 */
+.work.work-folded { grid-template-columns: minmax(0, 1fr) 40px; }
+.work-rail {
+  position: sticky; top: calc(var(--topbar-h) + 18px);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 10px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+}
+.work-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; font-size: 13px; color: var(--muted); }
 .work-main { padding: 0 32px 32px; min-width: 0; }
 .work-side { display: grid; gap: 12px; position: sticky; top: calc(var(--topbar-h) + 18px); max-height: calc(100vh - var(--topbar-h) - 36px); overflow-y: auto; padding-bottom: 4px; }
 @media (max-width: 1240px) {
   .work { grid-template-columns: minmax(0, 1fr); }
   .work-side { position: static; max-height: none; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  .work.work-folded { grid-template-columns: minmax(0, 1fr); }
+  .work-rail { position: static; flex-direction: row; justify-content: center; padding: 8px; }
+  .work-side-head { grid-column: 1 / -1; }
 }
 
 /* ---------- 吸顶标题行 + 工具条 ---------- */

@@ -1,5 +1,5 @@
 <template>
-  <section class="work" id="contentCard">
+  <section class="work" id="contentCard" :class="{ 'work-folded': layout.work }">
     <!-- 第三步：成稿工作台。左边是正文（标题行 + 工具条吸顶），右边是一列可收起的面板：版本、检查、多平台、配图、口播。
          正文是主角，工具都在边上，不抢阅读 -->
     <div class="card work-main" style="position:relative">
@@ -99,7 +99,16 @@
       </div>
     </div>
 
-    <aside class="work-side" id="workSide">
+    <!-- 右侧工具收起后留一条窄边：展开，或者直接点图标展开到那一块 -->
+    <div v-if="layout.work" class="work-rail" id="workRail">
+      <button type="button" class="rail-btn" id="workExpandBtn" title="展开右侧工具" aria-label="展开右栏" @click="layout.toggleWork()"><Icon name="chev-left" :size="16" /></button>
+      <button v-for="t in RAIL" :key="t.icon" type="button" class="rail-btn" :title="t.title" @click="layout.toggleWork()"><Icon :name="t.icon" :size="16" /></button>
+    </div>
+    <aside v-show="!layout.work" class="work-side" id="workSide">
+      <div class="work-side-head">
+        <span>工具</span>
+        <button type="button" class="rail-btn" id="workFoldBtn" title="收起右侧工具，给正文腾地方" aria-label="收起右栏" @click="layout.toggleWork()"><Icon name="chev-right" :size="16" /></button>
+      </div>
       <WorkPanel title="版本对照" icon="clock" :active="s.revOpen" :badge="s.revOpen ? '展开中' : ''">
         <p class="wp-text">每次保存前都会留下上一版，点开逐行对照。</p>
         <button class="btn ghost small" type="button" data-side="revs" @click="toggleRevs">{{ s.revOpen ? '收起对照' : '打开版本对照' }}</button>
@@ -149,6 +158,7 @@ import VersionBars from './VersionBars.vue';
 import CuesPane from './CuesPane.vue';
 import { IMAGE_MARK } from '../../../shared/place.js';
 import { useStudioStore } from '../stores/studio.js';
+import { useLayoutStore } from '../stores/layout.js';
 import { useBriefStore } from '../stores/brief.js';
 import { useEditorStore } from '../stores/editor.js';
 import { useVersionsStore } from '../stores/versions.js';
@@ -163,6 +173,11 @@ import { countChars, esc, markdown } from '../lib/text.js';
 import { caretFromPoint, caretRect } from '../lib/caret.js';
 import { anyLayerOpen } from '../lib/escape.js';
 
+const layout = useLayoutStore();
+const RAIL = [
+  { icon: 'clock', title: '版本对照' }, { icon: 'shield', title: '检查结果' }, { icon: 'layers', title: '多平台' },
+  { icon: 'image', title: '配图' }, { icon: 'mic', title: '口播' },
+];
 const s = useStudioStore();
 const brief = useBriefStore();
 const ed = useEditorStore();

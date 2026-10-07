@@ -5,7 +5,10 @@
       <div v-else class="persona-bar">
         <div class="sidebar-head">
           <span class="sh-title">账号设定<Icon name="gear" :size="14" /></span>
-          <button class="btn primary small" id="newPersonaBtn" @click="account.open(null)"><Icon name="plus" :size="14" />新账号</button>
+          <span class="sh-acts">
+            <button class="btn primary small" id="newPersonaBtn" @click="account.open(null)"><Icon name="plus" :size="14" />新账号</button>
+            <button v-if="s.view === 'write'" type="button" class="rail-btn" id="sideFoldBtn" title="收起左栏，给正文腾地方" aria-label="收起左栏" @click="layout.toggleSide()"><Icon name="chev-left" :size="16" /></button>
+          </span>
         </div>
         <!-- 多账号时直接列出来，一行一个，不用下拉——下拉要先点开才知道有什么。
              当前账号那行高亮（定位 + 齿轮），完整设定默认折起来：侧栏长期占屏，平时用不着把整份设定摊在那儿。 -->
@@ -102,6 +105,7 @@ import { speakLine, useSpeakStore } from '../stores/speak.js';
 import SpeakReview from './SpeakReview.vue';
 import MaterialKinds from './MaterialKinds.vue';
 import { useLibraryStore } from '../stores/library.js';
+import { useLayoutStore } from '../stores/layout.js';
 import { stamp } from '../lib/text.js';
 
 const s = useStudioStore();
@@ -111,6 +115,7 @@ const brief = useBriefStore();
 const sp = useSpeakStore();
 
 const lib = useLibraryStore();
+const layout = useLayoutStore();
 const current = computed(() => s.currentPersona);
 const libMode = computed(() => s.view === 'library');
 

@@ -76,6 +76,28 @@ await step('回到阅读 → 版本对照有存档', async () => {
   await page.click('#revClose');
   return `${n} 版，差异 ${diff} 行`;
 });
+await step('左右两栏收起来给正文腾地方，刷新后还记得，再展开', async () => {
+  const before = await page.$eval('#contentCard .work-main', (el) => el.getBoundingClientRect().width);
+  await page.click('#sideFoldBtn');
+  await page.click('#workFoldBtn');
+  await page.waitForSelector('#sideRail');
+  await page.waitForSelector('#workRail');
+  if (await page.isVisible('#history')) throw new Error('左栏没收起来');
+  const after = await page.$eval('#contentCard .work-main', (el) => el.getBoundingClientRect().width);
+  if (after <= before) throw new Error(`正文没变宽：${before} → ${after}`);
+  await page.reload();
+  await page.waitForSelector('#sideRail');
+  await page.click('[data-view="library"]');
+  if (await page.$('#sideRail')) throw new Error('素材库页不该收起左栏');
+  await page.click('[data-view="write"]');
+  await page.click('#sideExpandBtn');
+  await page.click('#history .history-item');
+  await page.waitForSelector('#workRail');           // 右栏收起也记住了
+  await page.click('#workExpandBtn');
+  await page.waitForSelector('#workSide', { state: 'visible' });
+  await page.waitForSelector('#history', { state: 'visible' });
+  return `正文宽 ${Math.round(before)} → ${Math.round(after)}`;
+});
 await step('检查 → 采纳一条', async () => {
   await menu('review');
   await page.waitForFunction(() => /没发现问题|小毛病|不通顺|检查失败/.test(document.querySelector('#reviewVerdict')?.textContent || ''), null, { timeout: 15000 });
