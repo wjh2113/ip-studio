@@ -5,7 +5,7 @@ import { generateJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
 import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
-import { describe, json, requireUser, styleSamples, sys, withRetry } from './common.js';
+import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
 
@@ -21,7 +21,9 @@ export async function handleAssist(req, res, body, params) {
 
   // 账号还在就用最新设定，否则退回创作时的快照
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  const samples = await styleSamples(persona, user.id);
+  const hint = `${draft.subject} ${draft.title || ''} ${selection.slice(0, 300)} ${before.slice(-300)}`;
+  const samples = await styleSamples(persona, user.id, hint);
+  const me = await writerMe(user.id, persona, hint, 'assist');
 
   let instruction;
   let user_prompt;
@@ -29,13 +31,13 @@ export async function handleAssist(req, res, body, params) {
     instruction = COMPOSE_ACTIONS[body.action]?.instruction
       || clip(body?.instruction, 500).trim();
     if (!instruction) throw new HttpError(400, '请说明要写什么');
-    user_prompt = composeUser(draft, persona, samples, { instruction, before, after });
+    user_prompt = composeUser(draft, persona, samples, { instruction, before, after }, me);
   } else {
     const action = ASSIST_ACTIONS[body?.action];
     if (!action) throw new HttpError(400, '不支持的操作');
     if (!selection.trim()) throw new HttpError(400, '请先选中一段文字');
     instruction = action.instruction;
-    user_prompt = assistUser(draft, persona, samples, { instruction, selection, before, after });
+    user_prompt = assistUser(draft, persona, samples, { instruction, selection, before, after }, me);
   }
 
   res.writeHead(200, {

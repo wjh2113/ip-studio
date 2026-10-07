@@ -1,7 +1,7 @@
 /* 路由 · common：各业务路由共用的小工具：JSON 响应、登录校验、错误文案、重试、账号与语气样本解析。从原 routes.js 原样拆出。 */
 import { readdir, rm } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
-import { DATA_DIR, Samples } from '../db.js';
+import { DATA_DIR, Prefs, Profile, Samples, bigrams, overlapScore } from '../db.js';
 import { currentAdmin, currentUser, HttpError } from '../auth.js';
 import { PROVIDER } from '../llm.js';
 import { loadPricing } from '../pricing.js';
@@ -29,11 +29,33 @@ export const requireUser = async (req) => {
 
 export const sys = (key, builtin) => liveSystem(key, builtin);
 
-/* 语气锚点：档案已经蒸馏过，这里只取最近两篇原文做语感参考 */
-export const styleSamples = async (persona, userId) =>
+/* 语气锚点：档案已经蒸馏过，这里只取两篇原文做语感参考——和这次题材最像的两篇，都不像就取最近的 */
+export const styleSamples = async (persona, userId, hint = '') =>
   (persona?.id && persona.style_digest)
-    ? await Samples.list(persona.id, userId, { withContent: true, limit: 2 })
+    ? await Samples.pickSimilar(persona.id, userId, hint, 2)
     : [];
+
+/* 个人档案召回：按题材的字面重合挑最相关的几条（同素材召回的办法），太低的分不给 */
+export async function recallProfile(userId, hint, limit = 5) {
+  const all = await Profile.list(userId);
+  if (!all.length) return [];
+  const grams = bigrams(hint);
+  if (!grams.size) return [];
+  return all
+    .map((e) => ({ e, score: overlapScore(grams, `${e.title} ${e.tags} ${e.tags} ${e.org} ${e.role} ${e.body.slice(0, 300)} ${e.result}`) }))
+    .filter((x) => x.score >= 3)
+    .sort((a, b) => b.score - a.score || (b.e.used_count || 0) - (a.e.used_count || 0))
+    .slice(0, limit)
+    .map((x) => x.e);
+}
+
+/* 写作时「懂作者」的那部分上下文：个人档案里相关的几条 + 这个号的改稿偏好。
+   mode：topics 只给档案的标题和结果；content 完整档案 + 偏好；assist 精简档案 + 偏好 */
+export async function writerMe(userId, persona, hint, mode = 'content') {
+  const profile = await recallProfile(userId, hint, mode === 'content' ? 5 : 3);
+  const prefs = persona?.id && mode !== 'topics' ? await Prefs.active(persona.id, userId, 12) : [];
+  return { profile, prefs, compact: mode !== 'content' };
+}
 
 /* ---------------- 管理后台 ---------------- */
 

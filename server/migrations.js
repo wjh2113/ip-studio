@@ -109,6 +109,63 @@ export const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_drafts_user_updated ON drafts(user_id, updated_at, id);
     `);
   } },
+  { version: 8, name: '越写越懂：个人档案、样本要点、改稿偏好、学习记录', up: async (db) => {
+    // 个人档案跟着用户走；语气、偏好按账号。样本上限从 30 放到 200，靠每篇单独提炼的 notes 合并档案
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS profile_entries (
+        id          integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id     integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind        text NOT NULL DEFAULT 'work',
+        title       text NOT NULL,
+        period      text NOT NULL DEFAULT '',
+        org         text NOT NULL DEFAULT '',
+        role        text NOT NULL DEFAULT '',
+        body        text NOT NULL DEFAULT '',
+        result      text NOT NULL DEFAULT '',
+        tags        text NOT NULL DEFAULT '',
+        visibility  text NOT NULL DEFAULT 'public',
+        source      text NOT NULL DEFAULT 'manual',
+        used_count  integer NOT NULL DEFAULT 0,
+        created_at  text NOT NULL,
+        updated_at  text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_profile_user ON profile_entries(user_id, id);
+
+      CREATE TABLE IF NOT EXISTS style_prefs (
+        id               integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id          integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        persona_id       integer NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+        rule             text NOT NULL,
+        evidence         text NOT NULL DEFAULT '',
+        source_draft_id  integer,
+        hits             integer NOT NULL DEFAULT 1,
+        status           text NOT NULL DEFAULT 'on',
+        created_at       text NOT NULL,
+        updated_at       text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_prefs_persona ON style_prefs(user_id, persona_id, id);
+
+      CREATE TABLE IF NOT EXISTS learn_log (
+        id           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        persona_id   integer REFERENCES personas(id) ON DELETE CASCADE,
+        kind         text NOT NULL,
+        summary      text NOT NULL,
+        detail_json  text NOT NULL DEFAULT 'null',
+        status       text NOT NULL DEFAULT '',
+        created_at   text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_learn_log ON learn_log(user_id, persona_id, id);
+
+      ALTER TABLE style_samples ADD COLUMN IF NOT EXISTS notes  text NOT NULL DEFAULT '';
+      ALTER TABLE style_samples ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual';
+      ALTER TABLE style_samples ADD COLUMN IF NOT EXISTS weight double precision NOT NULL DEFAULT 1;
+      ALTER TABLE personas ADD COLUMN IF NOT EXISTS auto_learn integer NOT NULL DEFAULT 1;
+      ALTER TABLE personas ADD COLUMN IF NOT EXISTS digest_full_count integer NOT NULL DEFAULT 0;
+      ALTER TABLE drafts ADD COLUMN IF NOT EXISTS context_json text NOT NULL DEFAULT 'null';
+      ALTER TABLE drafts ADD COLUMN IF NOT EXISTS learned_at text NOT NULL DEFAULT '';
+    `);
+  } },
 ];
 
 function toPg(text) {

@@ -79,6 +79,7 @@ flowchart LR
 | `mobile.js` | 手机 App：今天、内容日历与标记发布、离线收件箱、发布包 |
 | `benchmarks.js` | 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架（抓取与 SSRF 防护在 `server/webpage.js`） |
 | `export.js` | 同步到 Obsidian：同步密钥、成稿增量导出、配图与插件文件下载 |
+| `learning.js` | 个人档案增删改与简历拆解；AI 眼中的我（语气档案、改稿偏好、学习记录、自动学习开关）。学习逻辑本身在 `server/learning.js` |
 
 ## 移动端接口
 
@@ -178,7 +179,8 @@ uni-app（Vue 3 + Pinia）的 Vite 命令行工程，一套代码出 H5、安卓
 | 用途 | 表 |
 |---|---|
 | 账号与会话 | `users`、`sessions`、`admins`、`admin_sessions` |
-| 账号设定 | `personas`、`sections`、`style_samples` |
+| 账号设定 | `personas`、`sections`、`style_samples`（`notes` 是每篇单独提炼的写作习惯） |
+| 越写越懂 | `profile_entries`（个人档案，跟着用户）、`style_prefs`（改稿偏好，按账号）、`learn_log`（学习记录与待确认的经历候选）；`drafts.context_json` 记成稿时参考了什么，`drafts.learned_at` 记学没学过偏好 |
 | 创作 | `drafts`、`draft_revisions`、`speak_takes`、`frameworks` |
 | 复盘 | `draft_metrics`（发布数据快照，一次回填一行） |
 | 后台任务 | `jobs`（出图、口播转写与评测；worker 在 `server/jobs.js`） |

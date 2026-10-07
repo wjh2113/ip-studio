@@ -96,27 +96,52 @@
           </fieldset>
         </section>
 
+        <section class="acc-panel" data-panel="profile" v-show="page.tab === 'profile'">
+          <ProfilePanel v-if="seen.profile" />
+        </section>
+
         <section class="acc-panel" data-panel="material" v-show="page.tab === 'material'">
           <MaterialPanel />
         </section>
 
         <section class="acc-panel" data-panel="style" v-show="page.tab === 'style'">
           <fieldset v-if="page.id" class="subsection" id="styleSection">
-            <legend>语气样本<span>喂几篇成稿，让它学你真实的语感</span></legend>
+            <legend>语气样本<span>喂你自己写的文章，学你真实的语感——越多越准，最多 {{ a.style.max }} 篇</span></legend>
+
+            <div class="imp-box" id="importBox">
+              <div class="pf-parse-head"><Icon name="download" :size="15" /><b>导入以前写的文章</b><span class="hint">选 .md / .txt 文件（一次最多 20 篇），或者粘贴一篇；导入后在后台逐篇学习</span></div>
+              <div class="pf-row">
+                <label class="btn ghost small imp-file"><Icon name="doc" :size="13" />选文件<input id="importFiles" type="file" accept=".md,.markdown,.txt" multiple class="sr-only" @change="L.pickFiles($event.target.files); $event.target.value = ''" /></label>
+                <span v-if="L.imp.files.length" class="hint" id="importPicked">已选 {{ L.imp.files.length }} 篇：{{ L.imp.files.map((x) => x.title).join('、').slice(0, 60) }}</span>
+              </div>
+              <input id="importPasteTitle" v-model="L.imp.pasteTitle" maxlength="120" placeholder="粘贴的这篇的标题（选填）" @keydown.enter.prevent />
+              <textarea id="importPaste" v-model="L.imp.paste" rows="4" placeholder="或者把一篇文章粘贴在这里（至少 100 字）"></textarea>
+              <div class="pf-row">
+                <BusyBtn class="btn primary small" id="importBtn" :busy="L.imp.running" @click="doImport">导入并学习</BusyBtn>
+                <span v-if="L.imp.result?.skipped?.length" class="hint">没导入：{{ L.imp.result.skipped.map((x) => `${x.title || '未命名'}（${x.reason}）`).join('、') }}</span>
+              </div>
+            </div>
+
             <div class="sample-list" id="sampleList">
-              <div v-for="x in a.style.samples" :key="x.id" class="sample-row">
+              <div v-for="x in a.style.samples" :key="x.id" class="sample-row" :data-sample-row="x.id">
+                <span class="sample-src" :data-src="x.source">{{ SRC[x.source] || '手动' }}</span>
                 <span class="name">{{ x.title || '未命名样本' }}</span>
-                <span class="meta">{{ x.length }} 字</span>
+                <span v-if="x.weight > 1" class="meta" title="发布后自动加入，改得越多权重越高">权重 {{ x.weight.toFixed(1) }}</span>
+                <span class="meta">{{ x.learned ? '已学' : '待学' }} · {{ x.length }} 字</span>
                 <button type="button" class="del" :data-sample="x.id" title="删除" @click="a.deleteSample(x.id)">×</button>
               </div>
             </div>
             <div class="digest-box" id="digestBox"><template v-if="a.style.digest"><b>学到的语气档案</b>{{ a.style.digest }}</template></div>
             <div class="sample-actions">
               <BusyBtn v-if="a.style.samples.length" class="btn ghost small" id="rebuildDigestBtn" :busy="rebuild.busy.value"
-                @click="rebuild.run(a.rebuildDigest)">重新学习</BusyBtn>
-              <span class="hint" id="styleHint">{{ a.style.error || (a.style.samples.length ? `已学 ${a.style.samples.length} 篇` : '在成稿页点「喂给账号学习」即可添加') }}</span>
+                @click="rebuild.run(a.rebuildDigest)">从头梳理</BusyBtn>
+              <span class="hint" id="styleHint">{{ a.style.error || (a.style.samples.length ? `已学 ${a.style.samples.length} 篇；改稿习惯和学习记录在「AI 眼中的我」` : '导入以前的文章，或在成稿页点「喂给账号学习」') }}</span>
             </div>
           </fieldset>
+        </section>
+
+        <section class="acc-panel" data-panel="me" v-show="page.tab === 'me'">
+          <MePanel v-if="page.id && seen.me" />
         </section>
       </div>
     </div>
@@ -126,10 +151,13 @@
 
 <script setup>
 /* 账号设定页：整屏盖在应用上，左边四个板块，右边是当前板块的表单。数据和保存逻辑在 stores/account.js */
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
 import Icon from './common/Icon.vue';
 import MaterialPanel from './MaterialPanel.vue';
+import ProfilePanel from './ProfilePanel.vue';
+import MePanel from './MePanel.vue';
+import { useLearningStore } from '../stores/learning.js';
 import { ACCOUNT_TABS, useAccountStore } from '../stores/account.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useBusy } from '../lib/busy.js';
@@ -142,7 +170,20 @@ const f = page.form;
 const main = ref(null);
 const nameBox = ref(null);
 const rebuild = useBusy();
-const TAB_ICON = { basic: 'doc', persona: 'user', material: 'layers', style: 'mic' };
+const L = useLearningStore();
+const TAB_ICON = { basic: 'doc', persona: 'user', profile: 'book', material: 'layers', style: 'mic', me: 'eye' };
+const SRC = { manual: '手动', published: '发布', import: '导入', quickstart: '建号' };
+/* 个人档案、AI 眼中的我第一次点开才挂载（各自会去拉数据） */
+const seen = reactive({ profile: false, me: false });
+watch(() => page.tab, (t) => { if (t in seen) seen[t] = true; }, { immediate: true });
+
+// 后台学习任务做完：样本列表的「待学 / 已学」跟着变
+watch(() => L.learnedAt, () => { if (page.open && page.id) a.loadSamples(page.id); });
+
+async function doImport() {
+  const out = await L.runImport(page.id);
+  if (out) a.loadSamples(page.id);
+}
 
 const title = computed(() => {
   const p = a.editingPersona;

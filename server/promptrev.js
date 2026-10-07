@@ -9,6 +9,7 @@ import {
   ADAPT_SYSTEM, ARTICLE_SUMMARY_SYSTEM, ASSIST_SYSTEM, CONTENT_SYSTEM,
   CUES_SYSTEM, DIGEST_SYSTEM, HOTSPOT_SYSTEM, ILLUS_SYSTEM, REVIEW_SYSTEM,
   EXTRACT_SYSTEM, QUICKSTART_SYSTEM, SPEAK_REVIEW_SYSTEM, SUBJECTS_SYSTEM, TITLES_SYSTEM, TOPICS_SYSTEM, VOICE_EDIT_SYSTEM,
+  DIGEST_MERGE_SYSTEM, PREF_LEARN_SYSTEM, PROFILE_PARSE_SYSTEM, SAMPLE_NOTES_SYSTEM,
 } from './prompts.js';
 
 const now = () => new Date().toISOString();
@@ -35,6 +36,10 @@ export const PROMPT_KEYS = {
   titles: () => TITLES_SYSTEM,
   extract: () => EXTRACT_SYSTEM,
   quickstart: () => QUICKSTART_SYSTEM,
+  'sample-notes': () => SAMPLE_NOTES_SYSTEM,
+  'digest-merge': () => DIGEST_MERGE_SYSTEM,
+  'pref-learn': () => PREF_LEARN_SYSTEM,
+  'profile-parse': () => PROFILE_PARSE_SYSTEM,
 };
 
 export function liveSystem(key, builtin) {

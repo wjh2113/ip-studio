@@ -20,8 +20,10 @@ export const PERSONA_FIELDS = [
 export const ACCOUNT_TABS = [
   { key: 'basic', label: '基本设定', hint: '这个号是谁、写给谁' },
   { key: 'persona', label: '个人人设', hint: '第一人称用谁的口吻' },
+  { key: 'profile', label: '个人档案', hint: '工作、项目经历，所有账号共用' },
   { key: 'material', label: '素材库', hint: '你的真实经历与数据', needsSaved: true },
-  { key: 'style', label: '语气样本', hint: '喂成稿学你的语感', needsSaved: true },
+  { key: 'style', label: '语气样本', hint: '喂文章学你的语感', needsSaved: true },
+  { key: 'me', label: 'AI 眼中的我', hint: '学到了什么，可改可删', needsSaved: true },
 ];
 
 const PERSONA_KEY = 'lastPersona';
@@ -224,7 +226,7 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   /* ---------- 语气样本 ---------- */
-  const style = reactive({ samples: [], digest: '', error: '', loading: false });
+  const style = reactive({ samples: [], digest: '', max: 200, error: '', loading: false });
 
   async function loadSamples(pid) {
     style.samples = [];
@@ -232,10 +234,11 @@ export const useAccountStore = defineStore('account', () => {
     style.error = '';
     if (!pid) return;
     try {
-      const { samples, digest } = await api(`/personas/${pid}/samples`);
+      const { samples, digest, max } = await api(`/personas/${pid}/samples`);
       if (page.id !== pid) return;
       style.samples = samples;
       style.digest = digest || '';
+      style.max = max || 200;
     } catch (err) { style.error = err.message; }
   }
 
@@ -256,7 +259,7 @@ export const useAccountStore = defineStore('account', () => {
       style.samples = samples;
       style.digest = digest || '';
       loadPersonas(useStudioStore().personaId);
-      toast('语气档案已重新学习');
+      toast('语气档案已从头梳理');
     } catch (err) { toast(err.message); }
   }
 
@@ -269,14 +272,15 @@ export const useAccountStore = defineStore('account', () => {
     const name = persona?.name || draft.persona?.name || '该账号';
     if (!await ask.confirm({
       title: `把这篇喂给账号「${name}」学语气？`,
-      body: '之后这个号的选题和成稿都会模仿它的语感。可以随时在账号设定里删掉样本。',
+      body: '之后这个号的选题和成稿都会模仿它的语感，也会从你对 AI 初稿的修改里学改稿习惯。可以随时在账号设定里删掉。',
       ok: '喂进去',
     })) return;
     if (beforeSave) await beforeSave();
     try {
-      const { digest } = await api(`/personas/${draft.persona_id}/samples`, { method: 'POST', body: { draft_id: draft.id } });
+      const { digest, candidates } = await api(`/personas/${draft.persona_id}/samples`, { method: 'POST', body: { draft_id: draft.id } });
       await loadPersonas(s.personaId);
-      toast(digest ? '学好了，语气档案已更新' : '已加入样本');
+      const found = candidates?.length ? `；文中找到 ${candidates.length} 条经历，去账号设定「AI 眼中的我」确认` : '';
+      toast(`${digest ? '学好了，语气档案已更新' : '已加入样本'}${found}`);
     } catch (err) { toast(err.message); }
   }
 

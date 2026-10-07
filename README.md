@@ -763,16 +763,31 @@ eval 里人打的分和真实使用有距离。管理后台「内容质量」看
 代码层标出超过平台字数上限的（小红书 20、公众号 64、B 站 80，按字符算）和命中违禁词库的；
 选中后草稿标题和正文第一行的 `# 标题` 一起替换，替换前的正文留一版历史。
 
-## 语气学习
+## 越写越懂：个人档案、语气学习、改稿偏好
 
-成稿页的「喂给账号学习」把这篇作为**语气样本**交给当前账号（会先弹确认框，**只有用户确认才学**）。
+目标是让 AI 写的稿子越来越像作者本人，而且写得越多越像。四块东西，都在账号设定里看得见、改得了：
 
-服务端拿到样本后重新蒸馏出一份**语气档案**：从最近 6 篇样本里总结 8-14 条可复制的写作习惯——
-句式长度、段落节奏、开头结尾套路、高频词与口头禅、比喻取材偏好、标点用法、刻意回避的表达。
-之后这个账号的选题和成稿都会带上这份档案，外加最近 2 篇样本的开头片段做语感锚点（只模仿语感，明确禁止复用内容）。
+**个人档案**（跟着人走，所有账号共用，`profile_entries`）：工作经历、项目经历、一贯观点。
+贴一段简历或经历回顾，模型拆成一条条（每条带一句原文，逐字核对不上的丢掉），作者勾选、改好再存；也可以手动加。
+写了机构名的默认「只作背景」——写作时不点名，可以说「我之前在一家电商公司」。
+写作时按题材召回相关的几条（2 字滑窗字面重合，同素材召回）：选题只给标题和结果，成稿给全文，划词改写和续写给精简版。
+和素材一样是「唯一可信的事实来源」：**档案里没有的经历不许编**，时间、数字、职位原样用。
 
-档案在账号设定弹窗里可见可管：列出所有样本、可单篇删除、可「重新学习」。删样本会用剩下的重新学一遍，删光则档案清空。
-样本上限 30 篇，单篇 100–20000 字。
+**语气样本 → 语气档案**（按账号）：成稿页「喂给账号学习」、账号设定里批量导入以前的文章（.md / .txt 或粘贴，一次最多 20 篇）、
+成稿标记发布后自动加入（见下）。每篇先单独提炼 3-6 条写作习惯（`style_samples.notes`），档案由各篇要点合并：
+新加一篇只合并这一篇（增量）；样本每多 10 篇、或点「从头梳理」，用最近 60 篇的要点重写一遍，以近期、高权重为准。
+样本上限 200 篇。写作时附两篇**和这次题材最像**的样本片段做语感锚点（以前是最近两篇）。
+单篇提炼时顺手找出文中第一人称明确写到的经历和观点，记成待确认，作者在「AI 眼中的我」里决定存不存进个人档案。
+
+**改稿偏好**（按账号，`style_prefs`）：对比 AI 初稿和作者定稿，总结可推广的改稿习惯（「不用『赋能』这类词」「开头不用反问句」），
+每条带初稿和定稿里各一小段原文，核对不上的丢掉；和已有规则重复的只加一次命中。几乎没改（改动比例 < 3%）的不学，每篇只学一次。
+写作时带命中最多的 12 条开着的规则，作为必须遵守的硬约束。作者可以手动加、改、关、删。
+
+**发布即学**：成稿标记为已发布（或第一次回填发布数据）时，账号开着「自动学习」就在后台排一个任务：
+把定稿加进语气样本（改得越多权重越高，1～2）、合并档案、从改稿里学偏好。重复标记不会重复学。会用掉一点额度（两三次短调用），可以在「AI 眼中的我」里关。
+
+**AI 眼中的我**（账号设定最后一栏）：自动学习开关、待确认的经历、语气档案和从头梳理、改稿习惯清单、学习记录（每次档案改了什么可以看前后对照）。
+成稿页标题下面也会写出这篇参考了几条个人经历、几篇相似范文、几条素材和改稿习惯，点开能看是哪些。
 
 实测（DeepSeek，喂了一篇备菜笔记后）学出来的档案包括「开头习惯用具体场景切入，直接交代时间、事件和感官细节」
 「结尾常以『今晚就去……』收束」「比喻取材自日常烹饪，爱把抽象感受具象化」——都是能照着写的具体特征。
@@ -943,6 +958,7 @@ server/
   promptrev.js    提示词线上版本；promptdocs.js 说明书内容；abtest.js A/B 与 eval 打分
   quota.js · plans.js · pricing.js   额度、套餐、单价
   speak.js        转写、口播总评、网关发音 / 出镜评测
+  learning.js     越写越懂：样本要点、语气档案合并、改稿偏好、简历拆解、发布即学的后台任务
   images.js · hotspots.js · pay.js · docx.js · settings.js · secrets.js · auth.js · limit.js · security.js
 shared/
   place.js        插图位置算法（阅读区和 Word 导出共用）
@@ -1090,6 +1106,17 @@ scripts/          check.js 代码检查、backup.sh 每日备份、deploy-jdclou
 | GET | `/api/export/drafts` | `handleExportDrafts`（同步密钥） | export.js |
 | GET | `/api/export/images/:name` | `handleExportImage`（同步密钥） | export.js |
 | GET | `/api/export/plugin/:file` | `handlePluginFile` | export.js |
+| POST | `/api/personas/:id/samples/import` | `handleSampleImport` | personas.js |
+| GET / POST | `/api/profile` | `handleProfileList` / `handleProfileCreate` | learning.js |
+| PUT / DELETE | `/api/profile/:pid` | `handleProfileUpdate` / `handleProfileDelete` | learning.js |
+| POST | `/api/profile/parse` | `handleProfileParse` | learning.js |
+| POST | `/api/profile/batch` | `handleProfileBatch` | learning.js |
+| GET | `/api/personas/:id/learning` | `handleLearning` | learning.js |
+| PUT | `/api/personas/:id/auto-learn` | `handleAutoLearn` | learning.js |
+| POST | `/api/personas/:id/digest/rebuild` | `handleDigestRebuildJob` | learning.js |
+| POST | `/api/personas/:id/prefs` | `handlePrefCreate` | learning.js |
+| PUT / DELETE | `/api/personas/:id/prefs/:rid` | `handlePrefUpdate` / `handlePrefDelete` | learning.js |
+| POST | `/api/learning/log/:lid/dismiss` | `handleLogDismiss` | learning.js |
 
 ## 同步到 Obsidian
 

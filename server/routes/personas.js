@@ -1,9 +1,11 @@
 /* 路由 · personas：账号设定、内容栏目、语气样本与语气档案。从原 routes.js 原样拆出。 */
-import { Drafts, Personas, Samples, Sections } from '../db.js';
+import { Drafts, Personas, SAMPLE_MAX, Samples, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON, generateText } from '../llm.js';
+import { generateJSON } from '../llm.js';
+import { addSampleAndLearn, enqueueLearn, updateDigest } from '../learning.js';
+import { presentJob } from '../jobs.js';
 import {
-  DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, digestUser, GENDERS, PLATFORMS, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
+  DEFAULT_PLATFORM, DEFAULT_TONE, GENDERS, PLATFORMS, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
   quickstartUser, SECTION_PRESETS, TONES,
 } from '../prompts.js';
 import { json, requireUser, sys, withRetry } from './common.js';
@@ -192,11 +194,13 @@ export async function handleSectionDelete(req, res, body, params) {
   json(res, 200, { sections: await Sections.list(persona.id, user.id) });
 }
 
-/* ---------------- 语气学习 ---------------- */
+/* ---------------- 语气学习 ----------------
+ * 学习本身在 server/learning.js：每篇先提炼要点，档案由要点合并；改稿偏好、文章里的经历候选也在那里。 */
 
-const DIGEST_MAX_SAMPLES = 6;
+const SAMPLE_CHARS_MAX = 20000;
+const IMPORT_MAX = 20;           // 一次批量导入最多几篇
 
-const DIGEST_MAX_CHARS = 3000;
+const sampleOk = (content) => content.replace(/\s/g, '').length >= 100 && content.length <= SAMPLE_CHARS_MAX;
 
 export async function handleSampleList(req, res, body, params) {
   const user = await requireUser(req);
@@ -206,6 +210,7 @@ export async function handleSampleList(req, res, body, params) {
     samples: await Samples.list(persona.id, user.id),
     digest: persona.style_digest,
     updated_at: persona.style_updated_at,
+    max: SAMPLE_MAX,
   });
 }
 
@@ -223,46 +228,74 @@ export async function handleSampleCreate(req, res, body, params) {
     const draft = await Drafts.byId(Number(body.draft_id), user.id);
     if (!draft) throw new HttpError(404, '记录不存在');
     if (!draft.content.trim()) throw new HttpError(400, '这篇还没有正文');
+    if (await Samples.byDraft(persona.id, user.id, draft.id)) throw new HttpError(409, '这篇已经在语气样本里了');
     draftId = draft.id;
     title = title || draft.title || draft.subject;
     content = draft.content;
   }
 
   if (content.replace(/\s/g, '').length < 100) throw new HttpError(400, '样本太短了，至少 100 字才学得出语气');
-  if (content.length > 20000) throw new HttpError(400, '样本过长，请截取代表性的一篇');
-  if ((await Samples.list(persona.id, user.id, { limit: 100 })).length >= 30) {
-    throw new HttpError(400, '样本数量已达上限（30 篇），请先删掉一些');
-  }
+  if (content.length > SAMPLE_CHARS_MAX) throw new HttpError(400, '样本过长，请截取代表性的一篇');
 
-  await Samples.create(user.id, persona.id, { draftId, title, content });
-  const digest = await rebuildDigest(persona, user.id);
+  const out = await addSampleAndLearn(user.id, persona.id, { title, content, draftId, source: 'manual' });
+  // 喂的是一篇 AI 写过初稿的创作记录：顺手在后台从改稿里学偏好（不让这个请求多等一次调用）
+  if (draftId) await enqueueLearn(user.id, persona.id, { type: 'prefs', draftId }, `从《${title.slice(0, 20)}》的改稿里学习`).catch(() => {});
   json(res, 200, {
     persona: await Personas.byId(persona.id, user.id),
     samples: await Samples.list(persona.id, user.id),
-    digest,
+    digest: out.digest,
+    candidates: out.candidates,
+    candidatesLogId: out.candidatesLogId,
   });
 }
 
-/* 批量加样本（快速建号时的几篇旧文章）：全部存完只蒸馏一次语气档案，不是每篇一次 */
+/* 批量导入以前写的文章：先存，学习（每篇提炼要点、找经历、合并档案）放到后台任务里，任务中心看得到进度 */
+export async function handleSampleImport(req, res, body, params) {
+  const user = await requireUser(req);
+  const persona = await Personas.byId(Number(params.id), user.id);
+  if (!persona) throw new HttpError(404, '账号不存在');
+  const list = Array.isArray(body?.articles) ? body.articles : [];
+  if (!list.length) throw new HttpError(400, '没有要导入的文章');
+  if (list.length > IMPORT_MAX) throw new HttpError(400, `一次最多导入 ${IMPORT_MAX} 篇`);
+  let room = SAMPLE_MAX - await Samples.count(persona.id, user.id);
+  const ids = [];
+  const skipped = [];
+  for (const a of list) {
+    const title = String(a?.title ?? '').trim().slice(0, 120);
+    const content = String(a?.content ?? '').trim();
+    if (!sampleOk(content)) { skipped.push({ title, reason: content.length > SAMPLE_CHARS_MAX ? '太长（超过 2 万字）' : '太短（不到 100 字）' }); continue; }
+    if (room <= 0) { skipped.push({ title, reason: `样本已满 ${SAMPLE_MAX} 篇` }); continue; }
+    ids.push((await Samples.create(user.id, persona.id, { title, content, source: 'import' })).id);
+    room -= 1;
+  }
+  const job = ids.length
+    ? await enqueueLearn(user.id, persona.id, { type: 'import', sampleIds: ids }, `学习导入的 ${ids.length} 篇文章`)
+    : null;
+  json(res, 200, { added: ids.length, skipped, job: presentJob(job), samples: await Samples.list(persona.id, user.id) });
+}
+
+/* 批量加样本（快速建号时的几篇旧文章）：同步用原文梳理一次档案，每篇的要点和经历候选放到后台补 */
 export async function handleSampleBatch(req, res, body, params) {
   const user = await requireUser(req);
   const persona = await Personas.byId(Number(params.id), user.id);
   if (!persona) throw new HttpError(404, '账号不存在');
   const list = (Array.isArray(body?.samples) ? body.samples : []).slice(0, QUICK_LIMITS.posts);
-  const room = 30 - (await Samples.list(persona.id, user.id, { limit: 100 })).length;
-  let added = 0;
+  const room = SAMPLE_MAX - await Samples.count(persona.id, user.id);
+  const ids = [];
   let skipped = 0;
   for (const s of list) {
     const content = String(s?.content ?? '').trim();
-    if (added >= room || content.replace(/\s/g, '').length < QUICK_LIMITS.sampleMin || content.length > QUICK_LIMITS.post) {
+    if (ids.length >= room || content.replace(/\s/g, '').length < QUICK_LIMITS.sampleMin || content.length > QUICK_LIMITS.post) {
       skipped += 1;
       continue;
     }
-    await Samples.create(user.id, persona.id, { draftId: null, title: String(s?.title ?? '').trim().slice(0, 120), content });
-    added += 1;
+    ids.push((await Samples.create(user.id, persona.id, { draftId: null, title: String(s?.title ?? '').trim().slice(0, 120), content, source: 'quickstart' })).id);
   }
-  const digest = added ? await rebuildDigest(persona, user.id) : persona.style_digest;
-  json(res, 200, { added, skipped, samples: await Samples.list(persona.id, user.id), digest });
+  const digest = ids.length
+    ? await updateDigest(user.id, persona.id, { full: true, backfill: false, reason: '快速建号时的旧文章' })
+    : persona.style_digest;
+  if (ids.length) await enqueueLearn(user.id, persona.id, { type: 'import', sampleIds: ids, noDigest: true }, '整理旧文章里的经历').catch(() => {});
+  json(res, 200, { added: ids.length, skipped, samples: await Samples.list(persona.id, user.id), digest });
 }
 
 export async function handleSampleDelete(req, res, body, params) {
@@ -270,44 +303,16 @@ export async function handleSampleDelete(req, res, body, params) {
   const persona = await Personas.byId(Number(params.id), user.id);
   if (!persona) throw new HttpError(404, '账号不存在');
   if (!await Samples.remove(Number(params.sampleId), user.id)) throw new HttpError(404, '样本不存在');
-
-  const left = await Samples.list(persona.id, user.id, { limit: 1 });
-  const digest = left.length ? await rebuildDigest(persona, user.id) : '';
-  if (!left.length) await Personas.setDigest(persona.id, user.id, '');
+  // 删掉的样本可能已经影响过档案：用剩下的从头梳理（不补提炼老样本，免得一次删除等太久）
+  const digest = await updateDigest(user.id, persona.id, { full: true, backfill: false, reason: '删了一篇样本' });
   json(res, 200, { samples: await Samples.list(persona.id, user.id), digest });
 }
 
+/* 「从头梳理」：用最近 60 篇的要点重写档案，还没提炼过的老样本补几篇 */
 export async function handleDigestRebuild(req, res, body, params) {
   const user = await requireUser(req);
   const persona = await Personas.byId(Number(params.id), user.id);
   if (!persona) throw new HttpError(404, '账号不存在');
-  if (!(await Samples.list(persona.id, user.id, { limit: 1 })).length) {
-    throw new HttpError(400, '还没有样本可学');
-  }
-  json(res, 200, { digest: await rebuildDigest(persona, user.id) });
+  if (!(await Samples.count(persona.id, user.id))) throw new HttpError(400, '还没有样本可学');
+  json(res, 200, { digest: await updateDigest(user.id, persona.id, { full: true, reason: '手动从头梳理' }) });
 }
-
-/* 把样本重新蒸馏成语气档案 —— 每次增删样本后都重算，保证档案和样本一致 */
-async function rebuildDigest(persona, userId) {
-  const samples = (await Samples.list(persona.id, userId, { withContent: true, limit: DIGEST_MAX_SAMPLES }))
-    .map((s) => ({ title: s.title, content: s.content.slice(0, DIGEST_MAX_CHARS) }));
-  if (!samples.length) return '';
-
-  const digest = await generateText({
-    meta: { feature: '语气档案', userId },
-    system: sys('digest', DIGEST_SYSTEM),
-    user: digestUser(samples),
-    mock: () => mockDigest(samples.length),
-  });
-
-  const cleaned = String(digest).trim().slice(0, 4000);
-  await Personas.setDigest(persona.id, userId, cleaned);
-  return cleaned;
-}
-
-const mockDigest = (n) => [
-  `- 演示模式：这里会由大模型从 ${n} 篇样本里总结出可复制的写作习惯`,
-  '- 例如：段落多为 1-3 行，几乎不写超过 5 行的长段',
-  '- 例如：开头常用一个具体场景，而不是抛结论',
-  '- 配置模型密钥后，这份档案会变成真实的语气总结',
-].join('\n');

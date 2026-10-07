@@ -10,7 +10,7 @@ import { editRatio } from './quality.js';
 import {
   adminSessions, admins, benchmarks, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
   frameworks, inboxKeys, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
-  speakTakes, styleSamples, syncKeys, topicPool, usageEvents, users,
+  learnLog, profileEntries, speakTakes, stylePrefs, styleSamples, syncKeys, topicPool, usageEvents, users,
 } from './schema.js';
 
 const fileRoot = process.env.DATA_DIR
@@ -263,9 +263,15 @@ export const Personas = {
     if (!row) return undefined;
     try { return JSON.parse(row.hotspot_json); } catch { return null; }
   },
-  async setDigest(id, userId, digest) {
-    await orm().update(personas).set({ style_digest: digest, style_updated_at: now() })
-      .where(and(eq(personas.id, id), eq(personas.user_id, userId)));
+  async setDigest(id, userId, digest, { fullCount } = {}) {
+    const set = { style_digest: digest, style_updated_at: now() };
+    if (fullCount !== undefined) set.digest_full_count = fullCount;
+    await orm().update(personas).set(set).where(and(eq(personas.id, id), eq(personas.user_id, userId)));
+  },
+  async setAutoLearn(id, userId, on) {
+    const rows = await orm().update(personas).set({ auto_learn: on ? 1 : 0 })
+      .where(and(eq(personas.id, id), eq(personas.user_id, userId))).returning({ id: personas.id });
+    return rows.length > 0;
   },
   async remove(id, userId) {
     const rows = await orm().delete(personas).where(and(eq(personas.id, id), eq(personas.user_id, userId))).returning({ id: personas.id });
@@ -630,13 +636,34 @@ export const Pool = {
   },
 };
 
+/* 语气样本。上限 SAMPLE_MAX 篇；notes 是这一篇单独提炼的写作习惯（档案由各篇 notes 合并而来）。
+ * source：manual 手动喂 · published 发布后自动 · import 批量导入 · quickstart 快速建号 */
+export const SAMPLE_MAX = 200;
+const bigrams = (text) => {
+  const src = String(text || '');
+  const out = new Set();
+  for (let i = 0; i < src.length - 1; i += 1) {
+    const g = src.slice(i, i + 2);
+    if (/[一-龥A-Za-z0-9]{2}/.test(g)) out.add(g);
+  }
+  return out;
+};
+/* 按 2 字滑窗算重合度（和素材召回同一套办法，量级小、结果可解释）。hay 里命中多少个 hint 的词 */
+export function overlapScore(hintGrams, hay) {
+  let hit = 0;
+  for (const g of hintGrams) if (hay.includes(g)) hit += 1;
+  return hit;
+}
+export { bigrams };
+
 export const Samples = {
-  async create(userId, personaId, { draftId = null, title = '', content }) {
+  async create(userId, personaId, { draftId = null, title = '', content, source = 'manual', weight = 1, notes = '' }) {
     return one(orm().insert(styleSamples).values({
       user_id: userId, persona_id: personaId, draft_id: draftId, title, content, created_at: now(),
+      source, weight, notes,
     }).returning());
   },
-  async list(personaId, userId, { withContent = false, limit = 50 } = {}) {
+  async list(personaId, userId, { withContent = false, limit = SAMPLE_MAX } = {}) {
     const where = and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId));
     if (withContent) {
       return orm().select().from(styleSamples).where(where).orderBy(desc(styleSamples.id)).limit(limit);
@@ -644,11 +671,153 @@ export const Samples = {
     const list = await orm().select({
       id: styleSamples.id, draft_id: styleSamples.draft_id, title: styleSamples.title,
       created_at: styleSamples.created_at, length: sql`length(${styleSamples.content})`,
+      source: styleSamples.source, weight: styleSamples.weight, learned: sql`(${styleSamples.notes} <> '')`,
     }).from(styleSamples).where(where).orderBy(desc(styleSamples.id)).limit(limit);
-    return list.map((r) => nums(r, ['length']));
+    return list.map((r) => nums(r, ['length', 'weight']));
+  },
+  async count(personaId, userId) {
+    const row = await one(orm().select({ n: count() }).from(styleSamples)
+      .where(and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId))));
+    return Number(row?.n || 0);
+  },
+  async byIds(ids, userId) {
+    if (!ids.length) return [];
+    return orm().select().from(styleSamples).where(and(inArray(styleSamples.id, ids), eq(styleSamples.user_id, userId)));
+  },
+  async byDraft(personaId, userId, draftId) {
+    return one(orm().select({ id: styleSamples.id }).from(styleSamples).where(and(
+      eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId), eq(styleSamples.draft_id, draftId))));
+  },
+  /* 合并档案用：每篇的 notes，没提炼过的给开头一段原文 */
+  async forDigest(personaId, userId, limit = 60) {
+    return orm().select({
+      id: styleSamples.id, title: styleSamples.title, notes: styleSamples.notes, weight: styleSamples.weight,
+      source: styleSamples.source, created_at: styleSamples.created_at,
+      excerpt: sql`left(${styleSamples.content}, 1500)`,
+    }).from(styleSamples).where(and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId)))
+      .orderBy(desc(styleSamples.id)).limit(limit);
+  },
+  async setNotes(id, userId, notes) {
+    await orm().update(styleSamples).set({ notes }).where(and(eq(styleSamples.id, id), eq(styleSamples.user_id, userId)));
+  },
+  /* 写作时的语感锚点：和这次题材最像的 n 篇（看标题和开头），都不像就取最近的 */
+  async pickSimilar(personaId, userId, hint, n = 2) {
+    const rows = await orm().select({
+      id: styleSamples.id, title: styleSamples.title, head: sql`left(${styleSamples.content}, 800)`, weight: styleSamples.weight,
+    }).from(styleSamples).where(and(eq(styleSamples.persona_id, personaId), eq(styleSamples.user_id, userId)))
+      .orderBy(desc(styleSamples.id)).limit(SAMPLE_MAX);
+    if (!rows.length) return [];
+    const grams = bigrams(hint);
+    const scored = rows.map((r, i) => ({
+      id: r.id,
+      score: grams.size ? overlapScore(grams, `${r.title} ${r.head}`) * (Number(r.weight) || 1) : 0,
+      i,
+    }));
+    const pick = scored.filter((x) => x.score >= 3).sort((a, b) => b.score - a.score || a.i - b.i).slice(0, n).map((x) => x.id);
+    for (const r of rows) { if (pick.length >= n) break; if (!pick.includes(r.id)) pick.push(r.id); }
+    const full = await this.byIds(pick, userId);
+    return pick.map((id) => full.find((r) => r.id === id)).filter(Boolean);
   },
   async remove(id, userId) {
     const rows = await orm().delete(styleSamples).where(and(eq(styleSamples.id, id), eq(styleSamples.user_id, userId))).returning({ id: styleSamples.id });
+    return rows.length > 0;
+  },
+};
+
+/* 个人档案（跟着用户走，所有账号共用） */
+export const PROFILE_KINDS = ['work', 'project', 'opinion', 'other'];
+export const PROFILE_MAX = 300;
+const profileValues = (e) => ({
+  kind: PROFILE_KINDS.includes(e.kind) ? e.kind : 'work',
+  title: e.title, period: e.period || '', org: e.org || '', role: e.role || '',
+  body: e.body || '', result: e.result || '', tags: e.tags || '',
+  visibility: e.visibility === 'background' ? 'background' : 'public',
+});
+export const Profile = {
+  async list(userId) {
+    return orm().select().from(profileEntries).where(eq(profileEntries.user_id, userId)).orderBy(desc(profileEntries.id));
+  },
+  async count(userId) {
+    const row = await one(orm().select({ n: count() }).from(profileEntries).where(eq(profileEntries.user_id, userId)));
+    return Number(row?.n || 0);
+  },
+  async byId(id, userId) {
+    return one(orm().select().from(profileEntries).where(and(eq(profileEntries.id, id), eq(profileEntries.user_id, userId))));
+  },
+  async create(userId, e, source = 'manual') {
+    const t = now();
+    return one(orm().insert(profileEntries).values({
+      user_id: userId, ...profileValues(e), source, created_at: t, updated_at: t,
+    }).returning());
+  },
+  async update(id, userId, e) {
+    const rows = await orm().update(profileEntries).set({ ...profileValues(e), updated_at: now() })
+      .where(and(eq(profileEntries.id, id), eq(profileEntries.user_id, userId))).returning();
+    return rows[0] || null;
+  },
+  async remove(id, userId) {
+    const rows = await orm().delete(profileEntries).where(and(eq(profileEntries.id, id), eq(profileEntries.user_id, userId))).returning({ id: profileEntries.id });
+    return rows.length > 0;
+  },
+  async markUsed(ids, userId) {
+    if (!ids.length) return;
+    await orm().update(profileEntries).set({ used_count: sql`${profileEntries.used_count} + 1` })
+      .where(and(inArray(profileEntries.id, ids), eq(profileEntries.user_id, userId)));
+  },
+};
+
+/* 改稿偏好（按账号） */
+export const PREF_MAX = 40;
+export const Prefs = {
+  async list(personaId, userId) {
+    return orm().select().from(stylePrefs).where(and(eq(stylePrefs.persona_id, personaId), eq(stylePrefs.user_id, userId)))
+      .orderBy(desc(stylePrefs.hits), desc(stylePrefs.id));
+  },
+  async active(personaId, userId, limit = 12) {
+    return orm().select().from(stylePrefs).where(and(
+      eq(stylePrefs.persona_id, personaId), eq(stylePrefs.user_id, userId), eq(stylePrefs.status, 'on'),
+    )).orderBy(desc(stylePrefs.hits), desc(stylePrefs.id)).limit(limit);
+  },
+  async create(userId, personaId, { rule, evidence = '', draftId = null }) {
+    const t = now();
+    return one(orm().insert(stylePrefs).values({
+      user_id: userId, persona_id: personaId, rule, evidence, source_draft_id: draftId, created_at: t, updated_at: t,
+    }).returning());
+  },
+  async update(id, userId, patch) {
+    const set = { updated_at: now() };
+    if (patch.rule !== undefined) set.rule = patch.rule;
+    if (patch.status !== undefined) set.status = patch.status === 'off' ? 'off' : 'on';
+    const rows = await orm().update(stylePrefs).set(set).where(and(eq(stylePrefs.id, id), eq(stylePrefs.user_id, userId))).returning();
+    return rows[0] || null;
+  },
+  async bump(ids, userId) {
+    if (!ids.length) return;
+    await orm().update(stylePrefs).set({ hits: sql`${stylePrefs.hits} + 1`, updated_at: now() })
+      .where(and(inArray(stylePrefs.id, ids), eq(stylePrefs.user_id, userId)));
+  },
+  async remove(id, userId) {
+    const rows = await orm().delete(stylePrefs).where(and(eq(stylePrefs.id, id), eq(stylePrefs.user_id, userId))).returning({ id: stylePrefs.id });
+    return rows.length > 0;
+  },
+};
+
+/* 学习记录 */
+export const LearnLog = {
+  async add(userId, personaId, { kind, summary, detail = null }) {
+    return one(orm().insert(learnLog).values({
+      user_id: userId, persona_id: personaId ?? null, kind, summary, detail_json: JSON.stringify(detail), created_at: now(),
+    }).returning());
+  },
+  async list(userId, personaId, limit = 40) {
+    const rows = await orm().select().from(learnLog).where(and(
+      eq(learnLog.user_id, userId),
+      personaId == null ? sql`${learnLog.persona_id} IS NULL` : eq(learnLog.persona_id, personaId),
+    )).orderBy(desc(learnLog.id)).limit(limit);
+    return rows.map(({ detail_json, user_id, ...r }) => ({ ...r, detail: parseJson(detail_json, null) }));
+  },
+  async setStatus(id, userId, status) {
+    const rows = await orm().update(learnLog).set({ status }).where(and(eq(learnLog.id, id), eq(learnLog.user_id, userId))).returning({ id: learnLog.id });
     return rows.length > 0;
   },
 };
@@ -779,6 +948,22 @@ export const Drafts = {
       id: drafts.id, gen_variant: drafts.gen_variant, edit_ratio: drafts.edit_ratio,
       review_json: drafts.review_json, content: drafts.content,
     }).from(drafts).where(and(sql`${drafts.generated} != ''`, sql`${drafts.updated_at} >= ${since}`));
+  },
+  /* 成稿时参考了什么：经历、范文、素材、偏好条数。只记标题和 id，给作者看「这次用了哪些」 */
+  async setContext(id, userId, context) {
+    await orm().update(drafts).set({ context_json: JSON.stringify(context) })
+      .where(and(eq(drafts.id, id), eq(drafts.user_id, userId)));
+  },
+  /* 从改稿里学偏好要用到的：AI 初稿（generated 不随 hydrate 出去）和现在的正文 */
+  async learnSource(id, userId) {
+    return one(orm().select({
+      id: drafts.id, title: drafts.title, subject: drafts.subject, persona_id: drafts.persona_id,
+      generated: drafts.generated, content: drafts.content, edit_ratio: drafts.edit_ratio, learned_at: drafts.learned_at,
+      published_at: drafts.published_at,
+    }).from(drafts).where(and(eq(drafts.id, id), eq(drafts.user_id, userId))));
+  },
+  async setLearned(id, userId) {
+    await orm().update(drafts).set({ learned_at: now() }).where(and(eq(drafts.id, id), eq(drafts.user_id, userId)));
   },
   async setTitle(id, userId, title) {
     await orm().update(drafts).set({ title, updated_at: now() }).where(and(eq(drafts.id, id), eq(drafts.user_id, userId)));
@@ -1137,13 +1322,14 @@ function hydrate(row) {
   try { variants = JSON.parse(row.variants_json); } catch { /* 同上 */ }
   try { metrics = JSON.parse(row.metrics_json); } catch { /* 同上 */ }
   try { illus = JSON.parse(row.illus_json); } catch { /* 同上 */ }
+  const context = parseJson(row.context_json ?? 'null', null);
   const {
     topics_json, persona_json, hotspot_json, section_json,
     inputs_json, cues_json, variants_json, illus_json,
-    metrics_json, framework_json, user_id, generated, review_json, ...rest
+    metrics_json, framework_json, user_id, generated, review_json, context_json, ...rest
   } = row;
   return {
-    ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics, framework,
+    ...rest, topics, persona, hotspot, section, inputs, cues, variants, illus, metrics, framework, context,
   };
 }
 

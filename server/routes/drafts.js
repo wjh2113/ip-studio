@@ -1,12 +1,12 @@
 /* 路由 · drafts：创作主流程：三个方向、流式成稿、保存与历史版本、列表、归档、删除。从原 routes.js 原样拆出。 */
-import { Drafts, Frameworks, Materials, Personas, Revisions, Sections } from '../db.js';
+import { Drafts, Frameworks, Materials, Personas, Profile, Revisions, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON, streamText } from '../llm.js';
 import { pickVariant } from '../abtest.js';
 import { mockContent, mockTopics } from '../mock.js';
 import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
 import { performanceOf } from '../performance.js';
-import { describe, json, requireUser, styleSamples, sys, withRetry } from './common.js';
+import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { recallMaterials } from './materials.js';
 import { resolveFramework } from './frameworks.js';
 import { frameworkSnapshot } from '../frameworks.js';
@@ -106,8 +106,9 @@ export async function handleTopics(req, res, body) {
   let topics;
   try {
     const ctx = { ...form, hotspot: normalizeHotspot(body?.hotspot), section, inputs, framework };
-    topics = await generateTopics(ctx, persona, [], await styleSamples(persona, user.id),
-      { feature: '选题方向', userId: user.id }, await perfFor(user.id, persona));
+    const hint = topicHint(form);
+    topics = await generateTopics(ctx, persona, [], await styleSamples(persona, user.id, hint),
+      { feature: '选题方向', userId: user.id }, await perfFor(user.id, persona), await writerMe(user.id, persona, hint, 'topics'));
   } catch (err) {
     await Drafts.remove(draft.id, user.id);   // 失败就别在历史里留一条空记录
     throw err;
@@ -126,16 +127,20 @@ export async function handleRetopics(req, res, body, params) {
 
   // 换一批 = 重新开始：若账号还在，用它最新的设定；账号已删则沿用创作时的快照
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
-  const topics = await generateTopics(draft, persona, draft.topics, await styleSamples(persona, user.id),
-    { feature: '选题方向·换一批', userId: user.id }, await perfFor(user.id, persona));
+  const hint = topicHint(draft);
+  const topics = await generateTopics(draft, persona, draft.topics, await styleSamples(persona, user.id, hint),
+    { feature: '选题方向·换一批', userId: user.id }, await perfFor(user.id, persona), await writerMe(user.id, persona, hint, 'topics'));
   await Drafts.setTopics(draft.id, user.id, topics, persona);
   json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
 }
 
+/* 召回个人档案、挑相似范文用的题材线索 */
+const topicHint = (f) => `${f.subject || ''} ${f.keywords || ''} ${f.audience || ''}`;
+
 /* 这个号过往的发布数据，拼进选题提示词；样本不够时是空串，提示词和以前一样 */
 const perfFor = async (userId, persona) => performanceBlock(await performanceOf(userId, persona?.id ?? null), 'topics');
 
-async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}, perf = '') {
+async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}, perf = '', me = null) {
   const extra = avoid.length
     ? `\n\n以下方向已经出过，请给出与它们明显不同的新角度：\n${avoid.map((t) => `- ${t.title}（${t.angle}）`).join('\n')}`
     : '';
@@ -146,7 +151,7 @@ async function generateTopics(form, persona = null, avoid = [], samples = [], me
     const data = await generateJSON({
       meta: { ...meta, variant: v.name },
       system: v.system,
-      user: topicsUser(form, persona, samples, perf) + extra
+      user: topicsUser(form, persona, samples, perf, me) + extra
         + (attempt ? '\n\n上一次的返回不完整。请严格按 schema 输出恰好 3 个方向，每个方向的字段都要填满。' : ''),
       schema: TOPICS_SCHEMA,
       mock: () => mockTopics(form),
@@ -191,9 +196,18 @@ export async function handleContent(req, res, body, params) {
   if (!topic) throw new HttpError(400, '请选择一个话题方向');
 
   // 按题材召回素材库里相关的几条——素材是"唯一可信的事实来源"那条规则的弹药
-  const recalled = await recallMaterials(user.id, draft.persona_id,
-    `${draft.subject} ${topic.title} ${topic.angle} ${(topic.outline || []).join(' ')}`);
+  const hint = `${draft.subject} ${topic.title} ${topic.angle} ${(topic.outline || []).join(' ')}`;
+  const recalled = await recallMaterials(user.id, draft.persona_id, hint);
   if (recalled.length) await Materials.markUsed(recalled.map((m) => m.id), user.id);
+  // 「懂作者」的部分：个人档案里相关的经历、这个号的改稿偏好、和题材最像的两篇范文
+  const samples = await styleSamples(draft.persona, user.id, hint);
+  const me = await writerMe(user.id, draft.persona, hint, 'content');
+  const context = {
+    profile: me.profile.map((e) => ({ id: e.id, title: e.title })),
+    samples: samples.map((x) => ({ id: x.id, title: x.title || '未命名样本' })),
+    materials: recalled.map((m) => ({ id: m.id, title: m.title, kind: m.kind })),
+    prefs: me.prefs.length,
+  };
   const contentVariant = await pickVariant('content', sys('content', CONTENT_SYSTEM));
 
   res.writeHead(200, {
@@ -221,7 +235,7 @@ export async function handleContent(req, res, body, params) {
     const content = await streamText({
       meta: { feature: '成稿', userId: user.id, variant: contentVariant.name },
       system: contentVariant.system,
-      user: contentUser(draft, topic, draft.persona, await styleSamples(draft.persona, user.id), recalled),
+      user: contentUser(draft, topic, draft.persona, samples, recalled, me),
       onDelta: (text) => send('delta', { text }),
       mock: () => mockContent(draft, topic),
       signal: controller.signal,
@@ -230,6 +244,8 @@ export async function handleContent(req, res, body, params) {
       chosen: index, title: topic.title, content, status: 'done',
     });
     await Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
+    await Drafts.setContext(draft.id, user.id, context);
+    if (me.profile.length) await Profile.markUsed(me.profile.map((e) => e.id), user.id);
     send('done', { draft: await Drafts.byId(draft.id, user.id) });
   } catch (err) {
     /* 失败或中途关页面：别让草稿停在 writing + 空正文。

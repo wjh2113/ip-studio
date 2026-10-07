@@ -3,6 +3,7 @@ import { Drafts, METRIC_FIELDS, Metrics, Sections } from '../db.js';
 import { chosenTopic } from '../performance.js';
 import { HttpError } from '../auth.js';
 import { json, requireUser } from './common.js';
+import { onPublished } from '../learning.js';
 
 /* ==================================================================
  * 发布数据回填与复盘
@@ -73,7 +74,10 @@ export async function handleMetricsSave(req, res, body, params) {
   } else {
     await Metrics.put(draft.id, user.id, { platform, capturedOn, values, note });
   }
-  json(res, 200, { ...(await syncLatest(draft, user.id, published)), removed: empty });
+  const out = await syncLatest(draft, user.id, published);
+  // 第一次填发布数据 = 这篇发出去了：账号开着自动学习就从它学（加样本、学改稿偏好），后台跑
+  if (out.published_at && !draft.published_at) await onPublished(user.id, draft.id);
+  json(res, 200, { ...out, removed: empty });
 }
 
 export async function handleMetricsHistory(req, res, body, params) {

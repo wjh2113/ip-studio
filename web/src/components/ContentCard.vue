@@ -57,6 +57,18 @@
         </div>
       </div>
 
+      <!-- 这篇成稿时参考了什么：让作者看得出「它懂没懂我、错在哪」 -->
+      <div v-if="usedParts.length && !s.streaming" class="used-line" id="usedLine">
+        <Icon name="user" :size="13" />这篇参考了：{{ usedParts.join(' · ') }}
+        <button type="button" class="link-btn" @click="usedOpen = !usedOpen">{{ usedOpen ? '收起' : '看看是哪些' }}</button>
+        <span v-if="usedOpen" class="used-detail">
+          <span v-if="ctx.profile?.length"><b>个人档案</b>{{ ctx.profile.map((x) => x.title).join('、') }}</span>
+          <span v-if="ctx.samples?.length"><b>相似范文</b>{{ ctx.samples.map((x) => `《${x.title}》`).join('、') }}</span>
+          <span v-if="ctx.materials?.length"><b>素材</b>{{ ctx.materials.map((x) => x.title).join('、') }}</span>
+          <span v-if="ctx.prefs"><b>改稿习惯</b>{{ ctx.prefs }} 条（在账号设定「AI 眼中的我」里看）</span>
+        </span>
+      </div>
+
       <RevPane v-if="s.revOpen" />
       <VersionBars part="tabs" />
 
@@ -207,6 +219,16 @@ const articleHtml = computed(() => {
 
 // 编辑和口播都针对原文；口播模式下切到别的平台版本时只能看那个版本的正文
 const showArticle = computed(() => s.streaming || s.mode === 'read' || (s.mode === 'cue' && Boolean(v.current)));
+
+/* 成稿时参考了什么（服务端在生成成稿时记下的） */
+const ctx = computed(() => s.draft?.context || {});
+const usedOpen = ref(false);
+const usedParts = computed(() => [
+  ctx.value.profile?.length ? `${ctx.value.profile.length} 条个人经历` : '',
+  ctx.value.samples?.length ? `${ctx.value.samples.length} 篇相似范文` : '',
+  ctx.value.materials?.length ? `${ctx.value.materials.length} 条素材` : '',
+  ctx.value.prefs ? `${ctx.value.prefs} 条改稿习惯` : '',
+].filter(Boolean));
 
 /* ---------- 工具条菜单 ---------- */
 const menu = ref('');

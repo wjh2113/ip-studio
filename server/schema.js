@@ -53,6 +53,8 @@ export const personas = pgTable('personas', {
   creator_traits: text('creator_traits').notNull().default(''),
   style_digest: text('style_digest').notNull().default(''),
   style_updated_at: text('style_updated_at').notNull().default(''),
+  auto_learn: integer('auto_learn').notNull().default(1),            // 迁移 8：发布后自动学
+  digest_full_count: integer('digest_full_count').notNull().default(0), // 上次从头梳理档案时有几篇样本
   subject_ideas: text('subject_ideas').notNull().default('[]'),
   hotspot_json: text('hotspot_json').notNull().default('null'),
   created_at: text('created_at').notNull(),
@@ -81,6 +83,9 @@ export const styleSamples = pgTable('style_samples', {
   title: text('title').notNull().default(''),
   content: text('content').notNull(),
   created_at: text('created_at').notNull(),
+  notes: text('notes').notNull().default(''),          // 迁移 8：这一篇单独提炼的写作习惯
+  source: text('source').notNull().default('manual'),  // manual | published | import | quickstart
+  weight: doublePrecision('weight').notNull().default(1),
 }, (t) => [index('idx_samples_persona').on(t.persona_id, t.id)]);
 
 export const drafts = pgTable('drafts', {
@@ -114,6 +119,8 @@ export const drafts = pgTable('drafts', {
   gen_variant: text('gen_variant').notNull().default(''),
   edit_ratio: doublePrecision('edit_ratio'),
   review_json: text('review_json').notNull().default('null'),
+  context_json: text('context_json').notNull().default('null'),   // 迁移 8：成稿时参考了哪些经历、范文、素材、偏好
+  learned_at: text('learned_at').notNull().default(''),           // 迁移 8：从这篇的改稿里学过偏好
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),
 }, (t) => [
@@ -366,3 +373,50 @@ export const syncKeys = pgTable('sync_keys', {
   created_at: text('created_at').notNull(),
   last_used_at: text('last_used_at').notNull().default(''),
 }, (t) => [uniqueIndex('idx_sync_keys_hash').on(t.key_hash), index('idx_sync_keys_user').on(t.user_id)]);
+
+/* 迁移 8：个人档案。跟着用户走（所有账号共用）：工作经历、项目经历、观点。
+ * visibility = background 时只作背景，写作时不写出机构名和能认出来的细节 */
+export const profileEntries = pgTable('profile_entries', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('work'),         // work | project | opinion | other
+  title: text('title').notNull(),
+  period: text('period').notNull().default(''),
+  org: text('org').notNull().default(''),
+  role: text('role').notNull().default(''),
+  body: text('body').notNull().default(''),
+  result: text('result').notNull().default(''),
+  tags: text('tags').notNull().default(''),
+  visibility: text('visibility').notNull().default('public'),
+  source: text('source').notNull().default('manual'),   // manual | resume | article | voice
+  used_count: integer('used_count').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_profile_user').on(t.user_id, t.id)]);
+
+/* 迁移 8：改稿偏好。从「AI 初稿 → 作者定稿」的差别里学到的习惯，按账号存 */
+export const stylePrefs = pgTable('style_prefs', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+  rule: text('rule').notNull(),
+  evidence: text('evidence').notNull().default(''),
+  source_draft_id: integer('source_draft_id'),
+  hits: integer('hits').notNull().default(1),
+  status: text('status').notNull().default('on'),       // on | off
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_prefs_persona').on(t.user_id, t.persona_id, t.id)]);
+
+/* 迁移 8：学习记录。每次学到了什么，「AI 眼中的我」里给作者看；kind = candidates 的是待确认的经历/观点 */
+export const learnLog = pgTable('learn_log', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  persona_id: integer('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),                         // digest | prefs | sample | candidates
+  summary: text('summary').notNull(),
+  detail_json: text('detail_json').notNull().default('null'),
+  status: text('status').notNull().default(''),         // candidates：'' 待处理 / done
+  created_at: text('created_at').notNull(),
+}, (t) => [index('idx_learn_log').on(t.user_id, t.persona_id, t.id)]);
+

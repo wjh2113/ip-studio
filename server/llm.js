@@ -42,6 +42,9 @@ export const FEATURE_TIER = {
   标题候选: 'fast',
   范文拆解: 'quality',
   快速建号: 'quality',
+  经历拆解: 'fast',
+  文章要点: 'fast',
+  改稿偏好: 'fast',
 };
 // 表里没有的功能：按调用方式给默认档；meta.channel === 'quality' 仍可单次指定
 const tierOf = (meta, fallback) => (meta.channel === 'quality' ? 'quality'

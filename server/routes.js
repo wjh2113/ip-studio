@@ -18,6 +18,7 @@
  *   mobile.js     手机 App：今天、内容日历与标记发布、离线收件箱、发布包
  *   benchmarks.js 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架
  *   export.js     同步密钥与成稿导出（Obsidian 插件）
+ *   learning.js   个人档案、AI 眼中的我（语气档案、改稿偏好、学习记录）
  * index.js 和测试仍然从这里 import，不用关心函数具体在哪个文件。 */
 export * from './routes/common.js';
 export * from './routes/auth.js';
@@ -38,3 +39,4 @@ export * from './routes/jobs.js';
 export * from './routes/mobile.js';
 export * from './routes/benchmarks.js';
 export * from './routes/export.js';
+export * from './routes/learning.js';

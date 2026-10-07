@@ -16,6 +16,7 @@ import { snapshot } from '../quota.js';
 import { PLATFORMS, TITLE_LIMITS } from '../prompts.js';
 import { IMAGE_MARK } from '../../shared/place.js';
 import { json, requireUser } from './common.js';
+import { onPublished } from '../learning.js';
 
 /* ---------------- 日期 ---------------- */
 
@@ -166,6 +167,8 @@ export async function handlePublishedSet(req, res, body, params) {
   if (date && !validDay(date)) throw new HttpError(400, '发布日期要写成 YYYY-MM-DD，取消发布传空');
   const out = await Drafts.setPublished(Number(params.id), user.id, date);
   if (!out) throw new HttpError(404, '记录不存在');
+  // 标成已发布：账号开着自动学习就从这篇学（加样本、学改稿偏好），后台跑；重复标不会重复学
+  if (date) await onPublished(user.id, out.id);
   json(res, 200, { draft: { id: out.id, published_at: out.published_at } });
 }
 

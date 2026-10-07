@@ -143,15 +143,16 @@ const personaBlock = (a) => {
   return `—— 账号设定 ——\n${lines.join('\n')}\n\n本次创作必须落在这个账号的定位之内：服务它的目标用户、回应它要解决的问题、延续它一贯的语气；不要写成任何账号都能发的通用内容。`;
 };
 
-const brief = (d, persona, samples) => {
+const brief = (d, persona, samples, me = null) => {
   const p = platformSpec(d.platform);
   const account = personaBlock(persona);
   const creator = creatorBlock(persona);
-  const style = styleBlock(persona, samples);
+  const profile = profileBlock(me?.profile, { compact: me?.compact });
+  const style = styleBlock(persona, samples, me?.prefs);
   const section = sectionBlock(d.section, d.inputs);
   const framework = frameworkBlock(d.framework, d.length);
   const hot = hotspotRefBlock(d.hotspot);
-  const head = [account, creator, style, section, framework].filter(Boolean);
+  const head = [account, creator, profile, style, section, framework].filter(Boolean);
   return [
     head.join('\n\n') || null,
     hot ? `\n${hot}` : null,
@@ -166,7 +167,7 @@ const brief = (d, persona, samples) => {
     d.keywords ? `必须覆盖的关键词/信息点：${d.keywords}` : null,
     `目标篇幅：约 ${d.length} 字`,
     `\n平台写作规范：\n${p.spec}`,
-    (style || section || hot) ? `\n${DATA_NOTE}` : null,
+    (style || section || hot || profile) ? `\n${DATA_NOTE}` : null,
   ].filter((x) => x != null).join('\n');
 };
 
@@ -185,10 +186,10 @@ export const TOPICS_SYSTEM =
 7. 若给出了写法框架，三个方向的内容骨架都按框架的段落顺序展开（骨架条目和框架槽位一一对应），差异仍然体现在切入角度上。
 8. 全部使用简体中文。`;
 
-export const topicsUser = (d, persona, samples, perf = '') =>
+export const topicsUser = (d, persona, samples, perf = '', me = null) =>
 `请基于下面这份创作简报，给出 3 个差异化的选题方向。
 
-${brief(d, persona, samples)}${perf ? `\n\n${perf}` : ''}`;
+${brief(d, persona, samples, me)}${perf ? `\n\n${perf}` : ''}`;
 
 /* 过往发布数据（server/performance.js 算好的），只在样本够时才有。
    数字和标题放在标签里当资料；怎么用写在标签外面，而且明确排在题材契合和差异化之后。 */
@@ -227,10 +228,10 @@ export const CONTENT_SYSTEM =
 7. 若给出了写法框架，按框架的段落顺序和各段篇幅比例组织全文；框架只决定结构，事实仍然只能来自作者素材和简报。
 8. 全部使用简体中文。`;
 
-export const contentUser = (d, topic, persona, samples, materials = []) =>
+export const contentUser = (d, topic, persona, samples, materials = [], me = null) =>
 `按下面选定的方向写出完整成稿。
 
-${brief(d, persona, samples)}
+${brief(d, persona, samples, me)}
 ${materialsBlock(materials) ? `\n${materialsBlock(materials)}\n` : ''}
 
 —— 选定方向 ——
@@ -263,10 +264,11 @@ export const digestUser = (samples) =>
 
 ${samples.map((s, i) => `===== 样本 ${i + 1}${s.title ? `：${s.title}` : ''} =====\n${s.content}`).join('\n\n')}`;
 
-/* 注入创作提示词的语气块：档案为主，附少量片段做语感锚点 */
-const styleBlock = (persona, samples = []) => {
+/* 注入创作提示词的语气块：档案为主，附少量片段做语感锚点；改稿偏好是硬规则，单列 */
+const styleBlock = (persona, samples = [], prefs = []) => {
   const digest = String(persona?.style_digest || '').trim();
-  if (!digest) return null;
+  const rules = prefsBlock(prefs);
+  if (!digest) return rules;
 
   const excerpts = samples.slice(0, 2)
     .map((s, i) => `${i + 1}. ${s.content.slice(0, 220).replace(/\n+/g, ' ')}……`)
@@ -274,9 +276,205 @@ const styleBlock = (persona, samples = []) => {
 
   return `—— 这个号的语气档案（从博主确认过的历史稿件里学到的）——
 ${digest}
-${excerpts ? `\n历史片段（只模仿语感，不要复用其中的内容和例子）：\n${fence('历史片段', excerpts)}` : ''}
-写作时优先服从这份语气档案：它比通用的风格调性更能代表这个号真实的样子。`;
+${excerpts ? `\n和这次题材最接近的历史片段（只模仿语感，不要复用其中的内容和例子）：\n${fence('历史片段', excerpts)}` : ''}
+写作时优先服从这份语气档案：它比通用的风格调性更能代表这个号真实的样子。${rules ? `\n\n${rules}` : ''}`;
 };
+
+/* 改稿偏好：作者改 AI 初稿时反复出现的动作，比语气档案更硬——照做，不是参考 */
+export const prefsBlock = (prefs = []) => {
+  const list = (prefs || []).filter((p) => p?.rule);
+  if (!list.length) return null;
+  return `—— 作者的改稿习惯（从他亲手改过的稿子里学到的，必须遵守）——
+${list.map((p) => `- ${p.rule}`).join('\n')}`;
+};
+
+const KIND_LABEL = { work: '工作经历', project: '项目经历', opinion: '观点', other: '经历' };
+
+/* 个人档案：作者本人的真实经历和观点。和素材一样是「唯一可信的事实来源」；标了只作背景的不点名机构。
+   compact = 只给选题用：标题和结果一行，不展开 */
+export const profileBlock = (entries = [], { compact = false } = {}) => {
+  const list = (entries || []).filter((e) => e?.title);
+  if (!list.length) return null;
+  const line = (e) => {
+    const bg = e.visibility === 'background';
+    const head = [
+      `【${KIND_LABEL[e.kind] || '经历'}】${e.title}`,
+      e.period || null,
+      e.org ? (bg ? '（机构只作背景，不写出名字）' : e.org) : null,
+      e.role || null,
+    ].filter(Boolean).join(' · ');
+    if (compact) return `${head}${e.result ? `：${e.result}` : ''}`;
+    return [head, e.body ? `经过：${e.body}` : null, e.result ? `结果：${e.result}` : null].filter(Boolean).join('\n');
+  };
+  const how = compact
+    ? '选题时优先挑作者凭这些经历写得出来、别人写不出来的角度；不要为了用经历跑出账号定位。'
+    : `这些是作者本人的真实经历和一贯观点，**和素材一样是这篇里可信的事实来源**：
+- 第一人称取材优先从这里来，展开成有场景、有细节的段落；用不上的不要硬塞。
+- **不许编造这里没有的个人经历**，也不许改动里面的时间、数字、职位；数字原样用，不要放大。
+- 标了「只作背景」的，不写出机构名和能认出机构的细节，可以说「我之前在一家××公司」。
+- 观点类条目代表作者的一贯立场，这篇的说法不要和它矛盾。`;
+  return `—— 作者的个人档案（和这次题材相关的几条）——
+${fence('个人档案', list.map(line).join(compact ? '\n' : '\n\n'))}
+${how}`;
+};
+
+/* ==================================================================
+ * 越写越懂：单篇要点、档案合并、改稿偏好、经历拆解
+ * ================================================================== */
+
+/* 一篇文章 → 写作习惯要点 + 文中明确写到的作者经历和观点（给作者确认后存进个人档案） */
+export const SAMPLE_NOTES_SYSTEM =
+`你是一位文字风格分析师，同时帮作者整理他的个人档案。给你作者本人写的一篇文章，做两件事：
+1. style：总结这一篇里能看出的**可复制的写作习惯**，3-6 条，每条具体到可以照做
+   （句子长短与句式、段落节奏、开头和结尾的做法、口头禅与高频词、举例取材、标点与 emoji、明显回避的表达）。
+   只写这篇里确实看得到的，不评价好坏，不复述内容。
+2. experiences / opinions：**作者在文中以第一人称明确写到的**亲身经历、项目，和他明确表达的观点。
+   - 没写到就给空数组，不要推测、不要补全；别人的经历、泛泛的道理不算。
+   - 每条的 quote 必须是文章里**逐字存在**的一句原文（10-60 字），用来核对。
+   - 经历的 period / org / role 文中没写就留空字符串。
+全部使用简体中文。`;
+
+export const SAMPLE_NOTES_SCHEMA = {
+  type: 'object',
+  properties: {
+    style: { type: 'array', maxItems: 6, items: { type: 'string' } },
+    experiences: {
+      type: 'array', maxItems: 5,
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['work', 'project', 'other'] },
+          title: { type: 'string', description: '一句话说清这段经历，20 字内' },
+          period: { type: 'string' }, org: { type: 'string' }, role: { type: 'string' },
+          body: { type: 'string', description: '经过，100 字内' },
+          result: { type: 'string', description: '结果，尽量带文中的数字；没写就留空' },
+          quote: { type: 'string', description: '文中逐字存在的一句原文' },
+        },
+        required: ['kind', 'title', 'period', 'org', 'role', 'body', 'result', 'quote'],
+        additionalProperties: false,
+      },
+    },
+    opinions: {
+      type: 'array', maxItems: 3,
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '观点本身，一句话' },
+          body: { type: 'string', description: '他给的理由，80 字内' },
+          quote: { type: 'string', description: '文中逐字存在的一句原文' },
+        },
+        required: ['title', 'body', 'quote'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['style', 'experiences', 'opinions'],
+  additionalProperties: false,
+};
+
+export const sampleNotesUser = (sample) =>
+`下面是作者本人写的一篇文章${sample.title ? `《${sample.title}》` : ''}。
+${fence('文章', String(sample.content || '').slice(0, 6000))}
+${DATA_NOTE}`;
+
+/* 语气档案的合并与梳理：输入是各篇单独提炼的要点（加上旧档案），不再把原文整篇塞进去 */
+export const DIGEST_MERGE_SYSTEM =
+`你是一位文字风格分析师，负责维护一个博主的「语气档案」——一份让别人照着写也能像他的写作习惯清单。
+给你的是：旧档案（可能为空）和若干篇文章各自提炼的写作习惯要点（每篇标了时间和权重）。
+要求：
+1. 输出新的完整档案：保留仍然成立的条目；被新样本反复推翻的改掉或删掉；在多篇里稳定出现的新习惯加进来。
+2. **以近期为准**：新旧冲突时，按时间更近、权重更高的样本来；只出现过一次的特征不要写进档案。
+3. 覆盖这几方面（看不出稳定规律的方面就不写）：句子长度与句式、段落节奏与排版、开头习惯、结尾习惯、
+   高频词与口头禅、比喻和举例的取材偏好、标点与 emoji 用法、明显回避的表达。
+4. 每条一行，用「- 」开头，具体到可以照做。总共 8-16 条。
+5. 全部使用简体中文，直接输出条目，不要标题和前言。`;
+
+export const digestMergeUser = (prev, items) =>
+`${prev ? `旧档案：\n${fence('旧档案', prev)}\n\n` : '旧档案：（还没有）\n\n'}各篇要点（越往上越新）：
+${fence('各篇要点', items.map((x) => `===== ${String(x.created_at || '').slice(0, 10)} · 权重 ${Number(x.weight || 1).toFixed(1)}${x.title ? ` · ${x.title}` : ''} =====\n${x.notes || `（这篇还没单独提炼，原文开头：）\n${x.excerpt || ''}`}`).join('\n\n'))}
+${DATA_NOTE}`;
+
+/* 改稿偏好：AI 初稿 vs 作者定稿 → 可推广的改稿习惯 */
+export const PREF_LEARN_SYSTEM =
+`你在帮一位博主总结他的「改稿习惯」。给你同一篇稿子的两个版本：AI 写的初稿，和他亲手改过之后的定稿；
+还有之前已经学到的习惯清单。找出他**反复会做、下次写别的稿子也适用**的修改动作，写成规则。
+要求：
+1. 只要可推广的写法习惯（删掉某类套话、换掉某种说法、开头怎么改、段落怎么拆、语气往哪边调、标点和 emoji 怎么用……）。
+   **不要**把这篇特有的事实、内容增删当成规则（比如「把 3 年改成 5 年」不是习惯）。
+2. 每条规则一句话，祈使句，具体到可以照做（例：「不用『赋能』『抓手』『闭环』这类词」「开头不要用反问句」）。
+3. 每条给 before 和 after：分别是初稿和定稿里**逐字存在**的一小段（各 4-60 字），证明这个改动确实发生了。
+4. 和已有习惯说的是同一件事的，不要再写成新规则，把那条的序号放进 reinforce。
+5. 最多 5 条新规则；看不出可推广的习惯就给空数组。全部使用简体中文。`;
+
+export const PREF_LEARN_SCHEMA = {
+  type: 'object',
+  properties: {
+    rules: {
+      type: 'array', maxItems: 5,
+      items: {
+        type: 'object',
+        properties: {
+          rule: { type: 'string' },
+          before: { type: 'string', description: '初稿里逐字存在的一小段' },
+          after: { type: 'string', description: '定稿里逐字存在的一小段' },
+        },
+        required: ['rule', 'before', 'after'],
+        additionalProperties: false,
+      },
+    },
+    reinforce: { type: 'array', items: { type: 'integer' }, description: '被这次修改再次印证的已有习惯序号（从 1 开始）' },
+  },
+  required: ['rules', 'reinforce'],
+  additionalProperties: false,
+};
+
+export const prefLearnUser = (generated, final, existing = []) =>
+`已有的改稿习惯：
+${existing.length ? existing.map((p, i) => `${i + 1}. ${p.rule}`).join('\n') : '（还没有）'}
+
+AI 初稿：
+${fence('初稿', String(generated || '').slice(0, 6000))}
+
+作者定稿：
+${fence('定稿', String(final || '').slice(0, 6000))}
+${DATA_NOTE}`;
+
+/* 简历 / 自我介绍 → 一条条经历（不直接存，给作者核对） */
+export const PROFILE_PARSE_SYSTEM =
+`你在帮一位博主整理他的个人档案。给你一段他自己写的简历、自我介绍或经历回顾，拆成一条条经历和观点。
+要求：
+1. 只拆文中**明确写到**的内容，不推测、不补全、不美化；时间、数字、职位照原文。
+2. kind：work 工作经历（一段任职）、project 项目经历（一件具体做成或做砸的事）、opinion 观点、other 其他。
+   一段任职里有几件具体的事，拆成一条 work 加几条 project。
+3. title 一句话说清（20 字内）；body 写经过（150 字内）；result 写结果，尽量带原文里的数字，没写就留空。
+4. 每条的 quote 必须是原文里**逐字存在**的一句（10-60 字），用来核对。
+5. 最多 30 条。全部使用简体中文。`;
+
+export const PROFILE_PARSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    entries: {
+      type: 'array', maxItems: 30,
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['work', 'project', 'opinion', 'other'] },
+          title: { type: 'string' }, period: { type: 'string' }, org: { type: 'string' }, role: { type: 'string' },
+          body: { type: 'string' }, result: { type: 'string' }, quote: { type: 'string' },
+        },
+        required: ['kind', 'title', 'period', 'org', 'role', 'body', 'result', 'quote'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['entries'],
+  additionalProperties: false,
+};
+
+export const profileParseUser = (text) =>
+`下面是作者自己写的经历材料：
+${fence('经历材料', String(text || '').slice(0, 12000))}
+${DATA_NOTE}`;
 
 /* ==================================================================
  * 编辑器里的 AI：划词改写 与 / 唤起续写
@@ -310,17 +508,18 @@ export const ASSIST_SYSTEM =
 5. 不编造具体数据、机构名、他人引语；不确定的事实改成经验性表达。
 6. 除非另有要求，输出 Markdown 正文片段，使用简体中文。`;
 
-const contextBlock = (d, persona, samples) => [
+const contextBlock = (d, persona, samples, me = null) => [
   personaBlock(persona),
   creatorBlock(persona),
-  styleBlock(persona, samples),
+  profileBlock(me?.profile, { compact: true }),
+  styleBlock(persona, samples, me?.prefs),
   `—— 这篇稿子 ——\n题材：${d.subject}\n发布平台：${platformSpec(d.platform).label}\n风格调性：${d.tone}${d.title ? `\n标题：${d.title}` : ''}`,
   `平台写作规范：\n${platformSpec(d.platform).spec}`,
 ].filter(Boolean).join('\n\n');
 
 /* 划词改写 */
-export const assistUser = (d, persona, samples, { instruction, selection, before, after }) =>
-`${contextBlock(d, persona, samples)}
+export const assistUser = (d, persona, samples, { instruction, selection, before, after }, me = null) =>
+`${contextBlock(d, persona, samples, me)}
 
 —— 选中的这段 ——
 ${selection}
@@ -336,8 +535,8 @@ ${instruction}
 ${selection.length < 40 ? `\n注意：选区只有 ${selection.length} 个字，是一个片段而不是完整段落。输出也必须是同一量级的片段，不要扩展成整段或整节。` : ''}`;
 
 /* / 唤起的就地续写 */
-export const composeUser = (d, persona, samples, { instruction, before, after }) =>
-`${contextBlock(d, persona, samples)}
+export const composeUser = (d, persona, samples, { instruction, before, after }, me = null) =>
+`${contextBlock(d, persona, samples, me)}
 
 —— 光标前面已经写好的内容 ——
 ${before || '（光标在文章最开头）'}
