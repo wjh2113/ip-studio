@@ -536,6 +536,19 @@ test('成稿导出：只给已成稿的、插图放回原位、多平台版本�
   assert.equal((await k.call('GET', '/api/export/images/..%2F..%2Fsecret.png')).status, 400);
 });
 
+test('视频号：平台列表里有，能建视频号账号、出方向，发布包标「视频号」', async () => {
+  const meta = await app.call('GET', '/api/meta');
+  assert.ok(meta.data.platforms.some((p) => p.key === 'shipinhao' && p.label === '视频号'));
+  const persona = await app.call('POST', '/api/personas', { name: '视频号测试号', platform: 'shipinhao' });
+  assert.equal(persona.data.persona.platform, 'shipinhao');
+  const t = await app.call('POST', '/api/drafts/topics', { subject: '上小学前的准备', platform: 'shipinhao', tone: '真诚共情', length: 900, persona_id: persona.data.persona.id });
+  assert.equal(t.status, 200, t.text);
+  assert.equal(t.data.draft.platform, 'shipinhao');
+  await D.Drafts.saveContent(t.data.draft.id, uid, '【口播】孩子上小学前，先把作息调过来。');
+  const pkg = await app.call('GET', `/api/drafts/${t.data.draft.id}/package`);
+  assert.equal(pkg.data.platforms[0].label, '视频号');
+});
+
 test('停服务', { timeout: 40_000 }, async () => {
   site?.close();
   const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)));

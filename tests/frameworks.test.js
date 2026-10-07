@@ -44,6 +44,17 @@ test('推荐：别的平台专用的不推，本平台专用和场景命中的�
   assert.ok(picks.every((f) => !f.platforms.length || f.platforms.includes('xiaohongshu')));
 });
 
+test('视频号：平台规范在，推荐时视频号专用框架排第一，短视频口播框架也能用', async () => {
+  assert.equal(PLATFORMS.shipinhao.label, '视频号');
+  assert.match(PLATFORMS.shipinhao.spec, /【口播】【画面】【字幕】/);
+  const list = BUILTIN_FRAMEWORKS.map((f) => ({ ...f, builtin: true, used_count: 0 }));
+  const picks = recommendFrameworks(list, { platform: 'shipinhao', subject: '孩子上小学前的经验' }, 5);
+  assert.equal(picks[0].key, 'b:sph-view');
+  assert.ok(picks.some((f) => f.key === 'b:dy-hook-3' || f.key === 'b:dy-story'));
+  assert.ok(picks.every((f) => !f.platforms.length || f.platforms.includes('shipinhao')));
+  assert.ok(!recommendFrameworks(list, { platform: 'douyin' }, 50).some((f) => f.key === 'b:sph-view'), '视频号专用框架不推给抖音');
+});
+
 test('框架块：按目标字数分配每段篇幅，拼进选题和成稿提示词', async () => {
   const fw = frameworkSnapshot(BUILTIN_FRAMEWORKS.find((f) => f.key === 'b:scqa'));
   const block = frameworkBlock(fw, 1000);
