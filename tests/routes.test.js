@@ -215,6 +215,23 @@ test('口播两版：公众号原文朗读版 + 视频号口播版；逐段改�
   r = await api.call('POST', `/api/drafts/${draftId}/cues`, {});
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.cues.mode, 'read');
+
+  // 抖音、B 站版本也能各自标口播、上传录音（录音标题带上是哪一版）
+  for (const [ver, name] of [['douyin', '抖音版'], ['bilibili', 'B 站版']]) {
+    r = await api.call('POST', `/api/drafts/${draftId}/variants`, { platform: ver });
+    assert.equal(r.status, 200, r.text);
+    r = await api.call('POST', `/api/drafts/${draftId}/cues`, { version: ver });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.cues.mode, 'video');
+    assert.ok(r.data.cues.cues.length > 0);
+    assert.ok(r.data.cues.cues.every((c) => !c.quote.startsWith('【')), '分栏标注混进了要念的词');
+    const audio = new Uint8Array(2048).fill(2);
+    r = await api.call('POST', `/api/drafts/${draftId}/speaks?version=${ver}`, audio, { 'content-type': 'audio/webm', 'x-filename': 'take.webm' });
+    assert.equal(r.status, 200, r.text);
+    assert.ok(r.data.speak.title.endsWith(`（${name}）`), r.data.speak.title);
+  }
+  d = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  assert.ok(d.variants.douyin.cues && d.variants.bilibili.cues && d.variants.shipinhao.cues);
 });
 
 test('口播：上传录音（异步有任务号，同步等到总评），语音测评', async () => {

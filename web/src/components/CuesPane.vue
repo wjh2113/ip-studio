@@ -1,10 +1,10 @@
 <template>
   <div class="cues" id="cuesPane">
     <!-- 口播模式：上面是整体基调和逐段提示，下面是这篇的口播记录 -->
-    <!-- 几版口播：公众号这类文章有「朗读版」（原文）和「视频号口播版」（视频号版本）两版 -->
+    <!-- 几版口播：原文一版（公众号这类文章是「朗读版」），视频号 / 抖音 / B 站版本各一版 -->
     <div v-if="sp.tracks.length > 1" class="cue-tracks" id="cueTracks" role="tablist">
       <button v-for="t in sp.tracks" :key="t.key" type="button" role="tab" :data-track="t.key || 'main'"
-        :class="{ on: sp.version === t.key }" :aria-selected="sp.version === t.key" @click="sp.version = t.key">
+        :class="{ on: sp.version === t.key }" :aria-selected="sp.version === t.key" @click="pickTrack(t)">
         <b>{{ t.label }}</b><span>{{ t.cues ? `${t.cues.cues.length} 段` : (t.exists ? '还没标口播' : '还没生成') }}</span>
       </button>
     </div>
@@ -34,7 +34,7 @@
           <button v-if="c" class="btn ghost small" id="copyCuesBtn" @click="sp.copyCues()">复制口播稿</button>
         </div>
         <span class="grow"></span>
-        <BusyBtn class="btn primary small" id="cuesRunBtn" :busy="sp.cuesRunning" @click="regen">{{ c ? '重新生成' : (sp.version && !sp.track?.exists ? '生成视频号口播' : '生成口播提示') }}</BusyBtn>
+        <BusyBtn class="btn primary small" id="cuesRunBtn" :busy="sp.cuesRunning" @click="regen">{{ c ? '重新生成' : (sp.version && !sp.track?.exists ? `生成${sp.track?.label || '视频号口播版'}` : '生成口播提示') }}</BusyBtn>
       </div>
     </div>
     <div class="cue-list" id="cueList">
@@ -99,11 +99,18 @@ import SpeakReview from './SpeakReview.vue';
 import { useStudioStore } from '../stores/studio.js';
 import { useSpeakStore } from '../stores/speak.js';
 import { usePrompterStore } from '../stores/prompter.js';
+import { useVersionsStore } from '../stores/versions.js';
 import { highlightStress, stamp } from '../lib/text.js';
 import { toast } from '../lib/feedback.js';
 
 const s = useStudioStore();
 const sp = useSpeakStore();
+const ver = useVersionsStore();
+/* 切口播版本：上面的版本栏也跟着切过去（还没生成的视频号版除外），正文和口播看的是同一版 */
+function pickTrack(t) {
+  sp.version = t.key;
+  if (ver.tabs.length && (!t.key || t.exists)) ver.switchTo(t.key);
+}
 const prompter = usePrompterStore();
 const file = ref(null);
 

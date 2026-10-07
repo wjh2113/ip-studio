@@ -15,6 +15,7 @@ import { JOB_WAIT_MS, json, requireUser, sys, wantsAsync, withRetry } from './co
  * 公众号这类给人看的文章有两版口播：原文的「朗读版」（配音频、念全文），和视频号版本的「视频号口播」。
  * 原文本身就是短视频脚本（抖音 / 视频号 / B 站）的，只有原文这一版。 */
 export const VIDEO_PLATFORMS = ['douyin', 'shipinhao', 'bilibili'];
+const TRACK_NAME = { douyin: '抖音版', shipinhao: '视频号版', bilibili: 'B 站版' };
 
 /* 这一版要念的稿子和它现在的口播提示 */
 export function cueTrack(draft, version) {
@@ -40,8 +41,13 @@ async function saveTrackCues(draft, userId, track, cues, text = null) {
 const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 
 /* 一条提示 → 能存的样子；quote 对不上正文的丢掉，重读词必须在这一段里 */
+/* 脚本里的分栏标注：【口播】后面才是要念的；【画面】【字幕】这些不念 */
+const SPOKEN_TAG = /^\s*【(口播|台词|旁白)】\s*/;
+const SILENT_TAG = /^\s*【(画面|画面提示|字幕|转场|镜头|BGM|音效)】/i;
+
 function cleanCue(c, text) {
-  const quote = String(c?.quote || '');
+  const raw = String(c?.quote || '');
+  const quote = SILENT_TAG.test(raw) ? '' : raw.replace(SPOKEN_TAG, '');
   const stress = (Array.isArray(c?.stress) ? c.stress : String(c?.stress || '').split(/[、,，\s]+/))
     .map((w) => String(w).trim())
     .filter((w) => w && quote.includes(w))
@@ -192,7 +198,7 @@ export async function handleSpeakCreate(req, res, file, params, url) {
   const row = await Speaks.create({
     userId: user.id,
     draftId: draft.id,
-    title: `${draft.title || draft.subject || '未命名'}${track.version ? `（${track.platform === 'shipinhao' ? '视频号版' : track.platform}）` : ''}`,
+    title: `${draft.title || draft.subject || '未命名'}${track.version ? `（${TRACK_NAME[track.platform] || track.platform}）` : ''}`,
     script: text,
     cues: track.cues,
     mime: file.mime,

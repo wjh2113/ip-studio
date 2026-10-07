@@ -1275,6 +1275,9 @@ export const cuesUser = (draft, persona, text, { mode = 'video' } = {}) => {
     mode === 'read'
       ? `—— 这一版的用途：朗读 ——\n这是一篇给人看的${platformSpec(draft.platform).label}文章，作者要原样念出来（配朗读音频，或念全文的视频），不是短视频口播。\n按朗读文章的节奏标：句子长就标清楚在哪换气、哪里放慢；重读少而准；表情和动作基本不需要，留空。`
       : '',
+    /【(画面|字幕|转场|画面提示)】/.test(text)
+      ? '—— 稿子里的分栏标注 ——\n稿子里有【画面】【字幕】【转场】这类拍摄标注：只给要念出来的话标（【口播】后面的句子），quote 里不要带标注本身和画面、字幕说明。'
+      : '',
   ].filter(Boolean).join('\n\n');
 
   return `${context}

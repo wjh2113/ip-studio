@@ -29,10 +29,10 @@
               <div v-if="menu === 'confirm'" class="menu" id="confirmMenu">
                 <div class="menu-head">这稿定了，接下来</div>
                 <button v-for="a in CONFIRM.slice(0, 5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-                  :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
+                  :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
                 <hr>
                 <button v-for="a in CONFIRM.slice(5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-                  :title="actDisabled(a.act) && a.act !== 'archive' ? '这几项都针对原文，先切回原文版本' : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
+                  :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
               </div>
             </div>
             <div class="menu-wrap">
@@ -78,7 +78,7 @@
         :value="s.draft?.content || ''" @input="onEditorInput" @keydown="onEditorKeydown" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
         @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
 
-      <CuesPane v-if="s.mode === 'cue' && !v.current" />
+      <CuesPane v-if="s.mode === 'cue' && cueOk" />
 
       <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」、语音改稿 -->
       <div v-if="s.mode === 'edit'" class="editor-bar" id="editorBar">
@@ -142,8 +142,9 @@
       <WorkPanel title="口播" icon="mic" :badge="cueBadge">
         <p class="wp-text">{{ cueText }}</p>
         <div class="wp-acts">
-          <button v-if="s.draft?.cues" class="btn ghost small" type="button" data-side="prompter" @click="openPrompter">提词器</button>
-          <button class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || Boolean(v.current)" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : s.draft?.cues ? '进入口播' : '生成口播提示' }}</button>
+          <button v-if="panelTrack?.cues" class="btn ghost small" type="button" data-side="prompter" @click="openPrompter">提词器</button>
+          <button v-if="panelTrack?.cues" class="btn ghost small" type="button" data-side="copyCues" @click="copyPanelCues">复制口播稿</button>
+          <button class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || !cueOk" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : panelTrack?.cues ? '进入口播' : '生成口播提示' }}</button>
         </div>
       </WorkPanel>
     </aside>
@@ -180,14 +181,20 @@ import { caretFromPoint, caretRect } from '../lib/caret.js';
 import { anyLayerOpen } from '../lib/escape.js';
 
 const layout = useLayoutStore();
-/* 口播面板：公众号这类文章有朗读版和视频号口播版两版，标出几版已经有提示 */
+/* 口播面板：原文一版，视频号 / 抖音 / B 站版本各一版；标出几版已经有提示 */
 const cueBadge = computed(() => {
-  const done = useSpeakStore().tracks.filter((t) => t.cues);
-  return done.length ? done.map((t) => t.label.replace(/口播|版/g, '')).join(' · ') : '';
+  const done = sp.tracks.filter((t) => t.cues);
+  return done.length ? done.map((t) => t.label.replace(/口播|版/g, '').trim()).join(' · ') : '';
 });
+/* 正在看的这个版本能不能做口播：原文能；平台版本里只有视频号、抖音、B 站能（小红书、知乎这些是给人看的） */
+const cueOk = computed(() => !v.current || sp.hasTrack(v.current));
+/* 右栏口播面板按哪一版：口播模式下跟口播区，否则跟版本栏正在看的那一版 */
+const panelKey = computed(() => (s.mode === 'cue' ? sp.version : (cueOk.value ? v.current : '')));
+const panelTrack = computed(() => sp.tracks.find((t) => t.key === panelKey.value) || null);
 const cueText = computed(() => {
-  const ts = useSpeakStore().tracks;
-  if (ts.length > 1) return '两版口播：原文朗读版（照着文章念），视频号口播版（改写成 1～3 分钟的脚本）。都能逐段改词和提示。';
+  if (v.current && !cueOk.value) return `${v.label}版是给人看的，不做口播。切回原文，或者切到视频号、抖音、B 站版本。`;
+  if (v.current && s.mode !== 'cue') return `正在看${v.label}版：口播提示、提词器、复制口播稿都按这一版。`;
+  if (sp.tracks.length > 1) return `${sp.tracks.length} 版口播：${sp.tracks.map((t) => t.label).join('、')}。在口播区上方切换，都能逐段改词和提示。`;
   return s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了，可以逐段改。' : '把成稿切成段、标好语气，配合提词器照着念。';
 });
 const RAIL = [
@@ -199,6 +206,9 @@ const brief = useBriefStore();
 const ed = useEditorStore();
 const v = useVersionsStore();
 const review = useReviewStore();
+const sp = useSpeakStore();
+/* 口播模式下在版本栏切到视频平台的版本：口播区跟着切到那一版 */
+watch(() => v.current, (key) => { if (s.mode === 'cue' && cueOk.value) sp.version = key || ''; });
 
 /* 右栏面板标题旁的小结：检查出几条、配图出了几张 */
 const reviewBadge = computed(() => {
@@ -215,7 +225,12 @@ const illusBadge = computed(() => {
 });
 
 function openPrompter() {
+  sp.version = panelKey.value;
   usePrompterStore().open();
+}
+function copyPanelCues() {
+  sp.version = panelKey.value;
+  sp.copyCues();
 }
 
 const sentinel = ref(null);
@@ -248,8 +263,8 @@ const articleHtml = computed(() => {
   return v.html;
 });
 
-// 编辑和口播都针对原文；口播模式下切到别的平台版本时只能看那个版本的正文
-const showArticle = computed(() => s.streaming || s.mode === 'read' || (s.mode === 'cue' && Boolean(v.current)));
+// 编辑针对原文；口播模式下切到不做口播的平台版本（小红书、知乎这些）时只看那个版本的正文
+const showArticle = computed(() => s.streaming || s.mode === 'read' || (s.mode === 'cue' && !cueOk.value));
 
 /* 成稿时参考了什么（服务端在生成成稿时记下的） */
 const ctx = computed(() => s.draft?.context || {});
@@ -266,16 +281,17 @@ const menu = ref('');
 const toggleMenu = (m) => { menu.value = menu.value === m ? '' : m; };
 const closeMenu = () => { menu.value = ''; };
 
-/* 口播、标题、多平台、学习、检查都针对原文：看别的平台版本时灰掉，并说明为什么 */
+/* 标题、多平台、学习、检查都针对原文：看别的平台版本时灰掉。口播例外：视频号、抖音、B 站版本也能做 */
 function actDisabled(act) {
   if (act === 'archive') return Boolean(s.draft?.archived_at);
-  return ['cues', 'multi', 'learn', 'review', 'titles'].includes(act) && Boolean(v.current);
+  if (act === 'cues') return !cueOk.value;
+  return ['multi', 'learn', 'review', 'titles'].includes(act) && Boolean(v.current);
 }
 
 async function confirmAct(act) {
   if (actDisabled(act)) return;
   closeMenu();
-  if (act === 'cues') { ed.setMode('cue'); if (!s.draft?.cues) useSpeakStore().runCues(); return; }
+  if (act === 'cues') { sp.version = v.current || ''; ed.setMode('cue'); if (!sp.cues) sp.runCues(); return; }
   if (act === 'multi') { v.openMulti(); return; }
   if (act === 'illus') { v.toggleIllus(); return; }
   if (act === 'learn') { useAccountStore().learn(s.draft, { beforeSave: () => ed.flushSave() }); return; }

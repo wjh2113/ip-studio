@@ -60,6 +60,28 @@ await step('两版口播：切到视频号口播版生成；逐段改语气和�
   return `${v.cues.cues.length} 段`;
 });
 
+await step('抖音版本：版本栏切过去也有口播、提词器、复制口播稿', async () => {
+  await page.click('#workSide [data-side="multi"]');
+  await page.waitForSelector('#multiPick');
+  for (const box of await page.$$('#multiPick input')) await box.setChecked(false);
+  await page.check('#multiPick input[value="douyin"]');
+  await page.click('#multiRunBtn');
+  await page.waitForSelector('#verTabs [data-ver="douyin"]', { timeout: 20000 });
+  await page.click('#verTabs [data-ver="douyin"]');
+  // 口播模式下切到抖音版：口播区跟着切过去，可以直接生成
+  await page.waitForSelector('#cueTracks [data-track="douyin"].on');
+  await page.click('#cuesRunBtn');
+  await page.waitForSelector('#cueList [data-cue="0"]', { timeout: 20000 });
+  await page.waitForSelector('#prompterBtn');
+  await page.waitForSelector('#copyCuesBtn');
+  // 右栏口播面板也有提词器和复制口播稿
+  await page.waitForSelector('#workSide [data-side="prompter"]');
+  await page.waitForSelector('#workSide [data-side="copyCues"]');
+  await page.click('#verTabs [data-ver=""]');
+  await page.waitForSelector('#cueTracks [data-track="main"].on');
+  return `抖音 ${await page.$$eval('#cueList [data-cue]', (n) => n.length)} 段`;
+});
+
 await step('顶栏切到口播页，创作区藏起来', async () => {
   await page.click('#viewNav [data-view="speak"]');
   await page.waitForSelector('#speakView:not(.hidden)');

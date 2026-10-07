@@ -28,9 +28,16 @@ export const useSpeakStore = defineStore('speak', () => {
   const cuesRunning = ref(false);
   const cuesError = ref('');
 
-  /* 口播有几版：原文一版；原文是给人看的文章（公众号、知乎、小红书、微博）时，再加一版「视频号口播」——
-     它就是多平台里的视频号版本，口播提示存在那个版本上。version '' = 原文 */
+  /* 口播有几版：原文一版；多平台里每个视频平台的版本（视频号、抖音、B 站）各一版，口播提示存在那个版本上。
+     原文是给人看的文章（公众号、知乎、小红书、微博）而还没出视频号版本时，也先挂一个「视频号口播版」，
+     点生成会先改写出视频号版本。version '' = 原文 */
   const VIDEO = ['douyin', 'shipinhao', 'bilibili'];
+  const TRACK_LABEL = { shipinhao: '视频号口播版', douyin: '抖音口播版', bilibili: 'B 站口播版' };
+  const TRACK_HINT = {
+    shipinhao: '视频号版本：1～3 分钟、能直接念的脚本（事实不变）',
+    douyin: '抖音版本：开头 3 秒抓人、短句快节奏的口播脚本',
+    bilibili: 'B 站版本：信息密度高一些、可以讲得更完整',
+  };
   const version = ref('');
   const tracks = computed(() => {
     const d = s().draft;
@@ -38,12 +45,17 @@ export const useSpeakStore = defineStore('speak', () => {
     const label = s().platformLabel(d.platform);
     const isVideo = VIDEO.includes(d.platform);
     const list = [{ key: '', label: isVideo ? `${label}口播` : `${label}朗读版`, hint: isVideo ? '照着原文念' : '原样念这篇文章，配朗读音频或念全文的视频', cues: d.cues || null, exists: true }];
-    if (!isVideo) {
-      const v = d.variants?.shipinhao;
-      list.push({ key: 'shipinhao', label: '视频号口播版', hint: '改写成 1～3 分钟、能直接念的视频号脚本（事实不变），再标口播', cues: v?.cues || null, exists: Boolean(v?.content) });
+    for (const k of ['shipinhao', 'douyin', 'bilibili']) {
+      if (k === d.platform) continue;
+      const v = d.variants?.[k];
+      const exists = Boolean(v?.content);
+      if (!exists && !(k === 'shipinhao' && !isVideo)) continue;
+      list.push({ key: k, label: TRACK_LABEL[k], hint: exists ? TRACK_HINT[k] : '先改写成 1～3 分钟、能直接念的视频号脚本（事实不变），再标口播', cues: v?.cues || null, exists });
     }
     return list;
   });
+  /* 某个版本能不能做口播（原文总能；平台版本要是视频平台） */
+  const hasTrack = (key) => tracks.value.some((t) => t.key === (key || ''));
   const track = computed(() => tracks.value.find((t) => t.key === version.value) || tracks.value[0] || null);
   const cues = computed(() => track.value?.cues || null);
   /* 这一版要念的稿子 */
@@ -414,7 +426,7 @@ export const useSpeakStore = defineStore('speak', () => {
   });
 
   return {
-    cues, cuesRunning, cuesError, runCues, copyCues, version, tracks, track, trackText, saveCue, saveOverall, cueSaving,
+    cues, cuesRunning, cuesError, runCues, copyCues, version, tracks, track, trackText, hasTrack, saveCue, saveOverall, cueSaving,
     list, history, orphan, uploading, loadDraftSpeaks, loadHistory, submitTake,
     isChecking, runCheck, retry, retrying, remove, toggleOpen, openRecord, reset,
     pageTab, todo, readyCues, detail, pageLoading, pageError, q, loadPage, selectSpeak, practiceDraft,
