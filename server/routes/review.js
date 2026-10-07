@@ -5,6 +5,7 @@ import { generateJSON } from '../llm.js';
 import { platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser } from '../prompts.js';
 import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { mergeLexicon } from '../lexicon.js';
+import { mergeAiTone, scanAiTone } from '../aitone.js';
 import { copyOverlap } from '../frameworks.js';
 
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */
@@ -27,6 +28,17 @@ export async function handleReview(req, res, body, params) {
   json(res, 200, { review });
 }
 
+/* AI 味扫描：只跑规则，不调模型、不花额度，随时可以点。POST /api/drafts/:id/ai-tone */
+export async function handleAiTone(req, res, body, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const text = String(body?.content ?? draft.content ?? '');
+  if (!text.trim()) throw new HttpError(400, '还没有正文可扫');
+  if (text.length > 20000) throw new HttpError(400, '正文过长，请分段扫');
+  json(res, 200, { flags: scanAiTone(text) });
+}
+
 async function reviewText(draft, text, persona, samples, meta = {}) {
   const data = await withRetry(async () => {
     const out = await generateJSON({
@@ -40,7 +52,8 @@ async function reviewText(draft, text, persona, samples, meta = {}) {
     return out;
   }, '检查失败，请再试一次');
   // 模型结果之外，再过一遍本地违禁词库：确定性、不花钱、不漏报
-  const review = mergeLexicon(cleanReview(data, text), text, { platform: draft?.platform });
+  // 再过一遍 AI 味规则（套话、模板连接词、升华结尾……），只提示不算风险
+  const review = mergeAiTone(mergeLexicon(cleanReview(data, text), text, { platform: draft?.platform }), text);
   return withCopyCheck(review, draft, text, meta.userId);
 }
 

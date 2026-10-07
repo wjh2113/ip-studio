@@ -115,9 +115,14 @@
       </WorkPanel>
       <WorkPanel title="检查结果" icon="shield" :active="review.open" :badge="reviewBadge">
         <ReviewBox />
+        <ToneBox />
         <template v-if="!review.open">
-          <p class="wp-text">错字、通顺、调性与风险，逐条给建议，可一键采纳。</p>
-          <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!s.draft?.content || Boolean(v.current)" @click="review.run()">检查一遍</BusyBtn>
+          <p class="wp-text">错字、通顺、调性与风险，逐条给建议，可一键采纳；顺带标出像 AI 写的地方。</p>
+          <div class="wp-acts">
+            <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!s.draft?.content || Boolean(v.current)" @click="review.run()">检查一遍</BusyBtn>
+            <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!s.draft?.content || Boolean(v.current)"
+              title="只看说法和结构，不调模型、不花点数" @click="review.scanTone()">扫 AI 味</BusyBtn>
+          </div>
         </template>
       </WorkPanel>
       <WorkPanel title="多平台" icon="layers" :active="v.multi.open" :badge="v.tabs.length > 1 ? `${v.tabs.length - 1} 个版本` : ''">
@@ -154,6 +159,7 @@ import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import WorkPanel from './WorkPanel.vue';
 import ReviewBox from './ReviewBox.vue';
+import ToneBox from './ToneBox.vue';
 import VersionBars from './VersionBars.vue';
 import CuesPane from './CuesPane.vue';
 import { IMAGE_MARK } from '../../../shared/place.js';

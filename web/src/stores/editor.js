@@ -27,6 +27,7 @@ export const ASSIST_ACTIONS = [
   { key: 'shorten', label: '缩写' },
   { key: 'example', label: '举个例子' },
   { key: 'simplify', label: '更好懂' },
+  { key: 'humanize', label: '去 AI 味' },
 ];
 
 export const COMPOSE_ACTIONS = [

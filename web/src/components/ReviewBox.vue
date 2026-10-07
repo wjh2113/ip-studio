@@ -15,6 +15,7 @@
           <span class="flag-dim">{{ f.dimension }}</span>
           <span class="flag-level">{{ f.level }}</span>
           <span v-if="f.source === '词库'" class="flag-src" title="本地违禁词库命中：一定出现过，是否违规看语境">词库</span>
+          <span v-if="f.source === '规则'" class="flag-src" title="AI 味规则命中：只是说法像 AI，改不改你定；选中这句用划词菜单「去 AI 味」重写">规则</span>
         </div>
         <p class="flag-what">{{ f.what }}</p>
         <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」<em v-if="!f.locatable">（原文里没精确匹配到，位置仅供参考）</em></p>

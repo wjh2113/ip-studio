@@ -140,7 +140,17 @@ test('划词改写和 / 续写（以前 500：selection.trim is not a function�
   assert.match(r.text, /event: done/);
   r = await api.call('POST', `/api/drafts/${draftId}/assist`, { kind: 'compose', instruction: '补一个例子', before: '前文', after: '' });
   assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: done/);  r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'humanize', selection: '在当今快节奏的时代，备菜至关重要', before: '', after: '' });
+  assert.equal(r.status, 200, r.text);
   assert.match(r.text, /event: done/);
+});
+
+test('AI 味扫描：不调模型，直接回规则命中', async () => {
+  const r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: '在当今快节奏的时代，备菜至关重要。\n\n让我们一起加油，未来可期！' });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.data.flags.some((f) => f.rule === 'cliche-open'));
+  assert.ok(r.data.flags.some((f) => f.rule === 'uplift'));
+  assert.equal((await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: ' ' })).status, 400);
 });
 
 test('配图：排版位有画面提示词，出图走任务；同一张连点只建一个任务', async () => {
