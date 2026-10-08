@@ -178,6 +178,23 @@ test('配图：改过的画面提示词随出图请求带上，存下来并用�
   assert.equal(d.illus.__main__.items[0].prompt, '窗边的一盆绿萝，清晨的光');
 });
 
+test('手改平台版本：PUT 存正文，原文不动；没有的版本 404，空的 400', async () => {
+  let r = await api.call('POST', `/api/drafts/${draftId}/variants`, { platform: 'xiaohongshu' });
+  assert.equal(r.status, 200, r.text);
+  const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  r = await api.call('PUT', `/api/drafts/${draftId}/variants/xiaohongshu`, { content: '手改的小红书版本\n\n第二段' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.variant.content, '手改的小红书版本\n\n第二段');
+  assert.ok(r.data.variant.editedAt);
+  const d = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  assert.equal(d.variants.xiaohongshu.content, '手改的小红书版本\n\n第二段');
+  assert.equal(d.content, before);
+  r = await api.call('PUT', `/api/drafts/${draftId}/variants/zhihu`, { content: 'x' });
+  assert.equal(r.status, 404);
+  r = await api.call('PUT', `/api/drafts/${draftId}/variants/xiaohongshu`, { content: '  ' });
+  assert.equal(r.status, 400);
+});
+
 test('口播两版：公众号原文朗读版 + 视频号口播版；逐段改词和提示', async () => {
   // 还没有视频号版本时不能直接标
   let r = await api.call('POST', `/api/drafts/${draftId}/cues`, { version: 'shipinhao' });

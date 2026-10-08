@@ -188,6 +188,13 @@
 .review-list:empty, .review-flags:empty { display: none; }
 .review-list { max-height: 360px; overflow-y: auto; }
 .review.stale .review-list { opacity: .45; pointer-events: none; }
+.review-again { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel-2); }
+/* 点一条在左边原文定位 */
+.issue.locatable, .flag.locatable, .tone-item.locatable { cursor: pointer; }
+.issue.locatable:hover, .flag.locatable:hover, .tone-item.locatable:hover { background: var(--hover); }
+.issue.gone .issue-diff { opacity: .5; }
+.issue-gone { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--panel-2); color: var(--muted); }
+::highlight(locate) { background-color: rgba(255, 196, 0, .45); color: inherit; }
 .review.stale .review-flags { opacity: .45; }
 .review-flags { border-bottom: 1px solid var(--border); }
 .flag { display: grid; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; border-left: 3px solid var(--border); }

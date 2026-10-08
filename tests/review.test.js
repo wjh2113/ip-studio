@@ -38,3 +38,9 @@ test('flags：丢掉「低」和「先承认符合再转折」的凑数项，保
 test('verdict 缺失时按有无问题推断', async () => {
   assert.equal(cleanReview({ issues: [], flags: [] }, text).verdict, 'ok');
 });
+
+test('定位用的比较：去掉空白和 Markdown 符号再比（渲染后的正文和原文对得上）', async () => {
+  const { squash } = await import('../web/src/lib/locate.js');
+  assert.equal(squash('**先固化**、再僵化，\n最后再优化'), '先固化、再僵化，最后再优化');
+  assert.equal(squash('## 第一层：选场景'), '第一层：选场景');
+});

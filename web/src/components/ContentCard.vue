@@ -75,7 +75,7 @@
       <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
 
       <textarea v-show="s.mode === 'edit'" class="editor" id="editor" ref="editor" spellcheck="false" :class="{ 'mark-over': markOver }"
-        :value="s.draft?.content || ''" @input="onEditorInput" @keydown="onEditorKeydown" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
+        :value="ed.text" @input="onEditorInput" @keydown="onEditorKeydown" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
         @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
 
       <CuesPane v-if="s.mode === 'cue' && cueOk" />
@@ -254,7 +254,7 @@ const title = computed(() => ed.live.title || s.draft?.title || '完整文案');
 const counter = computed(() => {
   if (s.streaming) return ed.live.text ? `${countChars(ed.live.text)} 字 · 生成中` : '生成中…';
   if (ed.live.error) return '';
-  return `${countChars(s.mode === 'edit' ? s.draft?.content : v.text)} 字`;
+  return `${countChars(s.mode === 'edit' ? ed.text : v.text)} 字`;
 });
 
 const articleHtml = computed(() => {
@@ -359,7 +359,8 @@ watch(() => s.mode, async (mode) => {
   autosize();
   editor.value?.focus();
 });
-watch(() => s.draft?.content, () => { if (s.mode === 'edit') nextTick(autosize); });
+// 正文被别处改了、或者版本栏换了一版：重新撑高度
+watch(() => ed.text, () => { if (s.mode === 'edit') nextTick(autosize); });
 
 function onEditorInput(e) {
   ed.onInput(e.target.value, { typing: true });
@@ -386,7 +387,7 @@ function onEditorKeyup(e) {
 
 /* 阅读模式：把渲染文本里的选区反查回 Markdown 原文的偏移。同一句话可能出现多次，用相对位置挑最接近的那处 */
 function locateInRaw(text, range) {
-  const raw = s.draft.content;
+  const raw = ed.text;      // 阅读区显示的是版本栏选中的那一版，划词改写也改那一版
   const hits = [];
   for (let i = raw.indexOf(text); i !== -1; i = raw.indexOf(text, i + 1)) hits.push(i);
   if (!hits.length) return null;
@@ -448,10 +449,14 @@ function insertMark(at) {
   const tail = index < value.length && value[index] !== '\n' ? '\n' : '';
   const chunk = `${pad}${IMAGE_MARK}${tail}`;
   ed.onInput(value.slice(0, index) + chunk + value.slice(index));
+  // 拖进来 / 点一下插入后：光标停在标记后面，页面不跳（focus 默认会把整个框滚到视口里）
+  const top = ta.scrollTop;
   nextTick(() => {
-    ta.focus();
+    ta.focus({ preventScroll: true });
     ta.selectionStart = ta.selectionEnd = index + chunk.length;
     autosize();
+    ta.scrollTop = top;
+    keepCaretVisible();
   });
 }
 

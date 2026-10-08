@@ -1,5 +1,7 @@
 /* 成稿检查：让模型回头看一遍错字、通顺性、调性与风险，逐条采纳。
- * 采纳只替换第一处：同一片段可能在文中出现多次，全替换风险太大。 */
+ * 采纳只替换第一处：同一片段可能在文中出现多次，全替换风险太大。
+ * 采纳是本地改正文，马上生效、马上定位到改过的地方；不再自动整篇重查（要等模型，整张清单还会被置灰），
+ * 剩下的条目照样能点。改得多了想再看一遍，点「再检查一遍」。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
@@ -12,7 +14,8 @@ export const VERDICT_LABEL = { ok: '没发现问题', minor: '有几处小毛病
 export const useReviewStore = defineStore('review', () => {
   const open = ref(false);
   const running = ref(false);
-  const stale = ref(false);          // 采纳后正文变了、新的检查还没回来：先把旧清单置灰
+  const stale = ref(false);          // 重新检查的请求还在路上（手动点「再检查一遍」）
+  const applied = ref(0);            // 这次检查之后采纳了几条：提示可以再查一遍
   const result = ref(null);
   const error = ref('');
   const handled = reactive(new Set());   // 采纳或忽略过的条目
@@ -36,6 +39,7 @@ export const useReviewStore = defineStore('review', () => {
       result.value = review;
       error.value = '';
       handled.clear();
+      applied.value = 0;
       open.value = true;
     } catch (err) {
       open.value = true;
@@ -45,20 +49,18 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  /* 采纳之后重新检测——但不是每采纳一条就查一次（连着点会发好几次模型调用）：
-     停手 2.5 秒才查，中间再点就重新计时 */
-  let recheckTimer = 0;
-  function scheduleRecheck() {
-    clearTimeout(recheckTimer);
+  /* 手动再查一遍：旧清单留着（置灰），新的回来再换 */
+  async function recheck() {
+    if (running.value) return;
     stale.value = true;
-    recheckTimer = setTimeout(async () => {
-      try {
-        await run({ silent: true });
-      } finally {
-        stale.value = false;      // 结果回来了才解封——请求还在飞的时候列表里还是旧数据
-      }
-    }, 2500);
+    try { await run({ silent: true }); } finally { stale.value = false; }
   }
+
+  /* 这一条在原文里还找得到吗（采纳了别的条目、自己改过之后可能对不上了） */
+  const fits = (i) => {
+    const issue = result.value?.issues?.[i];
+    return Boolean(issue?.quote) && String(useStudioStore().draft?.content || '').includes(issue.quote);
+  };
 
   function applyOne(i) {
     const s = useStudioStore();
@@ -67,25 +69,24 @@ export const useReviewStore = defineStore('review', () => {
     handled.add(i);
     const raw = s.draft.content;
     if (!raw.includes(issue.quote)) return null;      // 原文已经改过，这条对不上了
-    useEditorStore().replaceContent(raw.replace(issue.quote, issue.fix));   // 走编辑器，Ctrl+Z 能撤回这次采纳
+    // 检查针对原文（编辑框里可能开着别的版本）；走编辑器，Ctrl+Z 能撤回这次采纳
+    useEditorStore().replaceContent(raw.replace(issue.quote, issue.fix), '');
+    applied.value += 1;
     return true;
   }
 
+  /* 采纳：马上改、马上在左边原文定位到改过的那句 */
   function apply(i) {
     const r = applyOne(i);
     if (r === null) { toast('原文已经改过，这条对不上了'); return; }
     if (!r) return;
-    useEditorStore().markDirty();
-    toast('已采纳');
-    scheduleRecheck();
+    void useEditorStore().locate(result.value.issues[i].fix, { quiet: true }).catch(() => {});
   }
 
   function applyAll() {
     let n = 0;
     (result.value?.issues || []).forEach((_, i) => { if (applyOne(i)) n += 1; });
-    if (n) useEditorStore().markDirty();
     toast(n ? `已采纳 ${n} 处` : '没有可采纳的修改');
-    if (n) scheduleRecheck();
   }
 
   function skip(i) {
@@ -108,14 +109,14 @@ export const useReviewStore = defineStore('review', () => {
   }
 
   function reset() {
-    clearTimeout(recheckTimer);
     Object.assign(tone, { open: false, running: false, flags: null, error: '' });
     open.value = false;
     stale.value = false;
+    applied.value = 0;
     result.value = null;
     error.value = '';
     handled.clear();
   }
 
-  return { open, running, stale, result, error, handled, run, apply, applyAll, skip, reset, tone, scanTone };
+  return { open, running, stale, applied, result, error, handled, fits, run, recheck, apply, applyAll, skip, reset, tone, scanTone };
 });

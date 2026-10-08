@@ -132,6 +132,34 @@ await step('多平台：出一个版本 → 切过去 → 切回原文', async (
   await page.click('#verTabs button[data-ver=""]');
   return `${other}｜看别的版本时口播灰掉=${disabled}`;
 });
+await step('修改：版本栏切到平台版本，编辑框跟着换成那一版，改了存到那一版', async () => {
+  const id = await page.$eval('#history .history-item.active', (n) => n.dataset.id);
+  const ver = await page.$eval('#verTabs button[data-ver]:not([data-ver=""])', (b) => b.dataset.ver);
+  await page.click(`#verTabs button[data-ver="${ver}"]`);
+  await page.click('#editBtn');
+  const got = async () => (await (await page.evaluate((u) => fetch(u).then((r) => r.json()), `/api/drafts/${id}`))).draft;
+  const d0 = await got();
+  if ((await page.inputValue('#editor')) !== d0.variants[ver].content) throw new Error('编辑框不是这个版本的正文');
+  await page.focus('#editor');
+  await page.keyboard.press('End');
+  await page.keyboard.type('（手改）');
+  await page.waitForFunction(() => /已保存/.test(document.body.textContent), null, { timeout: 8000 });
+  const d1 = await got();
+  if (!d1.variants[ver].content.endsWith('（手改）')) throw new Error('改的没存进这个版本');
+  if (d1.content !== d0.content) throw new Error('原文被改了');
+  await page.click('#verTabs button[data-ver=""]');
+  if ((await page.inputValue('#editor')) !== d1.content) throw new Error('切回原文，编辑框没换回来');
+  await page.click('#backReadBtn');
+  return ver;
+});
+await step('检查结果点一条：左边原文定位到那句', async () => {
+  const item = await page.$('#reviewList .issue, #reviewFlags .flag.locatable, #toneBox .tone-item.locatable');
+  if (!item) return '这篇没有可定位的条目';
+  await item.click();
+  await page.waitForTimeout(400);
+  const hit = await page.evaluate(() => (window.CSS?.highlights?.has('locate') ? 'highlight' : (window.getSelection().toString() ? 'selection' : '')));
+  return hit || '（没找到原句，提示已给）';
+});
 await step('导出：复制、下载 Markdown', async () => {
   await page.click('#exportBtn');
   await page.click('#exportMenu [data-fmt="copy"]');

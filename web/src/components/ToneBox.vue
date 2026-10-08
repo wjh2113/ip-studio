@@ -7,12 +7,13 @@
       <button class="icon-btn" id="toneClose" title="收起" @click="r.tone.open = false">×</button>
     </div>
     <p v-if="r.tone.error" class="form-error">{{ r.tone.error }}</p>
-    <div v-for="(f, i) in r.tone.flags || []" :key="i" class="tone-item" :class="`lv-${f.level}`" :data-tone="f.rule">
+    <div v-for="(f, i) in r.tone.flags || []" :key="i" class="tone-item" :class="[`lv-${f.level}`, { locatable: f.quote }]" :data-tone="f.rule"
+      :title="f.quote ? '点一下，在左边原文里定位到这句' : null" @click="f.quote && ed.locate(f.quote)">
       <p class="tone-what">{{ f.what }}</p>
       <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」</p>
       <p class="flag-fix">建议：{{ f.suggestion }}</p>
     </div>
-    <p v-if="r.tone.flags?.length" class="hint tone-tip">改法：进入「修改」，选中那一句，在弹出的菜单里点「去 AI 味」，会按你的语气重写这一段，事实不变。</p>
+    <p v-if="r.tone.flags?.length" class="hint tone-tip">点一条会在左边原文里定位到那句。改法：进入「修改」，选中那一句，在弹出的菜单里点「去 AI 味」，会按你的语气重写这一段，事实不变。</p>
   </div>
 </template>
 
@@ -20,8 +21,10 @@
 /* 成稿区「检查结果」面板里的 AI 味扫描结果。数据在 stores/review.js（tone） */
 import { computed } from 'vue';
 import { useReviewStore } from '../stores/review.js';
+import { useEditorStore } from '../stores/editor.js';
 
 const r = useReviewStore();
+const ed = useEditorStore();
 const head = computed(() => {
   if (r.tone.running) return '正在扫…';
   if (!r.tone.flags) return '';

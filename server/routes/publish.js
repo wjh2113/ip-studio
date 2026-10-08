@@ -116,6 +116,23 @@ export async function handleVariant(req, res, body, params) {
   json(res, 200, { platform: to, variant: variants[to] });
 }
 
+/* 手改某个平台版本：编辑框切到这一版时自动保存。只改正文，其他（口播提示、配图）留着 */
+export async function handleVariantSave(req, res, body, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const key = String(params.platform);
+  const prev = draft.variants?.[key];
+  if (!prev) throw new HttpError(404, '还没有这个平台的版本');
+  const content = String(body?.content ?? '');
+  if (!content.trim()) throw new HttpError(400, '正文不能是空的');
+  if (content.length > 20000) throw new HttpError(400, '正文过长');
+  const variants = { ...(draft.variants || {}) };
+  variants[key] = { ...prev, content, chars: content.length, editedAt: new Date().toISOString() };
+  await Drafts.setVariants(draft.id, user.id, variants);
+  json(res, 200, { platform: key, variant: variants[key] });
+}
+
 export async function handleVariantDelete(req, res, body, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);

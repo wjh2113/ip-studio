@@ -9,10 +9,12 @@
  *   归档、导出（复制 / Markdown / 图文 / Word / PDF）
  * 多平台版本和配图在 versions.js，口播在 speak.js，成稿检查在 review.js。 */
 import { defineStore } from 'pinia';
-import { computed, reactive, ref } from 'vue';
+import { computed, nextTick, reactive, ref } from 'vue';
 import { api, saveBlob, stream } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { esc, markdown, safeName } from '../lib/text.js';
+import { caretRect } from '../lib/caret.js';
+import { locateInArticle, locateInTextarea } from '../lib/locate.js';
 import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
 import { useHistoryStore } from './history.js';
@@ -177,13 +179,49 @@ export const useEditorStore = defineStore('editor', () => {
     if (mode === 'cue') useSpeakStore().loadDraftSpeaks();
   }
 
+  /* ---------- 定位：检查结果、AI 味提示点一下，左边正文滚到那句并高亮 ----------
+     ver：这句话在哪一版里（检查只针对原文，所以默认 ''）。口播模式下正文不在，先回到阅读 */
+  async function locate(quote, { ver = '', quiet = false } = {}) {
+    const st = s();
+    if (!quote || !st.draft || st.streaming) return false;
+    const v = useVersionsStore();
+    if ((v.current || '') !== ver) v.switchTo(ver);
+    if (st.mode === 'cue') setMode('read');
+    await nextTick();
+    await nextTick();
+    const ok = st.mode === 'edit'
+      ? locateInTextarea(document.getElementById('editor'), quote, caretRect)
+      : locateInArticle(document.getElementById('content'), quote);
+    if (!ok && !quiet) toast('正文里没找到这一句，可能已经改过了');
+    return ok;
+  }
+
   /* ---------- 保存 ---------- */
   const save = reactive({ text: '', kind: '' });     // 保存中 / 已保存 / 未保存 / 失败
   let saveTimer = 0;
 
-  function markDirty() {
+  /* 编辑的是哪一版：版本栏选了小红书，编辑框里就是小红书版本，改的也是它。'' = 原文 */
+  const editVer = computed(() => useVersionsStore().current || '');
+  const textOf = (ver) => {
+    const d = s().draft;
+    if (!d) return '';
+    return ver ? String(d.variants?.[ver]?.content ?? '') : String(d.content ?? '');
+  };
+  /* 编辑框里显示的正文 */
+  const text = computed(() => textOf(editVer.value));
+  function setText(ver, value) {
+    const d = s().draft;
+    if (!ver) { d.content = value; return; }
+    const variants = { ...(d.variants || {}) };
+    variants[ver] = { ...(variants[ver] || {}), content: value, chars: value.length };
+    d.variants = variants;
+  }
+  const dirtyVers = new Set();      // 改过还没存的平台版本
+
+  function markDirty(ver = '') {
     const st = s();
-    st.dirty = true;
+    if (ver) dirtyVers.add(ver);
+    else st.dirty = true;
     save.text = '未保存';
     save.kind = 'dirty';
     clearTimeout(saveTimer);
@@ -194,6 +232,7 @@ export const useEditorStore = defineStore('editor', () => {
   async function flushSave(snapshot = false) {
     clearTimeout(saveTimer);
     const st = s();
+    if (st.draft && dirtyVers.size) await flushVariants();
     if (!st.dirty || !st.draft) return;
     const content = st.draft.content;
     const id = st.draft.id;
@@ -222,6 +261,33 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /* 平台版本：只存改过的那几版 */
+  async function flushVariants() {
+    const st = s();
+    const id = st.draft.id;
+    const vers = [...dirtyVers];
+    dirtyVers.clear();
+    save.text = '保存中…';
+    save.kind = '';
+    for (const ver of vers) {
+      const content = textOf(ver);
+      try {
+        const { variant } = await api(`/drafts/${id}/variants/${ver}`, { method: 'PUT', body: { content } });
+        if (st.draft?.id !== id) return;
+        // 存的时候又改了：留着本地新的，再存一次
+        if (textOf(ver) !== content) { markDirty(ver); continue; }
+        st.draft.variants = { ...(st.draft.variants || {}), [ver]: variant };
+      } catch (err) {
+        dirtyVers.add(ver);
+        save.text = `保存失败：${err.message}`;
+        save.kind = 'dirty';
+        toast(`保存失败：${err.message}`);
+        return;
+      }
+    }
+    if (!st.dirty && !dirtyVers.size) { save.text = '已保存'; save.kind = 'saved'; }
+  }
+
   /* ---------- 撤销 / 重做（Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y） ----------
      浏览器自带的撤销只认键盘敲的字：正文一被脚本改过（AI 改写、采纳检查、插图片标记、语音改稿），
      自带的撤销记录就断了，Ctrl+Z 什么都不做。所以撤销自己记：每次改正文前存一份「改之前」，
@@ -230,9 +296,11 @@ export const useEditorStore = defineStore('editor', () => {
   const TYPE_GAP = 1200;
   const hist = reactive({ id: null, undo: [], redo: [] });
   let typingAt = 0;
+  // 每一版各有自己的撤销记录：在小红书版里 Ctrl+Z 不会撤到原文上
+  const histKey = () => (s().draft ? `${s().draft.id}:${editVer.value}` : null);
 
   function resetHistory() {
-    hist.id = s().draft?.id ?? null;
+    hist.id = histKey();
     hist.undo = [];
     hist.redo = [];
     typingAt = 0;
@@ -240,7 +308,8 @@ export const useEditorStore = defineStore('editor', () => {
 
   function record(before, typing) {
     const st = s();
-    if (hist.id !== st.draft?.id) resetHistory();
+    if (!st.draft) return;
+    if (hist.id !== histKey()) resetHistory();
     const now = Date.now();
     if (typing && typingAt && now - typingAt < TYPE_GAP) { typingAt = now; return; }   // 同一段连续输入
     hist.undo.push(before);
@@ -249,20 +318,21 @@ export const useEditorStore = defineStore('editor', () => {
     typingAt = typing ? now : 0;
   }
 
-  const canUndo = computed(() => hist.id === s().draft?.id && hist.undo.length > 0);
-  const canRedo = computed(() => hist.id === s().draft?.id && hist.redo.length > 0);
+  const canUndo = computed(() => hist.id === histKey() && hist.undo.length > 0);
+  const canRedo = computed(() => hist.id === histKey() && hist.redo.length > 0);
 
   /* 回到上一步 / 下一步；返回 { before, after } 给编辑框放光标，没得撤就返回 null */
   function step(from, to) {
     const st = s();
-    if (!st.draft || hist.id !== st.draft.id || !from.length || st.streaming) return null;
-    const before = st.draft.content;
+    if (!st.draft || hist.id !== histKey() || !from.length || st.streaming) return null;
+    const ver = editVer.value;
+    const before = textOf(ver);
     const after = from.pop();
     to.push(before);
     typingAt = 0;
     voiceNote.value = null;
-    st.draft.content = after;
-    markDirty();
+    setText(ver, after);
+    markDirty(ver);
     return { before, after };
   }
   const undo = () => step(hist.undo, hist.redo);
@@ -271,20 +341,22 @@ export const useEditorStore = defineStore('editor', () => {
   /* 编辑框里改了字。typing = 键盘输入（连续的合成一步撤销）；其余（插标记、删斜杠、语音改稿）各算一步 */
   function onInput(value, { voice = false, typing = false } = {}) {
     const st = s();
-    if (!st.draft || value === st.draft.content) return;
+    const ver = editVer.value;
+    if (!st.draft || value === textOf(ver)) return;
     if (!voice) voiceNote.value = null;          // 手动改过了，语音改稿的「撤销」就不作数了
-    record(st.draft.content, typing);
-    st.draft.content = value;
-    markDirty();
+    record(textOf(ver), typing);
+    setText(ver, value);
+    markDirty(ver);
   }
 
-  /* 改写、采纳检查意见这类直接改正文的：单独算一步，Ctrl+Z 能撤回 */
-  function replaceContent(next) {
+  /* 改写、采纳检查意见这类直接改正文的：单独算一步，Ctrl+Z 能撤回。
+     ver 不给 = 编辑框正在编辑的那一版；检查结果只针对原文，传 '' */
+  function replaceContent(next, ver = editVer.value) {
     const st = s();
-    if (!st.draft || next === st.draft.content) return;
-    record(st.draft.content, false);
-    st.draft.content = next;
-    markDirty();
+    if (!st.draft || next === textOf(ver)) return;
+    if (ver === editVer.value) record(textOf(ver), false);
+    setText(ver, next);
+    markDirty(ver);
   }
 
   /* ---------- 划词菜单与 / 菜单（位置由组件量好放进来） ---------- */
@@ -300,7 +372,7 @@ export const useEditorStore = defineStore('editor', () => {
     const a = reactive({ ...req, label, text: '', done: false, error: '' });
     assist.value = a;
     const { start, end, text } = req.target;
-    const raw = draft.content;
+    const raw = textOf(editVer.value);
     const body = {
       kind: req.kind === 'compose' ? 'compose' : 'rewrite',
       action: req.action,
@@ -337,7 +409,7 @@ export const useEditorStore = defineStore('editor', () => {
     const st = s();
     if (!a?.text || !st.draft) return;
     const { start, end } = a.target;
-    const raw = st.draft.content;
+    const raw = textOf(editVer.value);
     const next = how === 'replace' && a.kind !== 'compose'
       ? raw.slice(0, start) + a.text + raw.slice(end)
       : insertAt(raw, a.kind === 'compose' ? start : end, a.text);
@@ -394,6 +466,7 @@ export const useEditorStore = defineStore('editor', () => {
     const st = s();
     if (!st.draft?.content?.trim()) { toast('还没有正文'); return; }
     if (rec && rec.state === 'recording') { rec.stop(); return; }
+    if (editVer.value) { toast('语音改稿只改原文：先在版本栏切回原文'); return; }
     let mediaStream;
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -435,7 +508,7 @@ export const useEditorStore = defineStore('editor', () => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `语音改稿失败（${res.status}）`);
       // 识别期间换了稿子或离开了编辑：结果对不上了，不能写到现在这篇上
-      if (st.draft?.id !== id || st.mode !== 'edit') { toast('已经换了稿子，这次语音改稿没有应用'); return; }
+      if (st.draft?.id !== id || st.mode !== 'edit' || editVer.value) { toast('已经换了稿子或版本，这次语音改稿没有应用'); return; }
       const note = {
         heard: data.transcript ? `听到：${data.transcript}` : '',
         understood: data.note ? `理解成：${data.note}` : '',
@@ -614,7 +687,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     live, streamingView, generate, setMode,
-    save, markDirty, flushSave, onInput, replaceContent, undo, redo, canUndo, canRedo, resetHistory,
+    save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,
     voice, voiceNote, toggleVoice, undoVoice, stopVoice,

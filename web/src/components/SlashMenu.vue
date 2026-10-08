@@ -33,7 +33,7 @@ watch(m, async (v) => {
 /* 去掉打出来的那个 / 或 ／，在那里插入 */
 function consume() {
   const at = m.value.at;
-  const raw = s.draft.content;
+  const raw = ed.text;      // 编辑框里正在编辑的那一版
   ed.onInput(raw.slice(0, at) + raw.slice(at + 1));
   ed.menus.slash = null;
   return at;
