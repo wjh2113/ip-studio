@@ -193,6 +193,21 @@ export const MIGRATIONS = [
       await db.exec('ROLLBACK TO SAVEPOINT vec_ext');
     }
   } },
+  { version: 10, name: '邀请码：后台生成，一码注册一个人', up: async (db) => {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS invites (
+        id          integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        code        text NOT NULL UNIQUE,
+        note        text NOT NULL DEFAULT '',
+        created_by  text NOT NULL DEFAULT '',
+        created_at  text NOT NULL,
+        used_by     integer REFERENCES users(id) ON DELETE SET NULL,
+        used_name   text NOT NULL DEFAULT '',
+        used_at     text NOT NULL DEFAULT '',
+        revoked_at  text NOT NULL DEFAULT ''
+      );
+    `);
+  } },
 ];
 
 function toPg(text) {

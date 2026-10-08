@@ -84,6 +84,10 @@ const ROUTES = [
   ['POST', /^\/api\/admin\/logout$/, R.handleAdminLogout],
   ['GET', /^\/api\/admin\/overview$/, R.handleAdminOverview],
   ['GET', /^\/api\/admin\/prompts$/, R.handleAdminPrompts],
+  ['GET', /^\/api\/invites$/, R.handleInviteList],
+  ['POST', /^\/api\/invites$/, R.handleInviteCreate],
+  ['DELETE', /^\/api\/invites\/(?<iid>\d+)$/, R.handleInviteRevoke],
+  ['POST', /^\/api\/admin\/users\/(?<uid>\d+)\/rename$/, R.handleUserRename],
   ['GET', /^\/api\/admin\/settings$/, R.handleSettingsList],
   ['POST', /^\/api\/admin\/settings$/, R.handleSettingsSave],
   ['GET', /^\/api\/admin\/settings\/check$/, R.handleSettingsCheck],
@@ -529,6 +533,6 @@ async function startupNotes() {
       : '支付：演示模式（不真扣钱）');
   }
   if (accessGateOn()) notes.push('注册：只能用访问密码进入（配了 ACCESS_PASSWORD）');
-  else if (process.env.REGISTER_OPEN === '0') notes.push('注册：已关闭（REGISTER_OPEN=0），新用户需要访问密码或在后台开通');
+  else if (process.env.REGISTER_OPEN === '0' || process.env.REGISTER_OPEN === 'invite') notes.push('注册：凭邀请码（REGISTER_OPEN=0），由 APP_ADMINS 里的用户在前台顶栏「邀请」里生成邀请码发给对方');
   return notes;
 }

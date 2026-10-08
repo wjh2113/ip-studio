@@ -1,6 +1,6 @@
 /* 路由 · auth：注册、登录、登出、当前用户与站点元信息。从原 routes.js 原样拆出。 */
 import { Users } from '../db.js';
-import { accessGateOn, accessUsername, checkAccessPassword, clearCookie, currentUser, endSession, HttpError, login, publicUser, register, sessionCookie, startSession, validateCredentials } from '../auth.js';
+import { accessGateOn, accessUsername, checkAccessPassword, clearCookie, currentUser, endSession, HttpError, login, publicUser, register, registerMode, registerWithInvite, sessionCookie, startSession, validateCredentials } from '../auth.js';
 import { providerInfo } from '../llm.js';
 import { PLATFORMS, TONES } from '../prompts.js';
 import { json } from './common.js';
@@ -16,16 +16,21 @@ async function signedIn(req, res, user) {
 }
 
 export async function handleRegister(req, res, body) {
-  if (accessGateOn() || process.env.REGISTER_OPEN === '0') {
-    throw new HttpError(403, '目前不开放注册');
+  const mode = registerMode();
+  if (mode === 'closed') throw new HttpError(403, '目前不开放注册');
+  const { username, password } = body || {};
+  const bad = validateCredentials(username, password);
+  if (bad) throw new HttpError(400, bad);
+  if (mode === 'invite') {
+    // 凭后台生成的邀请码注册：一码一人
+    const user = await registerWithInvite(body?.invite, username.trim(), password);
+    await signedIn(req, res, user);
+    return;
   }
   const code = String(process.env.REGISTER_CODE || '').trim();
   if (code && String(body?.invite || '').trim() !== code) {
     throw new HttpError(403, '邀请码不正确');
   }
-  const { username, password } = body || {};
-  const bad = validateCredentials(username, password);
-  if (bad) throw new HttpError(400, bad);
   const user = await register(username.trim(), password);
   await signedIn(req, res, user);
 }
@@ -62,8 +67,8 @@ export async function handleMeta(req, res) {
     tones: Object.entries(TONES).map(([key, hint]) => ({ key, hint })),
     llm: providerInfo(),
     auth: {
-      register: !accessGateOn() && process.env.REGISTER_OPEN !== '0',
-      invite: Boolean(String(process.env.REGISTER_CODE || '').trim()),
+      register: registerMode() !== 'closed',
+      invite: registerMode() === 'invite' || Boolean(String(process.env.REGISTER_CODE || '').trim()),
       gate: accessGateOn(),
     },
   });

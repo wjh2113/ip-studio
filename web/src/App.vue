@@ -36,6 +36,7 @@
   <InsightsModal />
   <Prompter />
   <SyncModal />
+  <InviteModal />
 
   <Toast />
   <AskDialog />
@@ -68,6 +69,7 @@ import MetricsModal from './components/MetricsModal.vue';
 import InsightsModal from './components/InsightsModal.vue';
 import Prompter from './components/Prompter.vue';
 import SyncModal from './components/SyncModal.vue';
+import InviteModal from './components/InviteModal.vue';
 import Toast from './components/common/Toast.vue';
 import AskDialog from './components/common/AskDialog.vue';
 

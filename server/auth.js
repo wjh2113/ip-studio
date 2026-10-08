@@ -1,6 +1,6 @@
 /* 账号与会话：scrypt 存密码，随机 token 存 httpOnly cookie */
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { Users, Sessions, Admins, AdminSessions } from './db.js';
+import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { Users, Sessions, Admins, AdminSessions, Invites } from './db.js';
 import { cookieAttrs } from './security.js';
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 14; // 14 天
@@ -38,6 +38,44 @@ export async function register(username, password) {
     if (isUniqueViolation(err)) throw new HttpError(409, '该用户名已被注册');
     throw err;
   }
+}
+
+/* 注册方式：
+ *   closed  配了 ACCESS_PASSWORD（一道门，所有人共用一个账号），不能注册
+ *   invite  REGISTER_OPEN=0 或 =invite：凭后台生成的邀请码注册，一码一人
+ *   open    其他：谁都能注册（配了 REGISTER_CODE 的话要填这个共用的码） */
+export function registerMode() {
+  if (accessGateOn()) return 'closed';
+  const v = String(process.env.REGISTER_OPEN ?? '').trim().toLowerCase();
+  if (v === '0' || v === 'invite') return 'invite';
+  return 'open';
+}
+
+/* 邀请码：8 位，去掉 0 O 1 I L 这些容易看错的，显示成 ABCD-EFGH；输入时大小写、空格、横线都不讲究 */
+const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export function newInviteCode() {
+  let s = '';
+  for (let i = 0; i < 8; i += 1) s += CODE_ABC[randomInt(CODE_ABC.length)];
+  return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
+export function normalizeInvite(raw) {
+  const s = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s.length === 8 ? `${s.slice(0, 4)}-${s.slice(4)}` : '';
+}
+
+export async function registerWithInvite(rawCode, username, password) {
+  const code = normalizeInvite(rawCode);
+  if (!code) throw new HttpError(400, '请填写邀请码');
+  if (await Users.byName(username)) throw new HttpError(409, '该用户名已被注册');
+  let user;
+  try {
+    user = await Invites.registerWith(code, username, hashPassword(password));
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new HttpError(409, '该用户名已被注册');
+    throw err;
+  }
+  if (!user) throw new HttpError(403, '邀请码不对，或者已经用过 / 作废了');
+  return user;
 }
 
 export async function login(username, password) {
@@ -138,7 +176,11 @@ export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-export const publicUser = (u) => ({ id: u.id, username: u.username, created_at: u.created_at });
+/* 前台里的管理员（能发邀请码）：APP_ADMINS=jonny,另一个人 */
+export const appAdmins = () => String(process.env.APP_ADMINS || '').split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+export const isAppAdmin = (u) => Boolean(u?.username) && appAdmins().includes(u.username);
+
+export const publicUser = (u) => ({ id: u.id, username: u.username, created_at: u.created_at, admin: isAppAdmin(u) });
 
 /* ------------------------------------------------------------------ *
  * 管理员：完全独立的账号体系和会话

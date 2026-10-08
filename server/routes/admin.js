@@ -1,7 +1,7 @@
 /* 路由 · admin：管理后台：登录与首次设置、用量概览、提示词目录、运行时配置、A/B 变体与 eval。从原 routes.js 原样拆出。 */
 import { Admins, Drafts, Evals, Usage, Users, Variants } from '../db.js';
 import { adoption, median } from '../quality.js';
-import { accessGateOn, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, createAdmin, currentAdmin, HttpError, publicAdmin, setupHttpEnabled, startAdminSession, validateCredentials } from '../auth.js';
+import { accessGateOn, accessUsername, isUniqueViolation, adminCookie, adminLogin, adminSetupNeeded, clearAdminCookie, createAdmin, currentAdmin, HttpError, publicAdmin, setupHttpEnabled, startAdminSession, validateCredentials } from '../auth.js';
 import { generateJSON, generateText, providerInfo } from '../llm.js';
 import { costOf, priceOf } from '../pricing.js';
 import { scoreText, scoreTopics, summarize } from '../abtest.js';
@@ -478,4 +478,27 @@ export async function handleSettingsCheck(req, res) {
   });
 
   json(res, 200, { provider: info.provider, live: info.live, checks });
+}
+
+/* 改用户名：内容都挂在用户 id 上，改名不影响任何数据；对方下次用新名字登录 */
+export async function handleUserRename(req, res, body, params) {
+  await requireAdmin(req);
+  const username = String(body?.username || '').trim();
+  const bad = validateCredentials(username, 'xxxxxx');
+  if (bad) throw new HttpError(400, bad);
+  const user = await Users.byId(Number(params.uid));
+  if (!user) throw new HttpError(404, '没有这个用户');
+  // 一道门模式下这个账号由 ACCESS_USER 指定：改了名下次启动会按旧名字再建一个空账号
+  if (accessGateOn() && user.username === accessUsername()) {
+    throw new HttpError(409, `这个账号现在是访问密码的共用账号（ACCESS_USER=${accessUsername()}）。先在服务器上去掉 ACCESS_PASSWORD 再改名`);
+  }
+  if (username === user.username) { json(res, 200, { user: { id: user.id, username } }); return; }
+  if (await Users.byName(username)) throw new HttpError(409, '这个用户名已经有人用了');
+  try {
+    await Users.rename(user.id, username);
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new HttpError(409, '这个用户名已经有人用了');
+    throw err;
+  }
+  json(res, 200, { user: { id: user.id, username } });
 }

@@ -433,3 +433,16 @@ export const learnLog = pgTable('learn_log', {
   created_at: text('created_at').notNull(),
 }, (t) => [index('idx_learn_log').on(t.user_id, t.persona_id, t.id)]);
 
+
+/* 迁移 10：邀请码。后台生成，一码只能注册一个人；used_at 非空 = 用过，revoked_at 非空 = 作废 */
+export const invites = pgTable('invites', {
+  id: id(),
+  code: text('code').notNull().unique(),
+  note: text('note').notNull().default(''),
+  created_by: text('created_by').notNull().default(''),
+  created_at: text('created_at').notNull(),
+  used_by: integer('used_by').references(() => users.id, { onDelete: 'set null' }),
+  used_name: text('used_name').notNull().default(''),
+  used_at: text('used_at').notNull().default(''),
+  revoked_at: text('revoked_at').notNull().default(''),
+});

@@ -10,7 +10,7 @@ import { editRatio } from './quality.js';
 import {
   adminSessions, admins, benchmarks, draftMetrics, draftRevisions, drafts, evalCases, evalRuns, evalVotes,
   frameworks, inboxKeys, jobs, materials, orders, personas, promptVariants, sections, sessions, settings,
-  embeddings, learnLog, profileEntries, speakTakes, stylePrefs, styleSamples, syncKeys, topicPool, usageEvents, users,
+  embeddings, invites, learnLog, profileEntries, speakTakes, stylePrefs, styleSamples, syncKeys, topicPool, usageEvents, users,
 } from './schema.js';
 
 const fileRoot = process.env.DATA_DIR
@@ -180,6 +180,10 @@ export const Users = {
   async byId(id) {
     return one(orm().select().from(users).where(eq(users.id, id)));
   },
+  async rename(id, username) {
+    const rows = await orm().update(users).set({ username }).where(eq(users.id, id)).returning();
+    return rows[0] || null;
+  },
   async setPassword(id, passHash) {
     await orm().update(users).set({ pass_hash: passHash }).where(eq(users.id, id));
     return this.byId(id);
@@ -195,6 +199,35 @@ export const Users = {
              (SELECT MAX(d.updated_at) FROM drafts d WHERE d.user_id = u.id) AS last_draft_at
       FROM users u ORDER BY u.id ASC`);
     return list.map((r) => nums(r, ['id', 'personas', 'sections', 'drafts', 'done_drafts', 'samples']));
+  },
+};
+
+/* 邀请码：后台生成，一码注册一个人 */
+export const Invites = {
+  async list() {
+    return orm().select().from(invites).orderBy(desc(invites.id)).limit(500);
+  },
+  async create(code, note, by) {
+    return one(orm().insert(invites).values({ code, note, created_by: by, created_at: now() }).returning());
+  },
+  /* 只能作废还没用过的 */
+  async revoke(id) {
+    const rows = await orm().update(invites).set({ revoked_at: now() })
+      .where(and(eq(invites.id, id), eq(invites.used_at, ''), eq(invites.revoked_at, ''))).returning({ id: invites.id });
+    return rows.length > 0;
+  },
+  /* 用邀请码注册：占码和建用户在一个事务里。占码是一条带条件的 UPDATE——两个人同时用同一个码，只有一个能占到；
+     用户名撞了（409）整个回滚，码还能再用 */
+  async registerWith(code, username, passHash) {
+    return withTx(async () => {
+      const at = now();
+      const hit = await one(orm().update(invites).set({ used_at: at })
+        .where(and(eq(invites.code, code), eq(invites.used_at, ''), eq(invites.revoked_at, ''))).returning({ id: invites.id }));
+      if (!hit) return null;
+      const user = await one(orm().insert(users).values({ username, pass_hash: passHash, created_at: at }).returning());
+      await orm().update(invites).set({ used_by: user.id, used_name: username }).where(eq(invites.id, hit.id));
+      return user;
+    });
   },
 };
 

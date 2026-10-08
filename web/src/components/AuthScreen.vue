@@ -18,7 +18,7 @@
       <label>{{ auth.gate ? '访问密码' : '密码' }}<span class="input-ic"><Icon name="lock" /><input name="password" v-model="password" :type="peek ? 'text' : 'password'" required minlength="6"
         :placeholder="auth.gate ? '访问密码' : '至少 6 位'" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" />
         <button type="button" class="peek" :class="{ on: peek }" :title="peek ? '隐藏密码' : '显示密码'" @click="peek = !peek"><Icon name="eye" /></button></span></label>
-      <label v-if="mode === 'register' && auth.invite" id="inviteRow">邀请码<span class="input-ic"><Icon name="key" /><input name="invite" v-model="invite" maxlength="40" placeholder="需要邀请码才能注册" autocomplete="off" /></span></label>
+      <label v-if="mode === 'register' && auth.invite" id="inviteRow">邀请码<span class="input-ic"><Icon name="key" /><input name="invite" v-model="invite" maxlength="40" placeholder="管理员发给你的邀请码" autocomplete="off" /></span></label>
       <p class="form-error" id="authError">{{ error }}</p>
       <BusyBtn type="submit" class="btn primary block lg" id="authSubmit" :busy="busy">{{ auth.gate ? '进入' : mode === 'login' ? '登录' : '注册并进入' }}</BusyBtn>
     </form>
@@ -52,9 +52,12 @@ function setMode(m) {
   error.value = '';
 }
 
-// 从落地页带 ?signup=1 过来的，直接停在注册页；不开放注册就把这个参数去掉
+// 从落地页带 ?signup=1 过来的，直接停在注册页；不开放注册就把这个参数去掉。
+// 邀请链接还带着 &invite=码：码先填好
 watch(() => s.meta, (meta) => {
-  if (!meta || !new URLSearchParams(location.search).get('signup')) return;
+  const q = new URLSearchParams(location.search);
+  if (!meta || !q.get('signup')) return;
+  if (q.get('invite')) invite.value = q.get('invite');
   if (canRegister.value) mode.value = 'register';
   else history.replaceState(null, '', '/');
 }, { immediate: true });

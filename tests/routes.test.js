@@ -422,6 +422,17 @@ test('提示词说明书：未登录只读；管理员可保存并切回', async
   assert.equal(r.data.system, codeRev.system);
 });
 
+test('邀请码接口：普通用户 403；没登录 401', async () => {
+  let r = await api.call('GET', '/api/invites');
+  assert.equal(r.status, 403, r.text);
+  r = await api.call('POST', '/api/invites', { note: 'x' });
+  assert.equal(r.status, 403, r.text);
+  r = await client().call('GET', '/api/invites');
+  assert.equal(r.status, 401, r.text);
+  r = await api.call('GET', '/api/me');
+  assert.equal(r.data.user.admin, false);
+});
+
 test('重复注册回 409，不是 500', async () => {
   const r = await client().call('POST', '/api/auth/register', { username: `rt${process.pid}`, password: 'secret123' });
   assert.equal(r.status, 409, r.text);
