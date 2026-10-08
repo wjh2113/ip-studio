@@ -4,7 +4,7 @@
       <span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></span>
       <span class="grow"></span>
       <a class="pm-link" href="/">它是怎么做到的</a>
-      <a class="btn primary small" href="/">登录</a>
+      <a class="btn primary small" href="/app">登录</a>
     </div>
   </header>
 
@@ -20,7 +20,7 @@
           <b>从同一条选题一次出齐</b>，不是让你把一篇稿子手动改四遍。
         </p>
         <div class="pm-cta">
-          <a class="btn primary lg" href="/">登录进入</a>
+          <a class="btn primary lg" href="/app">登录进入</a>
           <a class="pm-ghost" href="#fan">先看一条选题变成什么样</a>
         </div>
         <p class="pm-risk">免费档不绑卡 · 注册就能写 · 只有文章配图需要付费</p>
@@ -84,7 +84,7 @@
         </li>
       </ol>
       <div class="pm-mid-cta">
-        <a class="btn primary lg" href="/">登录进入</a>
+        <a class="btn primary lg" href="/app">登录进入</a>
         <span>不绑卡，写完不满意直接走</span>
       </div>
     </section>
@@ -150,7 +150,7 @@
       <div class="pm-in">
         <h2>今天的选题，二十分钟以后可以发了</h2>
         <p>先免费写一篇看看。不用绑卡，也不用先想好要不要买。</p>
-        <a class="btn primary lg" href="/">登录进入</a>
+        <a class="btn primary lg" href="/app">登录进入</a>
         <p class="pm-risk">还想知道它内部怎么做的？<a href="/">看看完整说明</a></p>
       </div>
     </section>
@@ -162,7 +162,7 @@
       <span class="grow"></span>
       <a href="/">产品说明</a>
       <a href="/prompts">提示词说明书</a>
-      <a href="/">登录</a>
+      <a href="/app">登录</a>
     </div>
   </footer>
 </template>

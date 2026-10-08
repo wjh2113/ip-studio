@@ -6,7 +6,7 @@
       <a class="lp-link" href="#how">功能</a>
       <a class="lp-link" href="#price">价格</a>
       <a class="lp-link" href="/prompts">提示词说明书</a>
-      <a class="lp-link strong" href="/">登录</a>
+      <a class="lp-link strong" href="/app">登录</a>
     </div>
   </header>
 
@@ -18,7 +18,7 @@
         <p class="lp-title">AI 写的东西一眼假，不是因为它不会写</p>
         <p class="lead">是因为它不了解你的号，也不知道你真实经历过什么——这里把这两件事变成账号的资产，<b>用得越久，越像你写的</b>。</p>
         <div class="lp-cta">
-          <a class="btn primary lg" href="/">登录进入<Icon name="arrow-right" :size="16" /></a>
+          <a class="btn primary lg" href="/app">登录进入<Icon name="arrow-right" :size="16" /></a>
           <a class="btn ghost lg" href="#how">先看怎么工作<Icon name="play" :size="13" /></a>
         </div>
         <p class="lp-fine"><Icon name="check-circle" :size="15" />免费档不需要绑卡，够写几十篇稿子。文章配图是付费功能。</p>
@@ -184,7 +184,7 @@
           <div class="p"><template v-if="p.price">{{ p.price }}<em> 元{{ p.pack ? '' : '/月' }}</em></template><template v-else>0<em> 元/月</em></template></div>
           <div class="c">{{ p.credits.toLocaleString() }} 点</div>
           <p class="n">{{ p.note || '' }}</p>
-          <a class="btn small" :class="p.key === 'pro' ? 'primary' : 'ghost'" href="/">{{ p.price ? '登录使用' : '登录进入' }}</a>
+          <a class="btn small" :class="p.key === 'pro' ? 'primary' : 'ghost'" href="/app">{{ p.price ? '登录使用' : '登录进入' }}</a>
         </div>
       </div>
       <p class="lp-fine">
@@ -220,7 +220,7 @@
     <section class="lp-in lp-end">
       <h2 class="lp-h2">先写一篇看看</h2>
       <p class="lp-sub">免费档不用绑卡，够写几十篇稿子。</p>
-      <a class="btn primary" href="/">登录进入</a>
+      <a class="btn primary" href="/app">登录进入</a>
     </section>
   </main>
 
@@ -230,7 +230,7 @@
         <span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>自媒体助手</span></span>
         <p>懂你的账号，帮你做出更好的内容</p>
       </div>
-      <div class="lp-foot-col"><b>产品</b><a href="#how">功能</a><a href="#price">价格</a><a href="/">登录</a></div>
+      <div class="lp-foot-col"><b>产品</b><a href="#how">功能</a><a href="#price">价格</a><a href="/app">登录</a></div>
       <div class="lp-foot-col"><b>资源</b><a href="/prompts">提示词说明书</a></div>
     </div>
     <div class="lp-in lp-copy">© 自媒体助手</div>

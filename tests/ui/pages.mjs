@@ -20,6 +20,13 @@ await step('未登录访问 / → 落地页，价格从服务端来', async () =
   if (shot) await page.screenshot({ path: shot + '-landing.png' });
   return `${await page.title()}｜${(await page.$$('#lpPrice .lp-plan')).length} 档`;
 });
+await step('落地页「登录」进 /app，不再绕回落地页', async () => {
+  const href = await page.getAttribute('.lp-nav a.lp-link.strong', 'href');
+  if (href !== '/app') throw new Error(`导航登录链到 ${href}，应为 /app`);
+  await page.click('.lp-nav a.lp-link.strong');
+  await page.waitForSelector('#authScreen:not(.hidden), #authForm');
+  return `href=${href}｜出现登录表单`;
+});
 await step('/start 营销页，投放参数带到登录链接上', async () => {
   await page.goto(B + '/start?utm_source=wx');
   await page.waitForSelector('.pm-nav');
