@@ -1,7 +1,8 @@
 /* 路由 · common：各业务路由共用的小工具：JSON 响应、登录校验、错误文案、重试、账号与语气样本解析。从原 routes.js 原样拆出。 */
 import { readdir, rm } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
-import { DATA_DIR, Prefs, Profile, Samples, bigrams, overlapScore } from '../db.js';
+import { DATA_DIR, Personas, Prefs, Profile, Samples, bigrams, overlapScore } from '../db.js';
+import { normalizeRefs, refCount } from '../refs.js';
 import { currentAdmin, currentUser, HttpError } from '../auth.js';
 import { PROVIDER } from '../llm.js';
 import { loadPricing } from '../pricing.js';
@@ -34,12 +35,18 @@ export const requireUser = async (req) => {
 
 export const sys = (key, builtin) => liveSystem(key, builtin);
 
-/* 语气锚点：档案已经蒸馏过，这里只取两篇原文做语感参考——和这次题材最像的两篇（语义 + 字面），都不像就取最近的 */
-export const styleSamples = async (persona, userId, hint = '') =>
-  (persona?.id && persona.style_digest)
-    ? await Samples.pickSimilar(persona.id, userId, hint, 2,
-      async (rows, lexOf) => (await rankHybrid(userId, 'sample', rows, hint, lexOf)).map((x) => x.item.id))
-    : [];
+/* 成稿参考的开关和权重（refs.js）：每个账号一份；不挂账号（全部创作）的用默认——全开、适中 */
+export const refsOf = async (userId, personaId) => normalizeRefs(personaId ? await Personas.refs(personaId, userId) : null);
+
+/* 语气锚点：档案已经蒸馏过，这里只取几篇原文做语感参考——和这次题材最像的（语义 + 字面），都不像就取最近的。
+   篇数看「成稿参考」里相似范文的权重（少量 1 / 适中 2 / 重点 3），关掉就不取 */
+export const styleSamples = async (persona, userId, hint = '') => {
+  if (!persona?.id || !persona.style_digest) return [];
+  const n = refCount(await refsOf(userId, persona.id), 'samples');
+  if (!n) return [];
+  return Samples.pickSimilar(persona.id, userId, hint, n,
+    async (rows, lexOf) => (await rankHybrid(userId, 'sample', rows, hint, lexOf)).map((x) => x.item.id));
+};
 
 /* 个人档案召回：语义 + 字面混合（见 semantic.js），字面上只要命中够多也照样入选 */
 export async function recallProfile(userId, hint, limit = 5) {
@@ -56,9 +63,13 @@ export async function recallProfile(userId, hint, limit = 5) {
 /* 写作时「懂作者」的那部分上下文：个人档案里相关的几条 + 这个号的改稿偏好。
    mode：topics 只给档案的标题和结果；content 完整档案 + 偏好；assist 精简档案 + 偏好 */
 export async function writerMe(userId, persona, hint, mode = 'content') {
-  const profile = await recallProfile(userId, hint, mode === 'content' ? 5 : 3);
-  const prefs = persona?.id && mode !== 'topics' ? await Prefs.active(persona.id, userId, 12) : [];
-  return { profile, prefs, compact: mode !== 'content' };
+  // 条数按「成稿参考」里的开关和权重；选题、划词改写这类精简场景再少一档
+  const refs = await refsOf(userId, persona?.id);
+  const nProfile = refCount(refs, 'profile', { lite: mode !== 'content' });
+  const nPrefs = refCount(refs, 'prefs');
+  const profile = nProfile ? await recallProfile(userId, hint, nProfile) : [];
+  const prefs = persona?.id && mode !== 'topics' && nPrefs ? await Prefs.active(persona.id, userId, nPrefs) : [];
+  return { profile, prefs, compact: mode !== 'content', refs };
 }
 
 /* ---------------- 管理后台 ---------------- */

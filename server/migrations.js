@@ -208,6 +208,9 @@ export const MIGRATIONS = [
       );
     `);
   } },
+  { version: 11, name: '成稿参考：每个账号各自的开关和权重', up: async (db) => {
+    await db.exec("ALTER TABLE personas ADD COLUMN IF NOT EXISTS refs_json text NOT NULL DEFAULT '{}'");
+  } },
 ];
 
 function toPg(text) {

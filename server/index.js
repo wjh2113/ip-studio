@@ -50,6 +50,8 @@ const ROUTES = [
   ['GET', /^\/api\/meta$/, R.handleMeta],
   ['GET', /^\/api\/personas$/, R.handlePersonaList],
   ['POST', /^\/api\/personas$/, R.handlePersonaCreate],
+  ['GET', /^\/api\/personas\/(?<id>\d+)\/refs$/, R.handleRefsGet],
+  ['PUT', /^\/api\/personas\/(?<id>\d+)\/refs$/, R.handleRefsSave],
   ['POST', /^\/api\/personas\/quickstart$/, R.handleQuickstart],
   ['PUT', /^\/api\/personas\/(?<id>\d+)$/, R.handlePersonaUpdate],
   ['DELETE', /^\/api\/personas\/(?<id>\d+)$/, R.handlePersonaDelete],

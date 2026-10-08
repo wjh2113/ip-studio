@@ -136,6 +136,22 @@ await step('第二个账号：切号后记录分开；「全部创作」里点�
   await page.waitForSelector('#topicsCard', { state: 'visible' });
   return `标签 ${tag}｜${(await page.textContent('#inheritNote')).trim()}`;
 });
+await step('成稿参考：简报下点「成稿参考设置」→ 账号设定的「成稿参考」；关掉素材库、个人档案调成重点，马上存', async () => {
+  await page.click('#briefRefsBtn');
+  await page.waitForSelector('#refsSection [data-ref="materials"]');
+  await page.uncheck('#refsSection [data-ref="materials"] input[type=checkbox]');
+  await page.waitForSelector('#refsSection [data-ref="materials"].off');
+  await page.click('#refsSection [data-ref="profile"] [data-weight="high"]');
+  await page.waitForSelector('#refsSection [data-ref="profile"] [data-weight="high"].on');
+  const pid = await page.$eval('#personaList .persona-row.on', (n) => n.dataset.persona);
+  await page.waitForTimeout(300);
+  const refs = await page.evaluate((id) => fetch(`/api/personas/${id}/refs`).then((r) => r.json()), pid);
+  if (refs.refs.materials.on !== false || refs.refs.profile.weight !== 'high') throw new Error('没存上');
+  await page.click('#refsReset');
+  await page.waitForSelector('#refsSection [data-ref="materials"]:not(.off)');
+  await page.click('#personaCloseBtn');
+  return '已存，恢复默认也行';
+});
 await step('删掉第二个账号', async () => {
   await page.click('#personaList .persona-row:nth-child(2)');
   await page.waitForFunction(() => document.querySelector('#personaList .persona-row.on b')?.textContent === '通勤听书');

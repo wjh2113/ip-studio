@@ -1,4 +1,5 @@
 import { frameworkBlock } from './frameworks.js';
+import { weigh, weightNote } from './refs.js';
 /* 平台/风格预设与提示词构造 —— 系统的“产品知识”都集中在这里 */
 
 export const PLATFORMS = {
@@ -147,8 +148,8 @@ const brief = (d, persona, samples, me = null) => {
   const p = platformSpec(d.platform);
   const account = personaBlock(persona);
   const creator = creatorBlock(persona);
-  const profile = profileBlock(me?.profile, { compact: me?.compact });
-  const style = styleBlock(persona, samples, me?.prefs);
+  const profile = weigh(profileBlock(me?.profile, { compact: me?.compact }), me?.refs, 'profile');
+  const style = styleBlock(persona, samples, me?.prefs, me?.refs);
   const section = sectionBlock(d.section, d.inputs);
   const framework = frameworkBlock(d.framework, d.length);
   const hot = hotspotRefBlock(d.hotspot);
@@ -266,7 +267,7 @@ export const contentUser = (d, topic, persona, samples, materials = [], me = nul
 `按下面选定的方向写出完整成稿。
 
 ${brief(d, persona, samples, me)}
-${materialsBlock(materials) ? `\n${materialsBlock(materials)}\n` : ''}${perf ? `\n${perf}\n` : ''}
+${materialsBlock(materials) ? `\n${weigh(materialsBlock(materials), me?.refs, 'materials')}\n` : ''}${perf ? `\n${perf}\n` : ''}
 
 —— 选定方向 ——
 标题：${topic.title}
@@ -299,18 +300,22 @@ export const digestUser = (samples) =>
 ${samples.map((s, i) => `===== 样本 ${i + 1}${s.title ? `：${s.title}` : ''} =====\n${s.content}`).join('\n\n')}`;
 
 /* 注入创作提示词的语气块：档案为主，附少量片段做语感锚点；改稿偏好是硬规则，单列 */
-const styleBlock = (persona, samples = [], prefs = []) => {
-  const digest = String(persona?.style_digest || '').trim();
-  const rules = prefsBlock(prefs);
-  if (!digest) return rules;
+const styleBlock = (persona, samples = [], prefs = [], refs = null) => {
+  // 「成稿参考」里关掉了语气档案：档案不进提示词（相似范文、改稿习惯各管各的）
+  const digest = refs && !refs.digest?.on ? '' : String(persona?.style_digest || '').trim();
+  const rules = weigh(prefsBlock(prefs), refs, 'prefs');
 
-  const excerpts = samples.slice(0, 2)
+  const excerpts = samples.slice(0, 3)
     .map((s, i) => `${i + 1}. ${s.content.slice(0, 220).replace(/\n+/g, ' ')}……`)
     .join('\n');
+  const pieces = excerpts
+    ? weigh(`和这次题材最接近的历史片段（只模仿语感，不要复用其中的内容和例子）：\n${fence('历史片段', excerpts)}`, refs, 'samples')
+    : '';
+  if (!digest) return [pieces, rules].filter(Boolean).join('\n\n') || null;
 
   return `—— 这个号的语气档案（从博主确认过的历史稿件里学到的）——
 ${digest}
-${excerpts ? `\n和这次题材最接近的历史片段（只模仿语感，不要复用其中的内容和例子）：\n${fence('历史片段', excerpts)}` : ''}
+${weightNote(refs, 'digest')}${pieces ? `\n${pieces}` : ''}
 写作时优先服从这份语气档案：它比通用的风格调性更能代表这个号真实的样子。${rules ? `\n\n${rules}` : ''}`;
 };
 
@@ -549,7 +554,7 @@ const contextBlock = (d, persona, samples, me = null) => [
   personaBlock(persona),
   creatorBlock(persona),
   profileBlock(me?.profile, { compact: true }),
-  styleBlock(persona, samples, me?.prefs),
+  styleBlock(persona, samples, me?.prefs, me?.refs),
   `—— 这篇稿子 ——\n题材：${d.subject}\n发布平台：${platformSpec(d.platform).label}\n风格调性：${d.tone}${d.title ? `\n标题：${d.title}` : ''}`,
   `平台写作规范：\n${platformSpec(d.platform).spec}`,
 ].filter(Boolean).join('\n\n');

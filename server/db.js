@@ -281,6 +281,17 @@ export const Personas = {
       FROM personas p WHERE p.user_id = ${userId} ORDER BY p.id ASC`);
     return list.map((r) => nums(r, ['id', 'user_id', 'draft_count', 'sample_count']));
   },
+  /* 成稿参考（refs.js）：每个账号一份 */
+  async refs(id, userId) {
+    const row = await one(orm().select({ refs_json: personas.refs_json }).from(personas)
+      .where(and(eq(personas.id, id), eq(personas.user_id, userId))));
+    return row ? row.refs_json || '{}' : null;
+  },
+  async setRefs(id, userId, refs) {
+    const rows = await orm().update(personas).set({ refs_json: JSON.stringify(refs) })
+      .where(and(eq(personas.id, id), eq(personas.user_id, userId))).returning({ id: personas.id });
+    return rows.length > 0;
+  },
   async setIdeas(id, userId, ideas) {
     await orm().update(personas).set({ subject_ideas: JSON.stringify(ideas) })
       .where(and(eq(personas.id, id), eq(personas.user_id, userId)));

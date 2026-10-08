@@ -432,6 +432,25 @@ test('提示词：未登录 403；后台管理员可读可改；使用说明要�
   assert.match(r.data.markdown || '', /新人操作手册/);
 });
 
+test('成稿参考：每个账号一份；读默认、改一项、乱填的按默认补齐；别人的账号 404', async () => {
+  let r = await api.call('POST', '/api/personas', { name: '参考测试号' });
+  assert.equal(r.status, 200, r.text);
+  const pid = r.data.persona.id;
+  r = await api.call('GET', `/api/personas/${pid}/refs`);
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.refs.profile.on, true);
+  assert.ok(r.data.sources.length >= 6);
+  r = await api.call('PUT', `/api/personas/${pid}/refs`, { refs: { materials: { on: false }, profile: { weight: 'high' }, samples: { weight: '乱填' } } });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.refs.materials.on, false);
+  assert.equal(r.data.refs.profile.weight, 'high');
+  assert.equal(r.data.refs.samples.weight, 'mid');
+  r = await api.call('GET', `/api/personas/${pid}/refs`);
+  assert.equal(r.data.refs.materials.on, false);
+  r = await api.call('GET', '/api/personas/999999/refs');
+  assert.equal(r.status, 404);
+});
+
 test('邀请码接口：普通用户 403；没登录 401', async () => {
   let r = await api.call('GET', '/api/invites');
   assert.equal(r.status, 403, r.text);

@@ -1270,3 +1270,18 @@
 .used-line .ic { color: var(--accent); }
 .used-detail { flex-basis: 100%; display: grid; gap: 4px; margin-top: 4px; }
 .used-detail b { color: var(--text); font-weight: 600; margin-right: 8px; }
+
+/* ---------- 成稿参考 ---------- */
+.refs-body { display: grid; gap: 10px; }
+.refs-row { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.refs-row.off { background: var(--panel-2); }
+.refs-row.off .refs-hint { opacity: .6; }
+.refs-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.refs-hint { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.refs-weights { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.refs-weights button { height: 28px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.refs-weights button.on { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+.refs-weights button:disabled { opacity: .45; cursor: not-allowed; }
+.refs-count { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.refs-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.used-off { color: var(--muted); }

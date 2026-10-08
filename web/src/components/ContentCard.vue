@@ -58,9 +58,11 @@
       </div>
 
       <!-- 这篇成稿时参考了什么：让作者看得出「它懂没懂我、错在哪」 -->
-      <div v-if="usedParts.length && !s.streaming" class="used-line" id="usedLine">
-        <Icon name="user" :size="13" />这篇参考了：{{ usedParts.join(' · ') }}
-        <button type="button" class="link-btn" @click="usedOpen = !usedOpen">{{ usedOpen ? '收起' : '看看是哪些' }}</button>
+      <div v-if="(usedParts.length || offParts.length) && !s.streaming" class="used-line" id="usedLine">
+        <Icon name="user" :size="13" />这篇参考了：{{ usedParts.join(' · ') || '没带参考资料' }}
+        <span v-if="offParts.length" class="used-off">（关着：{{ offParts.join('、') }}）</span>
+        <button v-if="usedParts.length" type="button" class="link-btn" @click="usedOpen = !usedOpen">{{ usedOpen ? '收起' : '看看是哪些' }}</button>
+        <button type="button" class="link-btn" id="usedRefsBtn" title="设置生成时带哪些资料、各多看重" @click="refsStore.openFor(s.draft?.persona_id)">调整参考</button>
         <span v-if="usedOpen" class="used-detail">
           <span v-if="ctx.profile?.length"><b>个人档案</b>{{ ctx.profile.map((x) => x.title).join('、') }}</span>
           <span v-if="ctx.samples?.length"><b>相似范文</b>{{ ctx.samples.map((x) => `《${x.title}》`).join('、') }}</span>
@@ -175,6 +177,7 @@ import { useAccountStore } from '../stores/account.js';
 import { useTitlesStore } from '../stores/titles.js';
 import { useInsightsStore } from '../stores/insights.js';
 import { usePrompterStore } from '../stores/prompter.js';
+import { useRefsStore } from '../stores/refs.js';
 import { toast } from '../lib/feedback.js';
 import { countChars, esc, markdown } from '../lib/text.js';
 import { caretFromPoint, caretRect } from '../lib/caret.js';
@@ -269,6 +272,10 @@ const showArticle = computed(() => s.streaming || s.mode === 'read' || (s.mode =
 /* 成稿时参考了什么（服务端在生成成稿时记下的） */
 const ctx = computed(() => s.draft?.context || {});
 const usedOpen = ref(false);
+const refsStore = useRefsStore();
+const REF_NAME = { profile: '个人档案', digest: '语气档案', samples: '相似范文', prefs: '改稿习惯', materials: '素材库', perf: '发布数据' };
+/* 生成这篇时关着的参考项（老稿子没记设置就不显示） */
+const offParts = computed(() => Object.entries(ctx.value.refs || {}).filter(([, v]) => v && v.on === false).map(([k]) => REF_NAME[k]).filter(Boolean));
 const usedParts = computed(() => [
   ctx.value.profile?.length ? `${ctx.value.profile.length} 条个人经历` : '',
   ctx.value.samples?.length ? `${ctx.value.samples.length} 篇相似范文` : '',

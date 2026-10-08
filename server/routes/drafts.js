@@ -6,7 +6,8 @@ import { pickVariant } from '../abtest.js';
 import { mockContent, mockTopics } from '../mock.js';
 import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
 import { performanceOf } from '../performance.js';
-import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { describe, json, refsOf, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { refCount, weigh } from '../refs.js';
 import { recallMaterials } from './materials.js';
 import { resolveFramework } from './frameworks.js';
 import { frameworkSnapshot } from '../frameworks.js';
@@ -138,7 +139,10 @@ export async function handleRetopics(req, res, body, params) {
 const topicHint = (f) => `${f.subject || ''} ${f.keywords || ''} ${f.audience || ''}`;
 
 /* 这个号过往的发布数据，拼进选题提示词；样本不够时是空串，提示词和以前一样 */
-const perfFor = async (userId, persona) => performanceBlock(await performanceOf(userId, persona?.id ?? null), 'topics');
+const perfFor = async (userId, persona) => {
+  const refs = await refsOf(userId, persona?.id);
+  return refs.perf.on ? weigh(performanceBlock(await performanceOf(userId, persona?.id ?? null), 'topics'), refs, 'perf') : '';
+};
 
 async function generateTopics(form, persona = null, avoid = [], samples = [], meta = {}, perf = '', me = null) {
   const extra = avoid.length
@@ -197,19 +201,24 @@ export async function handleContent(req, res, body, params) {
 
   // 按题材召回素材库里相关的几条——素材是"唯一可信的事实来源"那条规则的弹药
   const hint = `${draft.subject} ${topic.title} ${topic.angle} ${(topic.outline || []).join(' ')}`;
-  const recalled = await recallMaterials(user.id, draft.persona_id, hint);
-  if (recalled.length) await Materials.markUsed(recalled.map((m) => m.id), user.id);
-  // 「懂作者」的部分：个人档案里相关的经历、这个号的改稿偏好、和题材最像的两篇范文
-  const samples = await styleSamples(draft.persona, user.id, hint);
+  // 「懂作者」的部分：个人档案里相关的经历、这个号的改稿偏好、和题材最像的范文。带不带、带几条看「成稿参考」
   const me = await writerMe(user.id, draft.persona, hint, 'content');
+  const { refs } = me;
+  const nMaterials = refCount(refs, 'materials');
+  const recalled = nMaterials ? await recallMaterials(user.id, draft.persona_id, hint, nMaterials) : [];
+  if (recalled.length) await Materials.markUsed(recalled.map((m) => m.id), user.id);
+  const samples = await styleSamples(draft.persona, user.id, hint);
   const context = {
     profile: me.profile.map((e) => ({ id: e.id, title: e.title })),
     samples: samples.map((x) => ({ id: x.id, title: x.title || '未命名样本' })),
     materials: recalled.map((m) => ({ id: m.id, title: m.title, kind: m.kind })),
     prefs: me.prefs.length,
+    digest: Boolean(refs.digest.on && draft.persona?.style_digest),
+    // 这篇生成时的参考设置：「这篇参考了」那里标出哪几项是关着的
+    refs,
   };
   // 发布数据：这个号上哪种开头数据好（不够 6 篇回填数据时是空的）
-  const contentPerf = performanceBlock(await performanceOf(user.id, draft.persona_id ?? null), 'content');
+  const contentPerf = refs.perf.on ? weigh(performanceBlock(await performanceOf(user.id, draft.persona_id ?? null), 'content'), refs, 'perf') : '';
   const contentVariant = await pickVariant('content', sys('content', CONTENT_SYSTEM));
 
   res.writeHead(200, {

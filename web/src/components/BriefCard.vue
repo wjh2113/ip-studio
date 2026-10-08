@@ -88,6 +88,7 @@
         <div class="submit-row">
           <BusyBtn type="submit" class="btn primary lg" id="topicsBtn" :busy="b.submitting"><Icon name="sparkles" />生成三个话题方向</BusyBtn>
           <span class="hint" id="briefHint" :class="{ error: b.hint.error }">{{ b.hint.text || '会按你的简报，出 3 个角度不同的话题方向供你选' }}</span>
+          <button type="button" class="link-btn" id="briefRefsBtn" title="生成时带哪些资料（个人档案、范文、素材……），每项能关、能调权重" @click="useRefsStore().openFor(s.personaId)">成稿参考设置</button>
         </div>
       </form>
     </div>
@@ -128,6 +129,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import { useRefsStore } from '../stores/refs.js';
 import BusyBtn from './common/BusyBtn.vue';
 import Icon from './common/Icon.vue';
 import FrameworkPick from './FrameworkPick.vue';

@@ -23,6 +23,7 @@ export const ACCOUNT_TABS = [
   { key: 'persona', label: '个人人设', hint: '第一人称用谁的口吻' },
   { key: 'style', label: '语气样本', hint: '喂文章学你的语感', needsSaved: true },
   { key: 'me', label: 'AI 眼中的我', hint: '学到了什么，可改可删', needsSaved: true },
+  { key: 'refs', label: '成稿参考', hint: '生成时带哪些资料、多看重', needsSaved: true },
 ];
 
 const PERSONA_KEY = 'lastPersona';

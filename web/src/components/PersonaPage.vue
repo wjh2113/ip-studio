@@ -142,6 +142,10 @@
         <section class="acc-panel" data-panel="me" v-show="page.tab === 'me'">
           <MePanel v-if="page.id && seen.me" />
         </section>
+
+        <section class="acc-panel" data-panel="refs" v-show="page.tab === 'refs'">
+          <RefsPanel v-if="page.id && page.tab === 'refs'" :persona-id="page.id" />
+        </section>
       </div>
     </div>
   </form>
@@ -149,11 +153,12 @@
 </template>
 
 <script setup>
-/* 账号设定页：整屏盖在应用上，左边四个板块，右边是当前板块的表单。数据和保存逻辑在 stores/account.js */
+/* 账号设定页：整屏盖在应用上，左边五个板块，右边是当前板块的表单。数据和保存逻辑在 stores/account.js */
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import BusyBtn from './common/BusyBtn.vue';
 import Icon from './common/Icon.vue';
 import MePanel from './MePanel.vue';
+import RefsPanel from './RefsPanel.vue';
 import { useLearningStore } from '../stores/learning.js';
 import { ACCOUNT_TABS, useAccountStore } from '../stores/account.js';
 import { useStudioStore } from '../stores/studio.js';
@@ -168,7 +173,7 @@ const main = ref(null);
 const nameBox = ref(null);
 const rebuild = useBusy();
 const L = useLearningStore();
-const TAB_ICON = { basic: 'doc', persona: 'user', style: 'mic', me: 'eye' };
+const TAB_ICON = { basic: 'doc', persona: 'user', style: 'mic', me: 'eye', refs: 'filter' };
 const SRC = { manual: '手动', published: '发布', import: '导入', quickstart: '建号' };
 /* AI 眼中的我第一次点开才挂载（会去拉数据） */
 const seen = reactive({ me: false });

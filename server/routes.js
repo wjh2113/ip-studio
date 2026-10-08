@@ -19,6 +19,7 @@
  *   benchmarks.js 对标速存：抓网页 / 粘贴文本拆提纲，转存素材或框架
  *   export.js     同步密钥与成稿导出（Obsidian 插件）
  *   learning.js   个人档案、AI 眼中的我（语气档案、改稿偏好、学习记录）
+ *   refs.js       成稿参考：每个账号生成时带哪些资料，每项开关和权重
  *   invites.js    邀请码：APP_ADMINS 里的用户（或后台管理员）生成，凭码注册
  * index.js 和测试仍然从这里 import，不用关心函数具体在哪个文件。 */
 export * from './routes/common.js';
@@ -43,3 +44,4 @@ export * from './routes/benchmarks.js';
 export * from './routes/export.js';
 export * from './routes/learning.js';
 export * from './routes/invites.js';
+export * from './routes/refs.js';

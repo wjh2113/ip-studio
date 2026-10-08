@@ -56,6 +56,7 @@ export const personas = pgTable('personas', {
   auto_learn: integer('auto_learn').notNull().default(1),            // 迁移 8：发布后自动学
   digest_full_count: integer('digest_full_count').notNull().default(0), // 上次从头梳理档案时有几篇样本
   digest_full_at: text('digest_full_at').notNull().default(''),        // 迁移 9：上次从头梳理的时间
+  refs_json: text('refs_json').notNull().default('{}'),           // 迁移 11：成稿参考的开关和权重（refs.js）
   subject_ideas: text('subject_ideas').notNull().default('[]'),
   hotspot_json: text('hotspot_json').notNull().default('null'),
   created_at: text('created_at').notNull(),
