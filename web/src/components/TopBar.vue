@@ -9,7 +9,6 @@
       <button data-view="frameworks" :class="{ active: s.view === 'frameworks' }" @click="s.view = 'frameworks'">框架库</button>
     </nav>
     <div class="topbar-right">
-      <span class="chip llm-chip" :class="{ warn: s.llm && !s.llm.live }" :title="llmTitle"><i class="dot" aria-hidden="true"></i>{{ llmText }}</span>
       <button class="top-btn jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
         title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()"><Icon name="bolt" />任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
       <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><Icon name="crown" /><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
@@ -42,20 +41,6 @@ const sync = useSyncStore();
 const learning = useLearningStore();
 const invites = useInvitesStore();
 const quota = computed(() => plan.quota);
-
-const llmText = computed(() => {
-  const l = s.llm;
-  if (!l) return '…';
-  return l.live ? `${l.label} · ${l.model}` : l.label;
-});
-
-const llmTitle = computed(() => {
-  const l = s.llm;
-  if (!l) return '当前模型通道';
-  return l.live
-    ? `当前模型通道：${l.provider} / ${l.model}`
-    : '未检测到模型密钥，当前为演示模式：流程完整，内容是本地模板。在 .env 中配置密钥后自动切换。';
-});
 
 // 低于 15% 变红——这时候提醒还来得及，撞到 402 才说就晚了
 const low = computed(() => {
