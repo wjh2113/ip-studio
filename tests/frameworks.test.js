@@ -112,3 +112,24 @@ test('栏目可以设默认框架', async () => {
   const s = await Sections.create(u.id, p.id, { name: '来时路', purpose: '', guide: '', fields: [], default_framework: 'b:story-three-act' });
   assert.equal(s.default_framework, 'b:story-three-act');
 });
+
+test('内置「课程稿：微课八步」：八段按模版顺序、占比合计 1、示例带互动标注', async () => {
+  const { builtinOf } = await import('../server/frameworks.js');
+  const f = builtinOf('b:micro-course');
+  assert.ok(f, '没有课程稿框架');
+  assert.deepEqual(f.slots.map((x) => x.role), ['破冰', '导入', '主题', '背景', '目录', '展开', '回顾', '结尾']);
+  assert.ok(Math.abs(f.slots.reduce((n, x) => n + x.ratio, 0) - 1) < 1e-9);
+  assert.ok(f.slots.every((x) => x.guide.length <= 200));
+  assert.match(f.example, /停顿，等回应/);
+  assert.ok(f.scenes.includes('课程'));
+});
+
+test('内置「信念萃取与植入」：讲话顺序、占比合计 1、示例先萃取四要素', async () => {
+  const { builtinOf } = await import('../server/frameworks.js');
+  const f = builtinOf('b:belief');
+  assert.ok(f, '没有信念框架');
+  assert.deepEqual(f.slots.map((x) => x.role), ['故事引入', '故事的结论', '问题行为', '理解背后信念', '扩大格局', '植入信念', '目标行为', '价值收尾']);
+  assert.ok(Math.abs(f.slots.reduce((n, x) => n + x.ratio, 0) - 1) < 1e-9);
+  assert.ok(f.slots.every((x) => x.guide.length <= 200));
+  for (const k of ['问题行为', '背后信念', '目标行为', '植入信念']) assert.ok(f.example.includes(k), k);
+});
