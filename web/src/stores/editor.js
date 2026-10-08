@@ -466,7 +466,6 @@ export const useEditorStore = defineStore('editor', () => {
     const st = s();
     if (!st.draft?.content?.trim()) { toast('还没有正文'); return; }
     if (rec && rec.state === 'recording') { rec.stop(); return; }
-    if (editVer.value) { toast('语音改稿只改原文：先在版本栏切回原文'); return; }
     let mediaStream;
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -498,9 +497,10 @@ export const useEditorStore = defineStore('editor', () => {
     const st = s();
     if (!st.draft) return;
     const id = st.draft.id;
+    const ver = editVer.value;      // 改的是编辑框正开着的那一版
     voice.recognizing = true;
     try {
-      const res = await fetch(`/api/drafts/${id}/voice-edit`, {
+      const res = await fetch(`/api/drafts/${id}/voice-edit${ver ? `?version=${encodeURIComponent(ver)}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': blob.type || 'audio/webm', 'X-Filename': 'voice.webm' },
         body: blob,
@@ -508,14 +508,15 @@ export const useEditorStore = defineStore('editor', () => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `语音改稿失败（${res.status}）`);
       // 识别期间换了稿子或离开了编辑：结果对不上了，不能写到现在这篇上
-      if (st.draft?.id !== id || st.mode !== 'edit' || editVer.value) { toast('已经换了稿子或版本，这次语音改稿没有应用'); return; }
+      if (st.draft?.id !== id || st.mode !== 'edit' || editVer.value !== ver) { toast('已经换了稿子或版本，这次语音改稿没有应用'); return; }
       const note = {
         heard: data.transcript ? `听到：${data.transcript}` : '',
         understood: data.note ? `理解成：${data.note}` : '',
         changed: 0, why: '', undo: null,
       };
-      if (data.changed && data.content && data.content !== st.draft.content) {
-        note.undo = st.draft.content;
+      if (data.changed && data.content && data.content !== textOf(ver)) {
+        note.undo = textOf(ver);
+        note.ver = ver;
         note.changed = (data.applied || []).reduce((n, x) => n + (x.count || 1), 0);
         onInput(data.content, { voice: true });
       } else {
@@ -532,7 +533,7 @@ export const useEditorStore = defineStore('editor', () => {
   function undoVoice() {
     const n = voiceNote.value;
     if (n?.undo == null) return;
-    onInput(n.undo, { voice: true });
+    replaceContent(n.undo, n.ver || '');
     voiceNote.value = null;
     toast('已撤销这次语音改稿');
   }

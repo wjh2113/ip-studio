@@ -195,6 +195,24 @@ test('手改平台版本：PUT 存正文，原文不动；没有的版本 404，
   assert.equal(r.status, 400);
 });
 
+test('检查、语音改稿按版本：查小红书版、改小红书版，原文不动', async () => {
+  // 上一条已经出过小红书版本并手改过
+  const d0 = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  let r = await api.call('POST', `/api/drafts/${draftId}/review`, { version: 'xiaohongshu' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.review.version, 'xiaohongshu');
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { version: 'weibo' });
+  assert.equal(r.status, 404);
+  const audio = new Uint8Array(2048).fill(3);
+  r = await api.call('POST', `/api/drafts/${draftId}/voice-edit?version=xiaohongshu`, audio, { 'content-type': 'audio/webm', 'x-filename': 'v.webm' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.version, 'xiaohongshu');
+  // 返回的是小红书版改后的正文（演示模式只换前 12 个字成自己），不是原文
+  assert.ok(r.data.content.startsWith(d0.variants.xiaohongshu.content.slice(0, 12)), r.data.content.slice(0, 30));
+  const d1 = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft;
+  assert.equal(d1.content, d0.content);
+});
+
 test('口播两版：公众号原文朗读版 + 视频号口播版；逐段改词和提示', async () => {
   // 还没有视频号版本时不能直接标
   let r = await api.call('POST', `/api/drafts/${draftId}/cues`, { version: 'shipinhao' });

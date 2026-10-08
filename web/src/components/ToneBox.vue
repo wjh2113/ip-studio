@@ -8,7 +8,7 @@
     </div>
     <p v-if="r.tone.error" class="form-error">{{ r.tone.error }}</p>
     <div v-for="(f, i) in r.tone.flags || []" :key="i" class="tone-item" :class="[`lv-${f.level}`, { locatable: f.quote }]" :data-tone="f.rule"
-      :title="f.quote ? '点一下，在左边原文里定位到这句' : null" @click="f.quote && ed.locate(f.quote)">
+      :title="f.quote ? '点一下，在左边原文里定位到这句' : null" @click="f.quote && ed.locate(f.quote, { ver: r.tone.version || '' })">
       <p class="tone-what">{{ f.what }}</p>
       <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」</p>
       <p class="flag-fix">建议：{{ f.suggestion }}</p>

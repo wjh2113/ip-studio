@@ -119,8 +119,8 @@
         <template v-if="!review.open">
           <p class="wp-text">错字、通顺、调性与风险，逐条给建议，可一键采纳；顺带标出像 AI 写的地方。</p>
           <div class="wp-acts">
-            <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!s.draft?.content || Boolean(v.current)" @click="review.run()">检查一遍</BusyBtn>
-            <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!s.draft?.content || Boolean(v.current)"
+            <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!ed.text" @click="review.run()">检查一遍</BusyBtn>
+            <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!ed.text"
               title="只看说法和结构，不调模型、不花点数" @click="review.scanTone()">扫 AI 味</BusyBtn>
           </div>
         </template>
@@ -281,11 +281,11 @@ const menu = ref('');
 const toggleMenu = (m) => { menu.value = menu.value === m ? '' : m; };
 const closeMenu = () => { menu.value = ''; };
 
-/* 标题、多平台、学习、检查都针对原文：看别的平台版本时灰掉。口播例外：视频号、抖音、B 站版本也能做 */
+/* 标题、多平台、学习针对原文：看别的平台版本时灰掉。检查查正开着的那一版；口播在视频号、抖音、B 站版本上也能做 */
 function actDisabled(act) {
   if (act === 'archive') return Boolean(s.draft?.archived_at);
   if (act === 'cues') return !cueOk.value;
-  return ['multi', 'learn', 'review', 'titles'].includes(act) && Boolean(v.current);
+  return ['multi', 'learn', 'titles'].includes(act) && Boolean(v.current);
 }
 
 async function confirmAct(act) {

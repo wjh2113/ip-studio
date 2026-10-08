@@ -188,6 +188,7 @@
 .review-list:empty, .review-flags:empty { display: none; }
 .review-list { max-height: 360px; overflow-y: auto; }
 .review.stale .review-list { opacity: .45; pointer-events: none; }
+.review-ver { font-size: 11.5px; padding: 0 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); }
 .review-again { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel-2); }
 /* 点一条在左边原文定位 */
 .issue.locatable, .flag.locatable, .tone-item.locatable { cursor: pointer; }

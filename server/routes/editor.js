@@ -95,7 +95,10 @@ export async function handleVoiceEdit(req, res, file, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  const content = String(draft.content || '');
+  // ?version=xiaohongshu：改的是那个平台版本（编辑框正开着它）；不带就是原文
+  const version = String(new URL(req.url, 'http://x').searchParams.get('version') || '');
+  if (version && !draft.variants?.[version]) throw new HttpError(404, '还没有这个平台的版本');
+  const content = String((version ? draft.variants[version].content : draft.content) || '');
   if (!content.trim()) throw new HttpError(400, '还没有正文');
   if (content.length > 20000) throw new HttpError(400, '正文太长，语音改稿先控制在 2 万字以内');
 
@@ -117,7 +120,7 @@ export async function handleVoiceEdit(req, res, file, params) {
     const out = await generateJSON({
       meta: { feature: '语音改稿', userId: user.id, channel: 'quality' },
       system: sys('voice-edit', VOICE_EDIT_SYSTEM),
-      user: voiceEditUser(draft, transcript),
+      user: voiceEditUser({ ...draft, content, platform: version || draft.platform }, transcript),
       schema: VOICE_EDIT_SCHEMA,
       mock: () => ({
         note: '演示模式：这里会复述听懂的修改要求',
@@ -136,5 +139,6 @@ export async function handleVoiceEdit(req, res, file, params) {
     skipped: result.skipped,
     content: result.content,
     changed: result.content !== content,
+    version,
   });
 }

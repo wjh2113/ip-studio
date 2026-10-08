@@ -4,6 +4,7 @@
     <div class="review-head">
       <span class="review-verdict" id="reviewVerdict" :class="verdictClass">{{ verdictText }}</span>
       <span v-if="hasRisk" class="review-risk" id="reviewRisk" :class="`lv-${res.risk}`">风险 {{ res.risk }}</span>
+      <span v-if="res?.version" class="review-ver" id="reviewVer">{{ s.platformLabel(res.version) }}版</span>
       <span class="review-summary" id="reviewSummary">{{ summary }}</span>
       <span class="grow"></span>
       <button v-if="res && res.issues.length >= 2" class="btn ghost small" id="reviewApplyAll" @click="r.applyAll()">全部采纳</button>
@@ -15,7 +16,7 @@
     </div>
     <div class="review-flags" id="reviewFlags">
       <div v-for="(f, i) in res?.flags || []" :key="i" class="flag" :class="[`lv-${f.level}`, { locatable: f.quote }]"
-        :title="f.quote ? '点一下，在左边原文里定位到这句' : null" :data-flag="i" @click="f.quote && ed.locate(f.quote)">
+        :title="f.quote ? '点一下，在左边原文里定位到这句' : null" :data-flag="i" @click="f.quote && ed.locate(f.quote, { ver: res?.version || '' })">
         <div class="flag-top">
           <span class="flag-dim">{{ f.dimension }}</span>
           <span class="flag-level">{{ f.level }}</span>
@@ -53,13 +54,15 @@
 import { computed } from 'vue';
 import { VERDICT_LABEL, useReviewStore } from '../stores/review.js';
 import { useEditorStore } from '../stores/editor.js';
+import { useStudioStore } from '../stores/studio.js';
 
 const r = useReviewStore();
 const ed = useEditorStore();
+const s = useStudioStore();
 /* 点一条：还没改的定位到原句；采纳过的定位到改后的那句 */
 function locateIssue(i, it) {
   if (window.getSelection?.().toString()) return;      // 在选字复制，不跳
-  ed.locate(r.handled.has(i) && !r.fits(i) ? it.fix : it.quote);
+  ed.locate(r.handled.has(i) && !r.fits(i) ? it.fix : it.quote, { ver: res.value?.version || '' });
 }
 const res = computed(() => r.result);
 
