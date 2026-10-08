@@ -387,16 +387,13 @@ test('管理后台：设置列表、保存设置报错、Eval 运行', async () 
   assert.equal(r.data.variants, 2);
 });
 
-test('提示词说明书：未登录只读；管理员可保存并切回', async () => {
+test('提示词：未登录 403；后台管理员可读可改；使用说明要登录', async () => {
   const guest = client();
   let r = await guest.call('GET', '/api/prompt-docs');
-  assert.equal(r.status, 200, r.text);
-  assert.equal(r.data.canEdit, false);
-  const original = r.data.prompts.find((p) => p.key === 'topics')?.system || '';
-  assert.ok(original.length > 20, 'topics 提示词应有正文');
+  assert.equal(r.status, 403, r.text);
 
-  r = await guest.call('PUT', '/api/prompt-docs/topics', { system: `${original}\n\n（访客不该能存）` });
-  assert.equal(r.status, 401, `未登录保存应 401：${r.text}`);
+  r = await guest.call('GET', '/api/guide');
+  assert.equal(r.status, 401, r.text);
 
   const admin = client();
   r = await admin.call('POST', '/api/admin/login', { username: 'boss', password: 'adminpass9' });
@@ -408,6 +405,11 @@ test('提示词说明书：未登录只读；管理员可保存并切回', async
   r = await admin.call('GET', '/api/prompt-docs');
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.canEdit, true);
+  const original = r.data.prompts.find((p) => p.key === 'topics')?.system || '';
+  assert.ok(original.length > 20, 'topics 提示词应有正文');
+
+  r = await guest.call('PUT', '/api/prompt-docs/topics', { system: `${original}\n\n（访客不该能存）` });
+  assert.equal(r.status, 401, `未登录保存应 401：${r.text}`);
 
   const edited = `${original}\n\n（接口测试手改 ${Date.now()}）`;
   r = await admin.call('PUT', '/api/prompt-docs/topics', { system: edited });
@@ -420,6 +422,14 @@ test('提示词说明书：未登录只读；管理员可保存并切回', async
   r = await admin.call('POST', `/api/prompt-docs/topics/revisions/${codeRev.id}/activate`, {});
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.system, codeRev.system);
+
+  // 业务用户登录后可读使用说明
+  const user = client();
+  r = await user.call('POST', '/api/auth/register', { username: `guide${Date.now().toString(36)}`, password: 'secret123' });
+  assert.equal(r.status, 200, r.text);
+  r = await user.call('GET', '/api/guide');
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.data.markdown || '', /新人操作手册/);
 });
 
 test('邀请码接口：普通用户 403；没登录 401', async () => {

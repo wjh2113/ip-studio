@@ -24,6 +24,7 @@
 export * from './routes/common.js';
 export * from './routes/auth.js';
 export * from './routes/prompts.js';
+export * from './routes/guide.js';
 export * from './routes/admin.js';
 export * from './routes/personas.js';
 export * from './routes/hotspots.js';

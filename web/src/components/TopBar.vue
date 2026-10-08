@@ -15,8 +15,10 @@
       <button type="button" class="user-chip" id="profileBtn" title="个人档案：你的工作经历、项目经历、数据成果和观点，所有账号共用" @click="learning.openProfile()"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span><span class="user-sub">个人档案</span></button>
       <button v-if="s.user?.admin" class="top-link" id="inviteBtn" type="button" title="生成邀请码：发给对方，凭码注册自己的账号" @click="invites.open()"><Icon name="key" />邀请</button>
       <button class="top-link icon-only" id="syncBtn" type="button" title="同步到 Obsidian：把成稿定期写进知识库" aria-label="同步到 Obsidian" @click="sync.open()"><Icon name="refresh" /></button>
-      <a class="top-link" href="/prompts" target="_blank" rel="noopener"
-         title="提示词说明书；要改内容需先登录管理后台"><Icon name="book" />说明书</a>
+      <a class="top-link" href="/guide" target="_blank" rel="noopener" id="guideLink"
+         title="新人操作手册：怎么上手、各功能怎么用"><Icon name="book" />使用说明</a>
+      <a v-if="s.user?.admin" class="top-link" href="/prompts" target="_blank" rel="noopener" id="promptsLink"
+         title="提示词说明书；要改内容需先登录管理后台"><Icon name="sparkles" />提示词</a>
       <button class="top-link" id="logoutBtn" @click="session.logout()"><Icon name="logout" />退出</button>
     </div>
   </header>

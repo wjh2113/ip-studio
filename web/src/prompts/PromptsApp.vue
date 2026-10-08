@@ -3,8 +3,8 @@
     <div class="docs-head-in">
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
-        <h1>提示词说明书</h1>
-        <p class="sub">自媒体助手 —— 每一条提示词的产品定位、价值与功能逻辑</p>
+        <h1>提示词</h1>
+        <p class="sub">自媒体助手 —— 每一条提示词的产品定位、价值与功能逻辑（仅应用管理员可见）</p>
       </div>
       <div class="docs-head-acts">
         <span v-if="d?.canEdit" class="docs-edit-on">已登录管理员 · 可改可存</span>
@@ -27,7 +27,7 @@
       <template v-if="d">
         <section v-if="!d.canEdit" class="principle prompt-lock" id="promptLock">
           <h2>改提示词需要管理员身份</h2>
-          <p>说明书谁都能看；<strong>保存、切版本只有管理后台登录后才能做</strong>（全站共用，改了会影响所有用户）。
+          <p>本页只有应用管理员能看；<strong>保存、切版本还要再登录管理后台</strong>（全站共用，改了会影响所有用户）。
             请先打开 <a href="/admin">/admin</a> 用管理员账号登录，再回到本页刷新——展开「实际发给模型的 system 提示词」即可改并保存为新版本。</p>
         </section>
         <section class="principle" id="principle"><h2>{{ d.principle.title }}</h2><p v-html="md(d.principle.body)"></p></section>
@@ -139,7 +139,14 @@ let observer = null;
 async function load() {
   try {
     const res = await fetch('/api/prompt-docs', { credentials: 'same-origin' });
-    d.value = await res.json();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      error.value = body.error || (res.status === 403 ? '只有应用管理员可以查看提示词' : '读不到说明数据');
+      d.value = null;
+      return;
+    }
+    d.value = body;
+    error.value = '';
     for (const k of Object.keys(drafts)) delete drafts[k];
   } catch {
     error.value = '读不到说明数据，确认服务在跑。';

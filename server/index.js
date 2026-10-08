@@ -140,6 +140,7 @@ const ROUTES = [
   ['GET', /^\/api\/prompt-docs$/, R.handlePromptDocs],
   ['PUT', /^\/api\/prompt-docs\/(?<key>[\w-]+)$/, R.handlePromptSave],
   ['POST', /^\/api\/prompt-docs\/(?<key>[\w-]+)\/revisions\/(?<rid>\d+)\/activate$/, R.handlePromptActivate],
+  ['GET', /^\/api\/guide$/, R.handleGuide],
   ['GET', /^\/api\/materials$/, R.handleMaterialsIndex],
   ['POST', /^\/api\/materials$/, R.handleMaterialCreateUser],
   ['POST', /^\/api\/materials\/extract-url$/, R.handleMaterialExtractUrl],
@@ -442,13 +443,14 @@ async function serveOwned(path, prefix, dir, req, res) {
 }
 
 /* 页面都是 Vite 构建出来的（npm run build:web → dist/），各页面一个 HTML：
- *   /、/app → index.html（应用）　/admin → admin.html　/prompts → prompts.html
+ *   /、/app → index.html（应用）　/admin → admin.html　/prompts → prompts.html　/guide → guide.html
  *   /about → landing.html（产品说明，未登录访问 / 也是它）　/start → promo.html（营销页，投放链接指这里）
  * 页面不缓存（换版本立刻生效），/assets/* 带哈希可以长期缓存，其余根目录文件（图标）短缓存。 */
 const PAGES = {
   '/': 'index.html', '/index.html': 'index.html', '/app': 'index.html',
   '/admin': 'admin.html', '/admin.html': 'admin.html',
   '/prompts': 'prompts.html', '/prompts.html': 'prompts.html',
+  '/guide': 'guide.html', '/guide.html': 'guide.html',
   '/about': 'landing.html', '/landing.html': 'landing.html',
   '/start': 'promo.html', '/promo.html': 'promo.html',
 };

@@ -33,11 +33,10 @@ await step('/start 营销页，投放参数带到登录链接上', async () => {
   const hrefs = await page.$$eval('a[href*="utm_source=wx"]', (as) => as.map((a) => a.getAttribute('href')));
   return `${await page.title()}｜${hrefs.length} 个链接带上了来源`;
 });
-await step('/prompts 说明书：目录和条目（未登录管理员时只读）', async () => {
+await step('/prompts 未登录：看不到提示词内容', async () => {
   await page.goto(B + '/prompts');
-  await page.waitForSelector('#list .pd');
-  await page.waitForSelector('#promptLock, #promptAdminLogin');
-  return `${(await page.$$('#nav a')).length} 个目录项｜${(await page.$$('#list .pd')).length} 条｜锁=${await page.isVisible('#promptLock')}`;
+  await page.waitForFunction(() => /只有应用管理员可以查看提示词|请先登录/.test(document.body.innerText || ''));
+  return (await page.textContent('body')).trim().slice(0, 40);
 });
 await step('/admin 首次设置管理员（或登录）→ 进后台', async () => {
   await page.goto(B + '/admin');
@@ -49,7 +48,7 @@ await step('/admin 首次设置管理员（或登录）→ 进后台', async () 
   await page.waitForSelector('#panel #stats .stat');
   return `${sub.slice(0, 16)}｜${(await page.$$('#stats .stat')).length} 个统计`;
 });
-await step('管理员登录后 /prompts 可编辑并保存', async () => {
+await step('后台管理员登录后 /prompts 可编辑并保存', async () => {
   await page.goto(B + '/prompts');
   await page.waitForSelector('.docs-edit-on');
   await page.click('#list .pd details summary');
@@ -61,6 +60,25 @@ await step('管理员登录后 /prompts 可编辑并保存', async () => {
   await page.click(`[data-save-prompt="${key}"]`);
   await page.waitForFunction(() => /已手改/.test(document.querySelector('#list')?.textContent || ''));
   return key;
+});
+await step('登录用户可打开使用说明', async () => {
+  await page.goto(B + '/app');
+  await page.waitForSelector('#authForm');
+  if (await page.isVisible('#authTabs [data-mode="register"]')) {
+    await page.click('#authTabs [data-mode="register"]');
+  }
+  await page.fill('#authForm [name=username]', 'guide' + Date.now().toString(36));
+  await page.fill('#authForm [name=password]', 'secret123');
+  await page.click('#authSubmit');
+  await page.waitForSelector('#app:not(.hidden)');
+  await page.click('#guideLink');
+  const guide = await page.context().waitForEvent('page');
+  await guide.waitForSelector('#guideBody, #guideError');
+  const ok = await guide.$('#guideBody');
+  if (!ok) throw new Error(await guide.textContent('#guideError'));
+  const text = await guide.textContent('#guideBody');
+  await guide.close();
+  return text.includes('新人操作手册') ? '手册已显示' : text.slice(0, 40);
 });
 await step('回到后台继续测分区', async () => {
   await page.goto(B + '/admin');

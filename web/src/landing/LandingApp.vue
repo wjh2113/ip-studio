@@ -5,7 +5,7 @@
       <span class="grow"></span>
       <a class="lp-link" href="#how">功能</a>
       <a class="lp-link" href="#price">价格</a>
-      <a class="lp-link" href="/prompts">提示词说明书</a>
+      <a class="lp-link" href="/guide">使用说明</a>
       <a class="lp-link strong" href="/app">登录</a>
     </div>
   </header>
@@ -83,7 +83,7 @@
           </p>
           <p class="lp-note">
             这不是"记住偏好"这种话术。你可以在提示词说明书里看到
-            <a href="/prompts">每次实际发出去的上下文是怎么拼的</a>。
+            <a href="/guide">使用说明</a>里有上手顺序。
           </p>
         </div>
         <div class="lp-feat-v">
@@ -168,7 +168,7 @@
         </div>
         <p class="lp-note">
           这些判断是怎么来的、在哪里翻过车，都写在
-          <a href="/prompts">提示词说明书</a>里，公开可读。
+          <a href="/guide">使用说明</a>里，登录后可读。
         </p>
       </div>
     </section>
@@ -231,7 +231,7 @@
         <p>懂你的账号，帮你做出更好的内容</p>
       </div>
       <div class="lp-foot-col"><b>产品</b><a href="#how">功能</a><a href="#price">价格</a><a href="/app">登录</a></div>
-      <div class="lp-foot-col"><b>资源</b><a href="/prompts">提示词说明书</a></div>
+      <div class="lp-foot-col"><b>资源</b><a href="/guide">使用说明</a></div>
     </div>
     <div class="lp-in lp-copy">© 自媒体助手</div>
   </footer>

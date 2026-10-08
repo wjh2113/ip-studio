@@ -5,14 +5,15 @@ import { fileURLToPath } from 'node:url';
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const API = process.env.CW_API || 'http://127.0.0.1:5177';
 
-/* 五个页面，各自一个入口：
+/* 六个页面，各自一个入口：
  *   index.html    应用（/、/app）
  *   admin.html    管理后台（/admin）
- *   prompts.html  提示词说明书（/prompts）
+ *   prompts.html  提示词说明书（/prompts，仅 APP_ADMINS / 后台管理员）
+ *   guide.html    使用说明（/guide，登录用户）
  *   landing.html  落地页（/about；未登录访问 / 也是它）
  *   promo.html    营销页（/start，投放链接指这里）
  * 线上由 Node 按这些地址从 dist/ 出页面（server/index.js 的 serveStatic）；开发时下面的插件做同样的映射。 */
-const PAGES = { '/admin': '/admin.html', '/prompts': '/prompts.html', '/about': '/landing.html', '/start': '/promo.html' };
+const PAGES = { '/admin': '/admin.html', '/prompts': '/prompts.html', '/guide': '/guide.html', '/about': '/landing.html', '/start': '/promo.html' };
 
 const pageRoutes = {
   name: 'page-routes',
@@ -54,6 +55,7 @@ export default defineConfig({
         index: here('index.html'),
         admin: here('admin.html'),
         prompts: here('prompts.html'),
+        guide: here('guide.html'),
         landing: here('landing.html'),
         promo: here('promo.html'),
       },
