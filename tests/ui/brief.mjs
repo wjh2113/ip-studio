@@ -137,6 +137,9 @@ await step('第二个账号：切号后记录分开；「全部创作」里点�
   return `标签 ${tag}｜${(await page.textContent('#inheritNote')).trim()}`;
 });
 await step('成稿参考：简报下点「成稿参考设置」→ 账号设定的「成稿参考」；关掉素材库、个人档案调成重点，马上存', async () => {
+  // 上一步停在选题卡，先回到简报才能点「成稿参考设置」
+  await page.click('#steps [data-step="1"]');
+  await page.waitForSelector('#briefCard', { state: 'visible' });
   await page.click('#briefRefsBtn');
   await page.waitForSelector('#refsSection [data-ref="materials"]');
   await page.uncheck('#refsSection [data-ref="materials"] input[type=checkbox]');
