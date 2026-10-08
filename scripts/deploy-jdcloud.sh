@@ -102,8 +102,9 @@ if ! grep -qE '^LLM_GATEWAY_API_KEY=.+' "\${ENV_FILE}"; then
   echo 'LLM_GATEWAY_API_KEY=' >> "\${ENV_FILE}"
   echo 'WARN: LLM_GATEWAY_API_KEY 为空，上线后请写入租户 IP 的 Key' >&2
 fi
-# 访问密码与 API 网关管理台同一份；已有值不覆盖
-if ! grep -qE '^ACCESS_PASSWORD=.+' "\${ENV_FILE}"; then
+# 访问密码与 API 网关管理台同一份；已有值不覆盖。
+# 已切到邀请注册（REGISTER_OPEN=0/invite）时不要再写回——删掉 ACCESS_PASSWORD 正是上线步骤，下次部署不应把它加回来。
+if ! grep -qE '^REGISTER_OPEN=(0|invite)$' "\${ENV_FILE}" && ! grep -qE '^ACCESS_PASSWORD=.+' "\${ENV_FILE}"; then
   GW_PW=\$(grep '^ADMIN_PASSWORD=' /opt/AIapiMgr/backend/.env 2>/dev/null | head -1 | cut -d= -f2- || true)
   if [[ -n "\${GW_PW}" ]]; then
     set_kv ACCESS_PASSWORD "\${GW_PW}"
