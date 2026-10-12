@@ -162,6 +162,48 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /* 按意见重写：写几条修改意见，整篇在原稿上重写（版本栏开着哪一版就改哪一版）。
+     流式显示；写完服务端才落盘，原稿留一版历史，这里再记一步撤销，Ctrl+Z 能退回。失败原稿不动 */
+  async function revise(notes) {
+    const st = s();
+    const draft = st.draft;
+    const ver = editVer.value;
+    const before = textOf(ver);
+    if (!draft || !before.trim() || st.streaming) return false;
+    if (st.mode === 'edit') { stopVoice(); await flushSave(true); st.mode = 'read'; }
+    else await flushSave();
+    closeAssist();
+    st.streaming = true;
+    live.title = '按意见重写中';
+    live.text = '';
+    live.error = '';
+    let ok = false;
+    try {
+      await stream(`/drafts/${draft.id}/revise`, { notes, version: ver }, (event, data) => {
+        if (event === 'delta') live.text += data.text;
+        else if (event === 'done') {
+          if (st.draft?.id !== draft.id) return;
+          if (hist.id !== histKey()) resetHistory();
+          hist.undo.push(before);
+          hist.redo = [];
+          st.draft = data.draft;
+          ok = true;
+        } else if (event === 'error') throw new Error(data.message);
+      });
+      if (ok) {
+        toast('已按意见重写，原稿在「版本」里，Ctrl+Z 也能退回');
+        useHistoryStore().load();
+      }
+    } catch (err) {
+      toast(`没改成：${err.message}。原稿没动`);
+    } finally {
+      live.title = '';
+      live.text = '';
+      st.streaming = false;
+    }
+    return ok;
+  }
+
   /* 阅读区现在该显示什么：生成中 / 出错 / 正文 */
   const streamingView = computed(() => s().streaming || Boolean(live.error));
 
@@ -688,6 +730,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     live, streamingView, generate, setMode,
+    revise,
     save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,

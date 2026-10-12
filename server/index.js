@@ -112,6 +112,7 @@ const ROUTES = [
   ['POST', /^\/api\/drafts\/topics$/, R.handleTopics],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/topics$/, R.handleRetopics],
   ['POST', /^\/api\/drafts\/(?<id>\d+)\/content$/, R.handleContent],
+  ['POST', /^\/api\/drafts\/(?<id>\d+)\/revise$/, R.handleRevise],
   ['PUT', /^\/api\/drafts\/(?<id>\d+)\/content$/, R.handleSaveContent],
   ['GET', /^\/api\/drafts\/(?<id>\d+)\/revisions$/, R.handleRevisionList],
   ['GET', /^\/api\/drafts\/(?<id>\d+)\/revisions\/(?<rid>\d+)$/, R.handleRevisionGet],

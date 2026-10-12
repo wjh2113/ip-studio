@@ -405,3 +405,9 @@ body.no-scroll { overflow: hidden; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
 *::-webkit-scrollbar-track { background: transparent; }
+/* 划词菜单底部：自己写一句意见改这段 */
+.sel-custom { display: grid; gap: 6px; width: 260px; }
+.sel-custom input { width: 100%; }
+.pop-menu .sel-custom .btn { width: auto; justify-self: end; justify-content: center; background: var(--accent); color: #fff; padding: 5px 12px; }
+.pop-menu .sel-custom .btn:disabled { opacity: .5; cursor: not-allowed; }
+.pop-menu .sel-custom .btn:hover:not(:disabled) { background: var(--accent-ink); color: #fff; }

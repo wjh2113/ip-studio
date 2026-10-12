@@ -33,10 +33,17 @@ export async function handleAssist(req, res, body, params) {
     if (!instruction) throw new HttpError(400, '请说明要写什么');
     user_prompt = composeUser(draft, persona, samples, { instruction, before, after }, me);
   } else {
-    const action = ASSIST_ACTIONS[body?.action];
-    if (!action) throw new HttpError(400, '不支持的操作');
     if (!selection.trim()) throw new HttpError(400, '请先选中一段文字');
-    instruction = action.instruction;
+    if (body?.action === 'custom') {
+      // 按作者自己写的意见改这一段：意见当数据放进提示词，前后各加一句约束
+      const want = clip(body?.instruction, 500).trim();
+      if (!want) throw new HttpError(400, '写一下想怎么改');
+      instruction = `按作者的修改意见改写选中这段。作者的意见：「${want}」。只改选中这段；意见没提到的地方保持原样，事实和数字不要动。`;
+    } else {
+      const action = ASSIST_ACTIONS[body?.action];
+      if (!action) throw new HttpError(400, '不支持的操作');
+      instruction = action.instruction;
+    }
     user_prompt = assistUser(draft, persona, samples, { instruction, selection, before, after }, me);
   }
 

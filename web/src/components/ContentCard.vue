@@ -21,6 +21,7 @@
           <div class="tb-group">
             <button v-if="s.mode !== 'read'" class="btn ghost small" id="backReadBtn" @click="ed.setMode('read')"><Icon name="arrow-left" :size="14" />返回阅读</button>
             <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')"><Icon name="pen" :size="14" />修改</button>
+            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见，整篇在原稿上重写；原稿留在「版本」里" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
             <button class="btn ghost small" id="revBtn" :class="{ on: s.revOpen }" @click="toggleRevs"><Icon name="clock" :size="14" />版本</button>
           </div>
           <div class="tb-group">
@@ -28,10 +29,10 @@
               <button class="btn primary small" id="confirmBtn" aria-haspopup="true" @click.stop="toggleMenu('confirm')"><Icon name="check-circle" :size="14" />确认<Icon name="chev-down" :size="13" /></button>
               <div v-if="menu === 'confirm'" class="menu" id="confirmMenu">
                 <div class="menu-head">这稿定了，接下来</div>
-                <button v-for="a in CONFIRM.slice(0, 5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
+                <button v-for="a in CONFIRM.slice(0, 6)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
                   :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
                 <hr>
-                <button v-for="a in CONFIRM.slice(5)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
+                <button v-for="a in CONFIRM.slice(6)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
                   :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
               </div>
             </div>
@@ -178,7 +179,7 @@ import { useTitlesStore } from '../stores/titles.js';
 import { useInsightsStore } from '../stores/insights.js';
 import { usePrompterStore } from '../stores/prompter.js';
 import { useRefsStore } from '../stores/refs.js';
-import { toast } from '../lib/feedback.js';
+import { ask, toast } from '../lib/feedback.js';
 import { countChars, esc, markdown } from '../lib/text.js';
 import { caretFromPoint, caretRect } from '../lib/caret.js';
 import { anyLayerOpen } from '../lib/escape.js';
@@ -241,6 +242,7 @@ const article = ref(null);
 const editor = ref(null);
 
 const CONFIRM = [
+  { act: 'revise', icon: 'pen', label: '按意见重写', hint: '写几条修改意见，整篇在原稿上重写；原稿留在版本里' },
   { act: 'cues', icon: 'mic', label: '生成口播提示', hint: '切段、标语气，配合提词器照着念' },
   { act: 'titles', icon: 'tag', label: '起标题', hint: '按不同写法出 6 个候选，挑一个替换' },
   { act: 'multi', icon: 'layers', label: '出多平台版本', hint: '事实不变，按各平台重排结构和篇幅' },
@@ -298,6 +300,7 @@ function actDisabled(act) {
 async function confirmAct(act) {
   if (actDisabled(act)) return;
   closeMenu();
+  if (act === 'revise') { await reviseWithNotes(); return; }
   if (act === 'cues') { sp.version = v.current || ''; ed.setMode('cue'); if (!sp.cues) sp.runCues(); return; }
   if (act === 'multi') { v.openMulti(); return; }
   if (act === 'illus') { v.toggleIllus(); return; }
@@ -306,6 +309,20 @@ async function confirmAct(act) {
   if (act === 'metrics') { useInsightsStore().openMetrics(); return; }
   if (act === 'titles') { useTitlesStore().open(); return; }
   if (act === 'archive') await ed.archiveCurrent();
+}
+
+/* 按意见重写：写几条意见 → 整篇在原稿上重写（版本栏开着哪一版就改哪一版） */
+async function reviseWithNotes() {
+  if (!ed.text.trim() || s.streaming) return;
+  const which = v.current ? `「${v.label}」版本` : '这篇';
+  const got = await ask.form({
+    title: `按意见重写${which}`,
+    body: '一条一行，写清哪里要怎么改。没提到的地方会尽量保持原样；原稿留在「版本」里，Ctrl+Z 也能退回。',
+    fields: [{ key: 'notes', label: '修改意见', multiline: true, rows: 5, required: true,
+      placeholder: '比如：\n开头太慢，直接从客户案例讲起\n第三部分太虚，换成具体步骤\n结尾别喊口号' }],
+    ok: '开始重写',
+  });
+  if (got?.notes?.trim()) await ed.revise(got.notes.trim());
 }
 
 const copyHint = computed(() => `${v.current ? `${v.label}版` : '正文'}${v.imageCount ? '；连图一起（富文本）' : ''}`);
@@ -409,7 +426,8 @@ function locateInRaw(text, range) {
   return { start, end: start + text.length, text };
 }
 
-function onDocMouseUp() {
+function onDocMouseUp(e) {
+  if (e?.target?.closest?.('#selMenu')) return;      // 在划词菜单里点输入框：别把菜单关了
   if (s.mode !== 'read' || !s.draft?.content || s.streaming || v.current) return;
   setTimeout(() => {
     const sel = window.getSelection();

@@ -25,6 +25,7 @@ const OPENAI_MODEL_FAST = process.env.OPENAI_MODEL_FAST || OPENAI_MODEL;
  * 当前取值和拆表前的实际行为完全一致（JSON 默认 fast、文本和流式默认 quality）。 */
 export const FEATURE_TIER = {
   成稿: 'quality',
+  按意见重写: 'quality',
   划词改写: 'quality',
   编辑器续写: 'quality',
   多平台适配: 'quality',

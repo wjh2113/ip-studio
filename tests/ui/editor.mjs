@@ -111,6 +111,28 @@ await step('左右两栏收起来给正文腾地方，刷新后还记得，再�
   await page.waitForSelector('#history', { state: 'visible' });
   return `正文宽 ${Math.round(before)} → ${Math.round(after)}`;
 });
+await step('划词写自己的意见改这段；整篇「按意见重写」→ 原稿留版本、Ctrl+Z 能退回', async () => {
+  if (!await page.isVisible('#editor')) await page.click('#editBtn');
+  await page.$eval('#editor', (ta) => { ta.focus(); ta.setSelectionRange(2, 12); });
+  await page.dispatchEvent('#editor', 'mouseup');
+  await page.waitForSelector('#selMenu:not(.hidden)');
+  await page.fill('#selCustomInput', '加一个具体例子');
+  await page.click('#selCustomBtn');
+  await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
+  await page.click('#assistReplace');
+  await page.waitForSelector('#assistPop.hidden', { state: 'attached' });
+
+  const before = await page.inputValue('#editor');
+  await page.click('#reviseBtn');
+  await page.fill('.ask [data-k="notes"]', '开头直接上案例');
+  await page.click('.ask [data-yes]');
+  await page.waitForFunction(() => /已按意见重写/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 15000 });
+  const after = await page.textContent('#content');
+  if (!/开头直接上案例/.test(after)) throw new Error('正文没换成重写后的');
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction((t) => !/开头直接上案例/.test(document.querySelector('#content')?.textContent || '') || t === '', before);
+  return '一段按意见改 + 整篇重写 + 撤销 都行';
+});
 await step('检查 → 采纳一条', async () => {
   await menu('review');
   await page.waitForFunction(() => /没发现问题|小毛病|不通顺|检查失败/.test(document.querySelector('#reviewVerdict')?.textContent || ''), null, { timeout: 15000 });

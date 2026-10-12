@@ -145,6 +145,35 @@ test('划词改写和 / 续写（以前 500：selection.trim is not a function�
   assert.match(r.text, /event: done/);
 });
 
+test('按意见改：选中一段写自己的意见；整篇按意见重写（原稿留版本，失败不动）', async () => {
+  // 一段：自定义意见
+  let r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'custom', instruction: '加一个具体例子', selection: '周末备菜很省事', before: '', after: '' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: done/);
+  r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'custom', instruction: '  ', selection: '周末备菜很省事' });
+  assert.equal(r.status, 400);
+
+  // 整篇：没写意见 400；写了就流式重写，落盘后原稿在历史版本里
+  const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '' });
+  assert.equal(r.status, 400);
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '开头直接上案例' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: delta/);
+  assert.match(r.text, /event: done/);
+  const after = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  assert.notEqual(after, before);
+  assert.match(after, /开头直接上案例/);
+  const revs = (await api.call('GET', `/api/drafts/${draftId}/revisions`)).data.revisions;
+  assert.ok(revs.length >= 2, `原稿没留版本：${revs.length}`);
+  // 还没有的平台版本 404
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: 'x', version: 'weibo' });
+  assert.equal(r.status, 404);
+  // 恢复原稿，免得影响后面的用例
+  r = await api.call('PUT', `/api/drafts/${draftId}/content`, { content: before });
+  assert.equal(r.status, 200, r.text);
+});
+
 test('AI 味扫描：不调模型，直接回规则命中', async () => {
   const r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: '在当今快节奏的时代，备菜至关重要。\n\n让我们一起加油，未来可期！' });
   assert.equal(r.status, 200, r.text);

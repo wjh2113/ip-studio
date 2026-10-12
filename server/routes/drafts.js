@@ -4,7 +4,7 @@ import { HttpError } from '../auth.js';
 import { generateJSON, streamText } from '../llm.js';
 import { pickVariant } from '../abtest.js';
 import { mockContent, mockTopics } from '../mock.js';
-import { CONTENT_SYSTEM, contentUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
+import { CONTENT_SYSTEM, contentUser, reviseUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
 import { performanceOf } from '../performance.js';
 import { describe, json, refsOf, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { refCount, weigh } from '../refs.js';
@@ -280,6 +280,67 @@ export async function restoreAfterFailure(draftId, userId, before, index) {
     }
     : { chosen: null, title: '', content: '', status: 'topics' };
   return Drafts.setContentIf(draftId, userId, { status: 'writing', content: '', chosen: index }, next);
+}
+
+/* ---------------- 按意见重写：作者写几条修改意见，整篇在原稿上重写 ----------------
+ * 流式回给前端看着写；写完才落盘（原稿自动留一版历史，Ctrl+Z / 版本对照都能退回）。中途失败或断开，原稿一个字不动。
+ * version：改的是哪一版（'' 原文，否则是平台版本），和版本栏一致。 */
+export async function handleRevise(req, res, body, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const version = String(body?.version || '');
+  if (version && !draft.variants?.[version]) throw new HttpError(404, '还没有这个平台的版本');
+  const text = String((version ? draft.variants[version].content : draft.content) || '').trim();
+  if (!text) throw new HttpError(400, '还没有正文');
+  if (text.length > 20000) throw new HttpError(400, '正文过长，请分段修改');
+  const notes = String(body?.notes || '').trim().slice(0, 1000);
+  if (!notes) throw new HttpError(400, '写一下修改意见');
+  if (draft.status === 'writing') throw new HttpError(409, '这篇正在生成，等它写完再改');
+
+  // 账号还在就用最新设定（含成稿参考），否则退回创作时的快照
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const hint = `${draft.subject} ${draft.title || ''} ${notes}`;
+  const me = await writerMe(user.id, persona, hint, 'content');
+  const samples = await styleSamples(persona, user.id, hint);
+  const target = { ...draft, platform: version || draft.platform };
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const controller = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+  send('start', { version });
+
+  try {
+    const out = String(await streamText({
+      meta: { feature: '按意见重写', userId: user.id },
+      system: sys('content', CONTENT_SYSTEM),
+      user: reviseUser(target, persona, samples, me, text, notes),
+      onDelta: (t) => send('delta', { text: t }),
+      mock: () => `${text}\n\n（演示模式：这里会按修改意见重写全文——${notes.slice(0, 40)}）`,
+      signal: controller.signal,
+    }) || '').trim();
+    if (out.length < Math.min(40, text.length / 4)) throw new HttpError(502, '没有拿到改写结果，原稿没动');
+    if (version) {
+      const fresh = await Drafts.byId(draft.id, user.id);
+      const variants = { ...(fresh.variants || {}) };
+      variants[version] = { ...(variants[version] || {}), content: out, chars: out.length, editedAt: new Date().toISOString() };
+      await Drafts.setVariants(draft.id, user.id, variants);
+    } else {
+      // 留一版历史：原稿在「版本」里能找回来
+      await Drafts.saveContent(draft.id, user.id, out, { snapshot: true });
+    }
+    send('done', { version, draft: await Drafts.byId(draft.id, user.id) });
+  } catch (err) {
+    if (!controller.signal.aborted) send('error', { message: describe(err) });
+  } finally {
+    res.end();
+  }
 }
 
 /* ---------------- 编辑器：手工保存 ---------------- */
