@@ -112,25 +112,29 @@ await step('左右两栏收起来给正文腾地方，刷新后还记得，再�
   return `正文宽 ${Math.round(before)} → ${Math.round(after)}`;
 });
 await step('划词写自己的意见改这段；整篇「按意见重写」→ 原稿留版本、Ctrl+Z 能退回', async () => {
-  if (!await page.isVisible('#editor')) await page.click('#editBtn');
+  if (await page.isVisible('#editBtn')) await page.click('#editBtn');
+  await page.waitForSelector('#editor', { state: 'visible' });
   await page.$eval('#editor', (ta) => { ta.focus(); ta.setSelectionRange(2, 12); });
   await page.dispatchEvent('#editor', 'mouseup');
   await page.waitForSelector('#selMenu:not(.hidden)');
+  // Vue v-model：fill 后等按钮可点，再回车提交（点 disabled 会一直等到超时）
   await page.fill('#selCustomInput', '加一个具体例子');
-  await page.click('#selCustomBtn');
+  await page.waitForFunction(() => !document.querySelector('#selCustomBtn')?.disabled);
+  await page.press('#selCustomInput', 'Enter');
   await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
   await page.click('#assistReplace');
   await page.waitForSelector('#assistPop.hidden', { state: 'attached' });
 
   const before = await page.inputValue('#editor');
   await page.click('#reviseBtn');
+  await page.waitForSelector('.ask [data-k="notes"]');
   await page.fill('.ask [data-k="notes"]', '开头直接上案例');
   await page.click('.ask [data-yes]');
   await page.waitForFunction(() => /已按意见重写/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 15000 });
   const after = await page.textContent('#content');
   if (!/开头直接上案例/.test(after)) throw new Error('正文没换成重写后的');
   await page.keyboard.press('Control+z');
-  await page.waitForFunction((t) => !/开头直接上案例/.test(document.querySelector('#content')?.textContent || '') || t === '', before);
+  await page.waitForFunction(() => !/开头直接上案例/.test(document.querySelector('#content')?.textContent || ''));
   return '一段按意见改 + 整篇重写 + 撤销 都行';
 });
 await step('检查 → 采纳一条', async () => {
@@ -155,6 +159,8 @@ await step('多平台：出一个版本 → 切过去 → 切回原文', async (
   return `${other}｜看别的版本时口播灰掉=${disabled}`;
 });
 await step('修改：版本栏切到平台版本，编辑框跟着换成那一版，改了存到那一版', async () => {
+  if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
+  await page.waitForSelector('#editBtn');
   const id = await page.$eval('#history .history-item.active', (n) => n.dataset.id);
   const ver = await page.$eval('#verTabs button[data-ver]:not([data-ver=""])', (b) => b.dataset.ver);
   await page.click(`#verTabs button[data-ver="${ver}"]`);
