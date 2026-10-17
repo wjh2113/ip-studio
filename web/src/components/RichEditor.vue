@@ -29,6 +29,8 @@ import FormatBar from './FormatBar.vue';
 import { upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { ImageMark, IMAGE_MARK } from '../lib/imageMark.js';
+import { IllusDecor } from '../lib/illusDecor.js';
+import { useVersionsStore } from '../stores/versions.js';
 import {
   docToHtml, isSafeImageSrc, sanitizeColor, sanitizeDoc, selectionToDoc, serializeEditor,
 } from '../lib/richdoc.js';
@@ -40,6 +42,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:modelValue', 'select', 'slash', 'caret', 'ready', 'hist']);
 
+const versions = useVersionsStore();
 const root = ref(null);
 const fileInput = ref(null);
 const editor = ref(null);
@@ -378,6 +381,7 @@ onMounted(() => {
       Image.configure({ inline: false, allowBase64: false }),
       Placeholder.configure({ placeholder: '在这里改正文…' }),
       ImageMark,
+      IllusDecor,
     ],
     content: docToHtml(props.modelValue),
     editorProps: {
@@ -418,12 +422,22 @@ onMounted(() => {
     onSelectionUpdate: () => { onSelectionUpdate(); },
   });
   editor.value = ed;
+  ed.storage.illusDecor.editor = ed;
+  ed.storage.illusDecor.items = versions.illus?.items || [];
   docText.value = sanitizeDoc(props.modelValue);
   nextTick(() => {
     bindBridge();
     emit('ready', ed);
+    if (ed.view) ed.view.dispatch(ed.state.tr);
   });
 });
+
+watch(() => versions.illus?.items, (items) => {
+  const ed = editor.value;
+  if (!ed?.storage?.illusDecor) return;
+  ed.storage.illusDecor.items = items || [];
+  ed.view.dispatch(ed.state.tr);
+}, { deep: true });
 
 watch(() => props.modelValue, (v) => {
   if (!editor.value || applying.value) return;

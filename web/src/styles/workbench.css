@@ -254,6 +254,10 @@ body.edit-fs-on .assist-pop { z-index: 100; }
 .rich-pm img.doc-img, .rich-pm img {
   max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0.6em 0;
 }
+.image-mark-node.illus-filled { display: none; }
+.illus-widget { margin: 0.6em 0; }
+.illus-widget img { max-width: 100%; height: auto; border-radius: 8px; display: block; }
+.illus-widget figcaption { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
 .image-mark-node {
   display: inline-flex; align-items: center; gap: 6px;
   margin: 0.5em 0; padding: 6px 12px; border-radius: 8px;
