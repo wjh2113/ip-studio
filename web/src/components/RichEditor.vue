@@ -9,17 +9,8 @@
     @dragleave="over = false"
     @drop="onDrop"
   >
-    <div class="rich-toolbar" id="richToolbar" role="toolbar" aria-label="格式">
-      <button type="button" class="rt-btn" id="rtBold" title="加粗" :class="{ on: editor?.isActive('bold') }" @mousedown.prevent @click="editor?.chain().focus().toggleBold().run()">加粗</button>
-      <button type="button" class="rt-btn" id="rtHeading" title="标题" :class="{ on: editor?.isActive('heading', { level: 2 }) }" @mousedown.prevent @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()">标题</button>
-      <button type="button" class="rt-btn" id="rtList" title="列表" :class="{ on: editor?.isActive('bulletList') }" @mousedown.prevent @click="editor?.chain().focus().toggleBulletList().run()">列表</button>
-      <button type="button" class="rt-btn" id="rtQuote" title="引用" :class="{ on: editor?.isActive('blockquote') }" @mousedown.prevent @click="editor?.chain().focus().toggleBlockquote().run()">引用</button>
-      <label class="rt-btn rt-color" id="rtColor" title="文字颜色" @mousedown.prevent="saveSel">
-        <input type="color" :value="currentColor" @input="setColor($event.target.value)" />
-        颜色
-      </label>
-      <button type="button" class="rt-btn" id="rtImage" title="插入图片" @mousedown.prevent @click="pickImage">图片</button>
-      <button type="button" class="rt-btn" id="rtMark" title="插入「此处放图片」" @mousedown.prevent @click="insertMarkAtCaret">放图标记</button>
+    <div class="rich-toolbar" id="richToolbar">
+      <FormatBar variant="icons" />
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFilePicked" />
     </div>
     <EditorContent :editor="editor" class="rich-body" />
@@ -27,13 +18,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Editor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
+import FormatBar from './FormatBar.vue';
 import { upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { ImageMark, IMAGE_MARK } from '../lib/imageMark.js';
@@ -56,11 +48,6 @@ const applying = ref(false);
 const over = ref(false);
 const MARK_MIME = 'application/x-image-mark';
 
-const currentColor = computed(() => {
-  const c = editor.value?.getAttributes('textStyle')?.color;
-  return sanitizeColor(c) || '#333333';
-});
-
 /* 点颜色板会抢走焦点、选区被折叠；先记下再上色 */
 let savedSel = null;
 function saveSel() {
@@ -75,6 +62,38 @@ function setColor(raw) {
   const chain = editor.value.chain();
   if (savedSel) chain.setTextSelection(savedSel);
   chain.focus().setColor(c).run();
+  savedSel = null;
+}
+
+function isActive(name) {
+  const ed = editor.value;
+  if (!ed) return false;
+  if (name === 'h2') return ed.isActive('heading', { level: 2 });
+  if (name === 'h3') return ed.isActive('heading', { level: 3 });
+  if (name === 'list') return ed.isActive('bulletList');
+  if (name === 'quote') return ed.isActive('blockquote');
+  return ed.isActive(name);
+}
+
+function getColor() {
+  return sanitizeColor(editor.value?.getAttributes('textStyle')?.color) || '#333333';
+}
+
+function format(op) {
+  const ed = editor.value;
+  if (!ed) return;
+  if (op === 'undo') { emit('hist', 'undo'); return; }
+  if (op === 'redo') { emit('hist', 'redo'); return; }
+  if (op === 'image') { pickImage(); return; }
+  if (op === 'mark') { insertMarkAtCaret(); return; }
+  const chain = ed.chain().focus();
+  if (op === 'bold') chain.toggleBold().run();
+  else if (op === 'italic') chain.toggleItalic().run();
+  else if (op === 'strike') chain.toggleStrike().run();
+  else if (op === 'h2') chain.toggleHeading({ level: 2 }).run();
+  else if (op === 'h3') chain.toggleHeading({ level: 3 }).run();
+  else if (op === 'list') chain.toggleBulletList().run();
+  else if (op === 'quote') chain.toggleBlockquote().run();
 }
 
 function emitDoc(typing = true) {
@@ -106,6 +125,11 @@ function bindBridge() {
       if (pos == null) return null;
       return serializeEditor(editor.value).pmToDoc(pos.pos);
     },
+    format,
+    isActive,
+    getColor,
+    setColor,
+    saveSel,
     get scrollTop() { return el.querySelector('.ProseMirror')?.scrollTop || 0; },
     set scrollTop(v) {
       const pm = el.querySelector('.ProseMirror');

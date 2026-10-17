@@ -145,21 +145,44 @@
 }
 .rich-editor { padding: 0; overflow: hidden; }
 .rich-toolbar {
-  /* 高于划词菜单（.pop-menu z-index:70），避免菜单盖住格式按钮点不到 */
-  position: relative; z-index: 80;
-  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
-  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  /* 低于划词浮层（.pop-menu z-index:70），格式操作改嵌在浮层里 */
+  position: relative; z-index: 2;
+  display: flex; flex-wrap: wrap; align-items: center;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
   background: var(--panel-2);
 }
-.rt-btn {
-  min-width: 36px; height: 28px; padding: 0 10px; border: 1px solid transparent;
-  border-radius: 6px; background: transparent; font: inherit; font-size: 13px;
+.fmt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.fmt-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); flex: none; }
+.fmt-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 28px; padding: 0; border: 1px solid transparent;
+  border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.fmt-btn:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+.fmt-btn:disabled { opacity: .35; cursor: not-allowed; }
+.fmt-btn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
+.fmt-btn b, .fmt-btn i, .fmt-btn s { font-size: 13px; line-height: 1; }
+.fmt-letter { font: 600 12px/1 var(--font-ui); letter-spacing: -.02em; }
+.fmt-letter sub { font-size: 9px; }
+.fmt-a { border-bottom: 2px solid currentColor; padding-bottom: 1px; }
+.fmt-color { position: relative; overflow: hidden; cursor: pointer; }
+.fmt-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.fmt-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
+  background: transparent; font: inherit; font-size: 12.5px;
   color: var(--muted); cursor: pointer; white-space: nowrap;
 }
-.rt-btn:hover { background: var(--panel); color: var(--text); }
-.rt-btn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
-.rt-color { position: relative; overflow: hidden; font-weight: 700; }
-.rt-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.fmt-chip:hover { background: var(--panel); color: var(--text); }
+.fmt-chip.on { background: var(--accent-soft); color: var(--accent-ink); }
+.fmt-chips {
+  gap: 2px; padding: 4px; margin: 4px 0; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.sel-menu { min-width: 272px; padding: 6px; }
+.sel-menu .sel-acts button { width: 100%; }
+.sel-menu .sel-fmt { width: 100%; }
+.pop-menu .fmt-chip { width: auto; }
 .rich-body { padding: 14px 18px 18px; }
 .rich-pm {
   min-height: 360px; outline: none;

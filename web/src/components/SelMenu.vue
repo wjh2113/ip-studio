@@ -1,8 +1,12 @@
 <template>
-<div class="pop-menu" id="selMenu" ref="box" :class="{ hidden: !m }" :style="pos">
-  <!-- 划词菜单：选中正文里的一段，挑一种改法；或者自己写一句意见，只改这一段 -->
+<div class="pop-menu sel-menu" id="selMenu" ref="box" :class="{ hidden: !m }" :style="pos">
+  <!-- 划词浮层：AI 改写 + 格式条（嵌在浮层里，不再被顶栏工具条穿透） -->
   <div class="sel-acts">
-    <button v-for="a in ASSIST_ACTIONS" :key="a.key" type="button" :data-action="a.key" @click="pick(a)">{{ a.label }}</button>
+    <button v-for="a in topActs" :key="a.key" type="button" :data-action="a.key" @mousedown.prevent @click="pick(a)">{{ a.label }}</button>
+  </div>
+  <FormatBar variant="chips" class="sel-fmt" />
+  <div class="sel-acts">
+    <button v-for="a in bottomActs" :key="a.key" type="button" :data-action="a.key" @mousedown.prevent @click="pick(a)">{{ a.label }}</button>
   </div>
   <form class="pop-custom sel-custom" id="selCustom" @submit.prevent="custom">
     <input id="selCustomInput" v-model="want" maxlength="500" placeholder="按我的意见改：比如「加一个具体例子」「语气再坚定些」" @keydown.stop />
@@ -13,6 +17,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import FormatBar from './FormatBar.vue';
 import { ASSIST_ACTIONS, useEditorStore } from '../stores/editor.js';
 import { placeNear } from '../lib/caret.js';
 
@@ -22,9 +27,13 @@ const box = ref(null);
 const pos = ref({});
 const want = ref('');
 
-// 先显示出来量尺寸，再放到选区旁边（下面放不下放上面）
+/* 对照截图：上三下三夹格式条；缩写仍保留在下组 */
+const topActs = ASSIST_ACTIONS.filter((a) => ['expand', 'professional', 'casual'].includes(a.key));
+const bottomActs = ASSIST_ACTIONS.filter((a) => ['shorten', 'example', 'simplify', 'humanize'].includes(a.key));
+
 watch(m, async (v) => {
   if (!v) return;
+  want.value = '';
   await nextTick();
   pos.value = placeNear(box.value, v);
 });
@@ -35,7 +44,6 @@ function pick(a) {
   if (target) ed.runAssist({ action: a.key, kind: 'rewrite', target }, a.label);
 }
 
-/* 自己写的意见：只改选中这段，结果照样在浮层里看了再替换，能撤销 */
 function custom() {
   const target = m.value?.target;
   const text = want.value.trim();

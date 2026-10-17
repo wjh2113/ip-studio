@@ -98,16 +98,24 @@ await step('保存按钮', async () => {
   return (await page.textContent('#saveState')).trim();
 });
 
-await step('划词菜单各动作入口能弹出', async () => {
-  const at = (await editorDoc(page)).indexOf('第一段');
-  if (at < 0) throw new Error('找不到第一段');
-  await selectEditor(page, at, at + 6);
+await step('划词菜单：AI + 嵌套格式条', async () => {
+  // 用还没加粗过的「第二段」测浮层格式，避免 toggle 把已有粗体关掉
+  let doc = await editorDoc(page);
+  const at = doc.indexOf('第二段');
+  if (at < 0) throw new Error('找不到第二段');
+  await selectEditor(page, at, at + 3);
   await page.waitForSelector('#selMenu:not(.hidden)');
   for (const key of ['expand', 'shorten', 'humanize']) {
     if (!(await page.$(`#selMenu [data-action="${key}"]`))) throw new Error(`缺 ${key}`);
   }
+  for (const fmt of ['bold', 'h2', 'list', 'quote', 'color', 'image', 'mark']) {
+    if (!(await page.$(`#selMenu [data-fmt="${fmt}"]`))) throw new Error(`缺格式 ${fmt}`);
+  }
   if (!(await page.$('#selCustomBtn'))) throw new Error('缺按意见改');
-  // 关掉，避免挡后续
+  await page.click('#selMenu [data-fmt="bold"]');
+  await page.waitForTimeout(150);
+  doc = await editorDoc(page);
+  if (!/\*\*第二段\*\*/.test(doc) && !/\*\*/.test(doc)) throw new Error(`浮层加粗没写入：${doc.slice(0, 160)}`);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(50);
   return '菜单齐全';
