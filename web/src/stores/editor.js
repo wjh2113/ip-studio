@@ -194,25 +194,23 @@ export const useEditorStore = defineStore('editor', () => {
           hist.undo.push(before);
           hist.redo = [];
           st.draft = data.draft;
-          after = textOf(ver) || data.before || live.text;
-          // 服务端可能带回 before；当前正文才是 after
           after = textOf(ver);
           ok = true;
         } else if (event === 'error') throw new Error(data.message);
       });
-      if (ok) {
-        reviseCompare.value = { version: ver, before, after: textOf(ver) };
-        toast('已按意见重写：对照里可把某段退回');
-        useHistoryStore().load();
-        if (!ver) await toggleRevs(true);   // 原文顺带打开历史对照
-      }
     } catch (err) {
       toast(`没改成：${err.message}。原稿没动`);
     } finally {
       live.title = '';
       live.text = '';
       progressLabel.value = '';
-      st.streaming = false;
+      st.streaming = false;   // 先放开：后面 toast / 打开对照时 Ctrl+Z 才能撤
+    }
+    if (ok) {
+      reviseCompare.value = { version: ver, before, after: textOf(ver) || after };
+      toast('已按意见重写：对照里可把某段退回');
+      useHistoryStore().load();
+      if (!ver) await toggleRevs(true);   // 原文顺带打开历史对照
     }
     return ok;
   }

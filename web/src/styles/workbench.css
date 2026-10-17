@@ -17,10 +17,24 @@
 .work-side { display: grid; gap: 12px; position: sticky; top: calc(var(--topbar-h) + 18px); max-height: calc(100vh - var(--topbar-h) - 36px); overflow-y: auto; padding-bottom: 4px; }
 @media (max-width: 1240px) {
   .work { grid-template-columns: minmax(0, 1fr); }
-  .work-side { position: static; max-height: none; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  .work-side { position: static; max-height: none; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); align-items: start; }
   .work.work-folded { grid-template-columns: minmax(0, 1fr); }
   .work-rail { position: static; flex-direction: row; justify-content: center; padding: 8px; }
   .work-side-head { grid-column: 1 / -1; }
+}
+
+/* 手机：收紧成稿头与工具条，避免标题行 nowrap / 加工组把页面撑出横向滚动 */
+@media (max-width: 720px) {
+  .work-main.card { padding: 14px 14px 20px; }
+  .head-stick { margin: 0 -14px; padding: 12px 14px 0; }
+  .head-stick .card-head { flex-wrap: wrap; gap: 6px 8px; margin-bottom: 10px; }
+  .head-stick .card-head > h2 { flex: 1 1 100%; font-size: 17px; }
+  .mode-label { display: none; }
+  .toolbar { gap: 8px 6px; }
+  .tb-group { flex-wrap: wrap; }
+  .tb-group + .tb-group { padding-left: 0; }
+  .tb-group + .tb-group::before { display: none; }
+  .tb-label { flex: 1 1 100%; margin: 4px 0 0; }
 }
 
 /* ---------- 吸顶标题行 + 工具条 ---------- */

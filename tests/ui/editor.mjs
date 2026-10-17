@@ -40,7 +40,8 @@ await step('注册 → 建号 → 成稿（流式）', async () => {
   await page.waitForSelector('#content .cursor', { timeout: 5000 }).catch(() => {});
   await done();
   await page.waitForSelector('#steps [data-step="3"].done');
-  await page.waitForSelector('#reviewBox');
+  // 成稿后不再自动检查：工具栏手动点「检查」
+  await page.waitForSelector('#reviewBtn');
   return `${(await page.textContent('#contentTitle')).trim().slice(0, 20)}｜${(await page.textContent('#counter')).trim()}`;
 });
 await step('编辑：改字 → 自动保存；输入 / 出续写菜单 → 插入', async () => {
