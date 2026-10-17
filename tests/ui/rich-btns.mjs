@@ -4,7 +4,8 @@ import { editorDoc, selectEditor, setEditorDoc } from './_rich.mjs';
 
 const B = process.argv[2];
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+const page = await ctx.newPage();
 page.setDefaultTimeout(12000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -71,6 +72,23 @@ await step('工具条：字色', async () => {
   const doc = await editorDoc(page);
   if (!/color:#AB1234/i.test(doc)) throw new Error(`颜色没写入：${doc.slice(0, 120)}`);
   return '颜色已写入';
+});
+
+await step('复制带上加粗和颜色', async () => {
+  await page.click('#exportBtn');
+  await page.click('#exportMenu [data-fmt="copy"]');
+  await page.waitForFunction(() => /已复制/.test(document.querySelector('#toast')?.textContent || ''));
+  const html = await page.evaluate(async () => {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      if (!item.types.includes('text/html')) continue;
+      return await (await item.getType('text/html')).text();
+    }
+    return '';
+  });
+  if (!/<strong>|<b>/.test(html)) throw new Error(`剪贴板没有加粗：${html.slice(0, 180)}`);
+  if (!/color:\s*#AB1234/i.test(html)) throw new Error(`剪贴板没有颜色：${html.slice(0, 180)}`);
+  return '格式在';
 });
 
 await step('底栏「此处放图片」点一下插入 IMAGE_MARK', async () => {

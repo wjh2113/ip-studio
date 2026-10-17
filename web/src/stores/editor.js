@@ -696,6 +696,11 @@ export const useEditorStore = defineStore('editor', () => {
     return { html, imgs: uris.size + docImgs.size };
   }
 
+  /* 剪贴板 HTML 带上片段标记，公众号 / Word 才会认加粗、颜色，而不是只取纯文本 */
+  function clipboardHtml(body) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><!--StartFragment-->${body}<!--EndFragment--></body></html>`;
+  }
+
   async function copy() {
     const v = useVersionsStore();
     const text = v.text;
@@ -704,13 +709,13 @@ export const useEditorStore = defineStore('editor', () => {
     const label = v.current ? `「${v.label}」版本` : '';
     try {
       const { html, imgs } = await richHtml(text);
-      if (imgs && window.ClipboardItem) {
-        // 同时写两种格式：富文本编辑器取 HTML（带图），纯文本处取 markdown
+      if (window.ClipboardItem) {
+        // 富文本编辑器取 HTML（加粗、颜色、图），纯文本处取 markdown
         await navigator.clipboard.write([new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/html': new Blob([clipboardHtml(html)], { type: 'text/html' }),
           'text/plain': new Blob([text], { type: 'text/plain' }),
         })]);
-        toast(`已复制${label}，带 ${imgs} 张图`);
+        toast(imgs ? `已复制${label}，带 ${imgs} 张图` : `已复制${label || '到剪贴板'}`);
         return;
       }
       await navigator.clipboard.writeText(text);
