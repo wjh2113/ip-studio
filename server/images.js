@@ -115,7 +115,7 @@ async function wanx(c, { prompt, size, negative }) {
     body: JSON.stringify({
       model: c.dashModel,
       input: { prompt, ...(negative ? { negative_prompt: negative } : {}) },
-      parameters: { size: RATIOS[size].dash, n: 1, prompt_extend: true },
+      parameters: { size: RATIOS[size].dash, n: 1, prompt_extend: true, watermark: false },
     }),
   });
   const started = await submit.json().catch(() => ({}));
