@@ -43,7 +43,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 const wanted = process.argv.slice(2);
 const scripts = readdirSync(here)
-  .filter((f) => f.endsWith('.mjs') && f !== 'run.mjs')
+  .filter((f) => f.endsWith('.mjs') && f !== 'run.mjs' && !f.startsWith('_'))
   .filter((f) => !wanted.length || wanted.includes(basename(f, '.mjs')))
   .sort();
 

@@ -1,5 +1,6 @@
-// 编辑框打字：页面不跳、光标不躲到吸底工具条后面（以前每打一个字，编辑框先缩回一屏高再撑开，页面被夹回顶上）
+// 编辑框打字：页面不跳、光标不躲到吸底工具条后面
 import { chromium } from 'playwright';
+import { selectEditor } from './_rich.mjs';
 const B = process.argv[2];
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -32,25 +33,29 @@ await step('准备一篇 40 段的长稿，进编辑', async () => {
   await page.waitForSelector('#app:not(.hidden)');
   await page.click(`.history-item[data-id="${id}"]`);
   await page.click('#editBtn');
-  await page.waitForSelector('#editor', { state: 'visible' });
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
 });
 
 await step('在中间打字：页面滚动位置不变', async () => {
-  await page.$eval('#editor', (ta) => { const p = ta.value.indexOf('第 20 段'); ta.focus(); ta.setSelectionRange(p, p); });
+  const at = await page.$eval('#editor', (el) => (el.dataset.doc || el._rich.getDoc()).indexOf('第 20 段'));
+  await selectEditor(page, at, at);
   await page.evaluate(() => window.scrollTo(0, 1400));
   await page.waitForTimeout(100);
   const before = await scrollY();
   await page.keyboard.type('我们');
   await page.waitForTimeout(150);
   const after = await scrollY();
-  // 允许小幅抖动（工具条/参考行高度变化）；原来的 bug 是整页被夹回顶部
   if (Math.abs(after - before) > 80) throw new Error(`页面从 ${before} 跳到了 ${after}`);
   return `${before} → ${after}`;
 });
 
 await step('删掉一大段：页面不被夹回顶上', async () => {
   const before = await scrollY();
-  await page.$eval('#editor', (ta) => { ta.setSelectionRange(ta.value.indexOf('第 21 段'), ta.value.indexOf('第 30 段')); });
+  const range = await page.$eval('#editor', (el) => {
+    const t = el.dataset.doc || el._rich.getDoc();
+    return [t.indexOf('第 21 段'), t.indexOf('第 30 段')];
+  });
+  await selectEditor(page, range[0], range[1]);
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(150);
   const after = await scrollY();
@@ -59,21 +64,18 @@ await step('删掉一大段：页面不被夹回顶上', async () => {
 });
 
 await step('在屏幕底部连续回车打字：光标停在工具条上面', async () => {
-  await page.$eval('#editor', (ta) => { const p = ta.value.indexOf('第 35 段'); ta.setSelectionRange(p, p); });
+  const at = await page.$eval('#editor', (el) => (el.dataset.doc || el._rich.getDoc()).indexOf('第 35 段'));
+  await selectEditor(page, at, at);
   for (let i = 0; i < 8; i += 1) { await page.keyboard.press('Enter'); await page.keyboard.type('新'); }
   await page.waitForTimeout(150);
   const r = await page.evaluate(() => {
-    const ta = document.querySelector('#editor');
-    const m = document.createElement('div');
-    const cs = getComputedStyle(ta);
-    for (const k of ['font', 'lineHeight', 'padding', 'border', 'whiteSpace', 'wordWrap', 'width', 'boxSizing', 'letterSpacing']) m.style[k] = cs[k];
-    m.style.whiteSpace = 'pre-wrap'; m.style.position = 'absolute'; m.style.visibility = 'hidden';
-    m.textContent = ta.value.slice(0, ta.selectionEnd);
-    const s = document.createElement('span'); s.textContent = '.'; m.appendChild(s);
-    document.body.appendChild(m);
-    const caretBottom = ta.getBoundingClientRect().top + s.offsetTop + parseFloat(cs.lineHeight);
-    m.remove();
-    return { caretBottom: Math.round(caretBottom), barTop: Math.round(document.querySelector('#editorBar').getBoundingClientRect().top) };
+    const el = document.querySelector('#editor');
+    const end = el._rich.getSelection().end;
+    const box = el._rich.coordsAt(end);
+    return {
+      caretBottom: Math.round(box?.bottom ?? 0),
+      barTop: Math.round(document.querySelector('#editorBar').getBoundingClientRect().top),
+    };
   });
   if (r.caretBottom > r.barTop) throw new Error(`光标底 ${r.caretBottom} 在工具条 ${r.barTop} 下面`);
   return JSON.stringify(r);

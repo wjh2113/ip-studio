@@ -1,5 +1,6 @@
 // 数据回流 + 线上指标：框架推荐里的「数据好」、选题提示词里的发布数据、后台「内容质量」
 import { chromium } from 'playwright';
+import { editorDoc, setEditorDoc } from './_rich.mjs';
 const B = process.argv[2];
 const shot = process.argv[3];
 const browser = await chromium.launch();
@@ -66,8 +67,9 @@ await step('成稿 → 改一句 → 检查', async () => {
   await page.click('#topics [data-index="0"]');
   await page.waitForFunction(() => document.querySelector('#content')?.textContent.length > 100 && !document.querySelector('#content .cursor'), null, { timeout: 15000 });
   await page.click('#editBtn');
-  const text = await page.inputValue('#editor');
-  await page.fill('#editor', text.replace(/\n\n[^\n]+\n/, '\n\n这一段我自己重写了。\n'));
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
+  const text = await editorDoc(page);
+  await setEditorDoc(page, text.replace(/\n\n[^\n]+\n/, '\n\n这一段我自己重写了。\n'));
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   await page.click('#backReadBtn');

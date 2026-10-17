@@ -87,9 +87,8 @@
 
       <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
 
-      <textarea v-show="s.mode === 'edit'" class="editor" id="editor" ref="editor" spellcheck="false" :class="{ 'mark-over': markOver }"
-        :value="ed.text" @input="onEditorInput" @keydown="onEditorKeydown" @compositionend="onCompositionEnd" @mouseup="onEditorSelect" @keyup="onEditorKeyup"
-        @dragover="onDragOver" @dragleave="markOver = false" @drop="onDrop"></textarea>
+      <RichEditor v-show="s.mode === 'edit'" ref="rich" :model-value="ed.text" :draft-id="s.draft?.id"
+        @update:model-value="onRichInput" @select="onRichSelect" @slash="onRichSlash" @hist="onRichHist" />
 
       <CuesPane v-if="s.mode === 'cue' && cueOk" />
 
@@ -172,6 +171,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RevPane from './RevPane.vue';
 import ReviseDiff from './ReviseDiff.vue';
+import RichEditor from './RichEditor.vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import WorkPanel from './WorkPanel.vue';
@@ -194,7 +194,6 @@ import { usePrompterStore } from '../stores/prompter.js';
 import { useRefsStore } from '../stores/refs.js';
 import { ask, toast } from '../lib/feedback.js';
 import { countChars, esc, markdown } from '../lib/text.js';
-import { caretFromPoint, caretRect } from '../lib/caret.js';
 import { anyLayerOpen } from '../lib/escape.js';
 
 const layout = useLayoutStore();
@@ -253,7 +252,8 @@ function copyPanelCues() {
 
 const sentinel = ref(null);
 const article = ref(null);
-const editor = ref(null);
+const rich = ref(null);
+const editorEl = () => document.getElementById('editor');
 
 /* ---------- 标题、字数、阅读区 ---------- */
 const titles = useTitlesStore();
@@ -371,74 +371,44 @@ function toggleRevs() {
   ed.toggleRevs().catch((err) => toast(err.message));
 }
 
-/* ---------- 编辑框 ---------- */
-/* 编辑框跟着内容撑高。
- * 以前每次输入都先把高度设成 auto 再量：那一瞬间框缩回一屏高，页面变短，浏览器把滚动位置夹到顶上去，
- * 打一个字页面就跳、光标跑到屏幕最底下。现在：
- *   - 只是变长（打字的常态）：直接加高，不缩；
- *   - 要变短（删了内容）：缩之前记下页面和各层滚动位置，量完原样放回。 */
-function autosize() {
-  const ta = editor.value;
-  if (!ta) return;
-  const min = 360;
-  if (ta.scrollHeight > ta.clientHeight) {
-    ta.style.height = `${Math.max(min, ta.scrollHeight + (ta.offsetHeight - ta.clientHeight))}px`;
-    return;
-  }
-  const scrollers = [];
-  for (let el = ta.parentElement; el; el = el.parentElement) if (el.scrollTop) scrollers.push([el, el.scrollTop]);
-  const page = document.scrollingElement || document.documentElement;
-  const pageTop = page.scrollTop;
-  const before = ta.offsetHeight;
-  ta.style.height = 'auto';
-  const next = `${Math.max(min, ta.scrollHeight + (ta.offsetHeight - ta.clientHeight))}px`;
-  ta.style.height = before && parseFloat(next) >= before ? `${before}px` : next;
-  for (const [el, top] of scrollers) el.scrollTop = top;
-  page.scrollTop = pageTop;
-}
-
-/* 打字时光标别躲到吸底的工具条后面：光标低于工具条上沿就把页面往上推一点 */
-function keepCaretVisible() {
-  const ta = editor.value;
-  if (!ta || document.activeElement !== ta) return;
+/* ---------- 编辑框（TipTap） ---------- */
+function keepCaretVisible(coords) {
+  if (!coords) return;
   const bar = document.getElementById('editorBar');
   const limit = (bar ? bar.getBoundingClientRect().top : window.innerHeight) - 12;
-  const { bottom } = caretRect(ta, ta.selectionEnd);
-  if (bottom > limit) window.scrollBy(0, bottom - limit);
+  if (coords.bottom > limit) window.scrollBy(0, coords.bottom - limit);
 }
 
-// 进编辑模式：撑开高度、放光标；内容被别处改了（采纳、语音改稿）也要重新撑
 watch(() => s.mode, async (mode) => {
   closeMenu();
   if (mode !== 'edit') return;
   await nextTick();
-  autosize();
-  editor.value?.focus();
+  rich.value?.focus();
 });
-// 正文被别处改了、或者版本栏换了一版：重新撑高度
-watch(() => ed.text, () => { if (s.mode === 'edit') nextTick(autosize); });
 
-function onEditorInput(e) {
-  ed.onInput(e.target.value, { typing: true });
-  autosize();
-  keepCaretVisible();
-  detectSlash();
+function onRichInput(value) {
+  ed.onInput(value, { typing: true });
+  keepCaretVisible(editorEl()?._rich?.coordsAt?.(editorEl()._rich.getSelection().end));
 }
 
-function onCompositionEnd() {
-  setTimeout(detectSlash, 0);
-}
-
-/* ---------- 划词改写 ---------- */
-function onEditorSelect() {
-  const ta = editor.value;
-  const { selectionStart: start, selectionEnd: end } = ta;
+function onRichSelect({ start, end, text, coords }) {
   if (end - start < 2) { ed.menus.sel = null; return; }
-  ed.menus.sel = { ...caretRect(ta, end), target: { start, end, text: ta.value.slice(start, end) } };
+  ed.menus.sel = {
+    left: coords?.left ?? 0,
+    top: coords?.top ?? 0,
+    bottom: coords?.bottom ?? 0,
+    target: { start, end, text },
+  };
 }
 
-function onEditorKeyup(e) {
-  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) onEditorSelect();
+function onRichSlash(info) {
+  if (!info) { ed.menus.slash = null; return; }
+  ed.menus.slash = {
+    left: info.coords?.left ?? 0,
+    top: info.coords?.top ?? 0,
+    bottom: info.coords?.bottom ?? 0,
+    at: info.at,
+  };
 }
 
 /* 阅读模式：把渲染文本里的选区反查回 Markdown 原文的偏移。同一句话可能出现多次，用相对位置挑最接近的那处 */
@@ -475,85 +445,29 @@ function onDocMouseUp(e) {
   }, 0);
 }
 
-/* ---------- / 唤起续写 ---------- */
-/* 半角和全角斜杠都认（中文输入法全角状态下打出来的是／）；URL、路径、分数后面的不算 */
-const SLASH_KEYS = ['/', '／'];
-const SLASH_BLOCKERS = /[A-Za-z0-9:/／]/;
-
-function detectSlash() {
-  if (s.mode !== 'edit') return;
-  const ta = editor.value;
-  const pos = ta.selectionStart;
-  const value = ta.value;
-  if (!SLASH_KEYS.includes(value[pos - 1])) { ed.menus.slash = null; return; }
-  const prev = value[pos - 2];
-  if (prev && SLASH_BLOCKERS.test(prev)) return;
-  ed.menus.slash = { ...caretRect(ta, pos), at: pos - 1 };
-}
-
 /* ---------- 拖「此处放图片」进正文 ---------- */
 const MARK_MIME = 'application/x-image-mark';
-const markOver = ref(false);
 let markDragged = false;
-let markCaret = null;
 
 function insertMark(at) {
-  const ta = editor.value;
-  if (!ta || !s.draft) return;
-  const value = ta.value;
-  const index = Math.max(0, Math.min(at ?? ta.selectionStart ?? value.length, value.length));
-  const pad = index > 0 && value[index - 1] !== '\n' ? '\n' : '';
-  const tail = index < value.length && value[index] !== '\n' ? '\n' : '';
-  const chunk = `${pad}${IMAGE_MARK}${tail}`;
-  ed.onInput(value.slice(0, index) + chunk + value.slice(index));
-  // 拖进来 / 点一下插入后：光标停在标记后面，页面不跳（focus 默认会把整个框滚到视口里）
-  const top = ta.scrollTop;
-  nextTick(() => {
-    ta.focus({ preventScroll: true });
-    ta.selectionStart = ta.selectionEnd = index + chunk.length;
-    autosize();
-    ta.scrollTop = top;
-    keepCaretVisible();
-  });
+  if (!s.draft) return;
+  rich.value?.insertMark(at);
 }
 
 function markDragStart(e) {
   markDragged = true;
-  markCaret = editor.value?.selectionStart ?? null;
   e.dataTransfer.setData(MARK_MIME, IMAGE_MARK);
   e.dataTransfer.setData('text/plain', IMAGE_MARK);
   e.dataTransfer.effectAllowed = 'copy';
 }
 
 function markDragEnd() {
-  markOver.value = false;
   setTimeout(() => { markDragged = false; }, 0);
 }
 
 function markClick() {
   if (markDragged) { markDragged = false; return; }
-  insertMark(editor.value?.selectionStart);
-}
-
-function onDragOver(e) {
-  if (!markDragged) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'copy';
-  markOver.value = true;
-  const at = caretFromPoint(editor.value, e.clientX, e.clientY);
-  if (at != null) {
-    markCaret = at;
-    editor.value.setSelectionRange(at, at);
-  }
-}
-
-function onDrop(e) {
-  const payload = e.dataTransfer?.getData(MARK_MIME) || e.dataTransfer?.getData('text/plain');
-  if (payload !== IMAGE_MARK) return;
-  e.preventDefault();
-  markOver.value = false;
-  const at = caretFromPoint(editor.value, e.clientX, e.clientY);
-  insertMark(at ?? markCaret ?? editor.value.selectionStart);
+  insertMark();
 }
 
 /* ---------- 全局：点空白关菜单、Esc、关页面前提醒没保存 ---------- */
@@ -591,19 +505,15 @@ function runUndo(which, { inEditor }) {
   if (!r) return;
   if (!inEditor) { toast(which === 'undo' ? '已撤销' : '已重做'); return; }
   nextTick(() => {
-    const ta = editor.value;
-    if (!ta) return;
+    const el = editorEl();
+    if (!el?._rich) return;
     const at = changeEnd(r.before, r.after);
-    ta.focus();
-    ta.selectionStart = ta.selectionEnd = at;
-    autosize();
-    keepCaretVisible();
+    el._rich.focus();
+    el._rich.setSelection(at, at);
+    keepCaretVisible(el._rich.coordsAt(at));
   });
 }
-function onEditorKeydown(e) {
-  const which = undoKey(e);
-  if (!which) return;
-  e.preventDefault();
+function onRichHist(which) {
   ed.menus.slash = null;
   ed.menus.sel = null;
   runUndo(which, { inEditor: true });

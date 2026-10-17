@@ -95,6 +95,11 @@ async function dispatch(req, res) {
         else await R.handleSpeakCreate(req, res, file, params, url);
         return;
       }
+      // 正文插图：原始图片字节
+      if (req.method === 'POST' && /^\/api\/drafts\/\d+\/assets$/.test(path)) {
+        await R.handleDraftAsset(req, res, await readImageUpload(req), params);
+        return;
+      }
       // Word / PDF 导入：原始字节，只取文字不落盘
       if (req.method === 'POST' && path === '/api/files/extract') {
         await R.handleFileExtract(req, res, await readFile15(req));
@@ -251,6 +256,35 @@ async function readUpload(req) {
   }
   if (!ext) throw new HttpError(400, '请上传 mp3、wav、m4a、webm 或 mp4');
   if (!buffer.length) throw new HttpError(400, '录音是空的');
+  return { buffer, mime: mime || 'application/octet-stream', ext };
+}
+
+const MAX_IMAGE = 5 * 1024 * 1024;
+const IMAGE_EXT = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+  'image/webp': 'webp', 'image/gif': 'gif',
+};
+
+async function readImageUpload(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_IMAGE) throw new HttpError(413, '图片请小于 5MB');
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  let ext = IMAGE_EXT[mime];
+  if (!ext) {
+    let raw = String(req.headers['x-filename'] || '');
+    try { raw = decodeURIComponent(raw); } catch { /* 按原样 */ }
+    const m = raw.toLowerCase().match(/\.([a-z0-9]+)$/);
+    const allow = { png: 'png', jpg: 'jpg', jpeg: 'jpg', webp: 'webp', gif: 'gif' };
+    if (m && allow[m[1]]) ext = allow[m[1]];
+  }
+  if (!ext) throw new HttpError(400, '请上传 png、jpg、webp 或 gif 图片');
+  if (!buffer.length) throw new HttpError(400, '图片是空的');
   return { buffer, mime: mime || 'application/octet-stream', ext };
 }
 

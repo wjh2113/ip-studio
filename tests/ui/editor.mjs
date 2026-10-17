@@ -1,5 +1,6 @@
 // 成稿区：流式成稿、编辑保存、/ 续写、划词改写、正文历史、检查采纳、多平台版本、导出、口播提示与提词器、归档、切稿子
 import { chromium } from 'playwright';
+import { editorDoc, selectEditor } from './_rich.mjs';
 const B = process.argv[2];
 const shot = process.argv[3];
 const browser = await chromium.launch();
@@ -46,8 +47,8 @@ await step('注册 → 建号 → 成稿（流式）', async () => {
 });
 await step('编辑：改字 → 自动保存；输入 / 出续写菜单 → 插入', async () => {
   await page.click('#editBtn');
-  await page.waitForSelector('#editor', { state: 'visible' });
-  await page.click('#editor');
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
+  await page.click('#editor .ProseMirror');
   await page.keyboard.press('Control+End');
   await page.keyboard.type('\n\n补一句。');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''), null, { timeout: 8000 });
@@ -57,31 +58,42 @@ await step('编辑：改字 → 自动保存；输入 / 出续写菜单 → 插�
   await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
   await page.click('#assistReplace');
   await page.waitForSelector('#assistPop.hidden', { state: 'attached' });
-  const text = await page.inputValue('#editor');
+  const text = await editorDoc(page);
   return `${text.includes('/') ? '斜杠没去掉' : '斜杠已去掉'}｜${text.length} 字符`;
 });
 await step('编辑框里划词 → 改写菜单 → 替换', async () => {
-  const len = (await page.inputValue('#editor')).length;
-  await page.$eval('#editor', (ta) => { ta.focus(); ta.setSelectionRange(2, 12); });
-  await page.dispatchEvent('#editor', 'mouseup');
+  const len = (await editorDoc(page)).length;
+  await selectEditor(page, 2, 12);
   await page.waitForSelector('#selMenu:not(.hidden)');
   await page.click('#selMenu [data-action="shorten"]');
   await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
-  const beforeAi = await page.inputValue('#editor');
+  const beforeAi = await editorDoc(page);
   await page.click('#assistReplace');
-  await page.waitForFunction((n) => document.querySelector('#editor').value.length !== n, len);
-  // AI 改写后 Ctrl+Z 能撤回（浏览器自带的撤销在脚本改过正文后就断了），Ctrl+Shift+Z 再做回来
-  const afterAi = await page.inputValue('#editor');
-  await page.focus('#editor');
+  await page.waitForFunction((n) => {
+    const el = document.querySelector('#editor');
+    return (el?.dataset?.doc ?? el?._rich?.getDoc?.() ?? '').length !== n;
+  }, len);
+  // AI 改写后 Ctrl+Z 能撤回，Ctrl+Shift+Z 再做回来
+  const afterAi = await editorDoc(page);
+  await page.click('#editor .ProseMirror');
   await page.keyboard.press('Control+z');
-  await page.waitForFunction((t) => document.querySelector('#editor').value === t, beforeAi);
+  await page.waitForFunction((t) => {
+    const el = document.querySelector('#editor');
+    return (el?.dataset?.doc ?? el?._rich?.getDoc?.() ?? '') === t;
+  }, beforeAi);
   await page.keyboard.press('Control+Shift+z');
-  await page.waitForFunction((t) => document.querySelector('#editor').value === t, afterAi);
+  await page.waitForFunction((t) => {
+    const el = document.querySelector('#editor');
+    return (el?.dataset?.doc ?? el?._rich?.getDoc?.() ?? '') === t;
+  }, afterAi);
   // 连续打的字算一步
   await page.keyboard.press('Control+End');
   await page.keyboard.type('一二三四五');
   await page.keyboard.press('Control+z');
-  await page.waitForFunction((t) => document.querySelector('#editor').value === t, afterAi);
+  await page.waitForFunction((t) => {
+    const el = document.querySelector('#editor');
+    return (el?.dataset?.doc ?? el?._rich?.getDoc?.() ?? '') === t;
+  }, afterAi);
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   return 'ok';
@@ -119,9 +131,8 @@ await step('左右两栏收起来给正文腾地方，刷新后还记得，再�
 });
 await step('划词写自己的意见改这段；整篇「按意见重写」→ 原稿留版本、Ctrl+Z 能退回', async () => {
   if (await page.isVisible('#editBtn')) await page.click('#editBtn');
-  await page.waitForSelector('#editor', { state: 'visible' });
-  await page.$eval('#editor', (ta) => { ta.focus(); ta.setSelectionRange(2, 12); });
-  await page.dispatchEvent('#editor', 'mouseup');
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
+  await selectEditor(page, 2, 12);
   await page.waitForSelector('#selMenu:not(.hidden)');
   // Vue v-model：fill 后等按钮可点，再回车提交（点 disabled 会一直等到超时）
   await page.fill('#selCustomInput', '加一个具体例子');
@@ -131,7 +142,7 @@ await step('划词写自己的意见改这段；整篇「按意见重写」→ �
   await page.click('#assistReplace');
   await page.waitForSelector('#assistPop.hidden', { state: 'attached' });
 
-  const before = await page.inputValue('#editor');
+  const before = await editorDoc(page);
   await page.click('#reviseBtn');
   await page.waitForSelector('.ask [data-k="notes"]');
   await page.fill('.ask [data-k="notes"]', '开头直接上案例');
@@ -173,16 +184,16 @@ await step('修改：版本栏切到平台版本，编辑框跟着换成那一�
   await page.click('#editBtn');
   const got = async () => (await (await page.evaluate((u) => fetch(u).then((r) => r.json()), `/api/drafts/${id}`))).draft;
   const d0 = await got();
-  if ((await page.inputValue('#editor')) !== d0.variants[ver].content) throw new Error('编辑框不是这个版本的正文');
-  await page.focus('#editor');
-  await page.keyboard.press('End');
+  if ((await editorDoc(page)) !== d0.variants[ver].content) throw new Error('编辑框不是这个版本的正文');
+  await page.click('#editor .ProseMirror');
+  await page.keyboard.press('Control+End');
   await page.keyboard.type('（手改）');
   await page.waitForFunction(() => /已保存/.test(document.body.textContent), null, { timeout: 8000 });
   const d1 = await got();
   if (!d1.variants[ver].content.endsWith('（手改）')) throw new Error('改的没存进这个版本');
   if (d1.content !== d0.content) throw new Error('原文被改了');
   await page.click('#verTabs button[data-ver=""]');
-  if ((await page.inputValue('#editor')) !== d1.content) throw new Error('切回原文，编辑框没换回来');
+  if ((await editorDoc(page)) !== d1.content) throw new Error('切回原文，编辑框没换回来');
   await page.click('#backReadBtn');
   return ver;
 });
@@ -219,8 +230,50 @@ await step('口播提示 → 提词器开关、按键', async () => {
   if (shot) await page.screenshot({ path: shot + '-cues.png' });
   return `速度 ${speed}｜进度 ${pct}｜${(await page.$$('#cueList .cue')).length} 段`;
 });
+await step('富文本：工具条在；字色与同域图能写入正文并保存', async () => {
+  // 口播结束后可能还在 cue 模式：先回阅读再进编辑
+  await page.evaluate(() => {
+    const back = document.querySelector('#backReadBtn');
+    if (back && back.offsetParent) back.click();
+  });
+  await page.waitForTimeout(200);
+  if (await page.isVisible('#editBtn')) await page.click('#editBtn');
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
+  if (!(await page.$('.rich-toolbar'))) throw new Error('没有富文本工具条');
+  const id = await page.$eval('#history .history-item.active', (n) => n.dataset.id);
+  const png = Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+    0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xff, 0xff, 0x3f,
+    0x00, 0x05, 0xfe, 0x02, 0xfe, 0xdc, 0xcc, 0x59, 0xe7, 0x00, 0x00, 0x00,
+    0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  ]);
+  await page.evaluate(async ({ id, bytes }) => {
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' });
+    const res = await fetch(`/api/drafts/${id}/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', 'X-Filename': 'ui.png' },
+      body: blob,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'upload fail');
+    const el = document.querySelector('#editor');
+    const cur = el._rich.getDoc();
+    el._rich.setDoc(`<span style="color:#CC3344">着色</span>\n\n${cur}\n\n![](${data.url})`);
+  }, { id, bytes: [...png] });
+  await page.click('#saveBtn');
+  await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
+  const after = await editorDoc(page);
+  if (!/color:#CC3344/i.test(after)) throw new Error('颜色没写入正文');
+  if (!/\/image\/\d+\//.test(after)) throw new Error('正文里没有同域图片地址');
+  if (/data:image/.test(after)) throw new Error('不应把 base64 写进正文');
+  if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
+  return '颜色/图片已落库';
+});
 await step('归档；新建 → 回到空白简报；历史里再打开落到第三步', async () => {
-  await page.click('#backReadBtn');
+  if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
+  await page.waitForSelector('#editBtn', { state: 'visible' });
   await menu('archive');
   await page.waitForFunction(() => /已归档/.test(document.querySelector('#toast')?.textContent || ''));
   await page.click('#historyFilter [data-arch="1"]');

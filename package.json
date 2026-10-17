@@ -26,8 +26,16 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@tiptap/extension-color": "^3.32.0",
+    "@tiptap/extension-image": "^3.32.0",
+    "@tiptap/extension-placeholder": "^3.32.0",
+    "@tiptap/extension-text-style": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
+    "@tiptap/vue-3": "^3.32.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "pinia": "^3.0.3",
+    "playwright": "^1.64.1",
     "vite": "^7.1.5",
     "vue": "^3.5.22"
   }

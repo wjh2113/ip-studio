@@ -262,8 +262,9 @@ export const useEditorStore = defineStore('editor', () => {
     if (st.mode === 'cue') setMode('read');
     await nextTick();
     await nextTick();
+    const el = document.getElementById('editor');
     const ok = st.mode === 'edit'
-      ? locateInTextarea(document.getElementById('editor'), quote, caretRect)
+      ? (el?._rich ? el._rich.locate(quote) : locateInTextarea(el, quote, caretRect))
       : locateInArticle(document.getElementById('content'), quote);
     if (!ok && !quiet) toast('正文里没找到这一句，可能已经改过了');
     return ok;

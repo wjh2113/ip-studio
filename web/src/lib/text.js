@@ -9,35 +9,71 @@ export const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-/* 极简 Markdown：先转义再套标签，够用且安全 */
+/* 极简 Markdown：先转义再套标签，够用且安全。
+ * 额外认：同域图片 ![](/image/uid/file)、白名单颜色 <span style="color:#RRGGBB"> */
+function sanitizeColor(c) {
+  const s = String(c || '').trim();
+  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+    return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`.toUpperCase();
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toUpperCase();
+  return '';
+}
+
 export function markdown(src) {
-  const lines = esc(src).split('\n');
+  const tokens = [];
+  const keep = (html) => {
+    tokens.push(html);
+    return `\u0000${tokens.length - 1}\u0000`;
+  };
+  let prepared = String(src || '');
+  prepared = prepared.replace(/!\[([^\]]*)\]\((\/image\/\d+\/[\w.-]+)\)/g, (_, alt, url) => keep(
+    `<img src="${esc(url)}" alt="${esc(alt)}" class="doc-img" loading="lazy" />`,
+  ));
+  prepared = prepared.replace(
+    /<span\s+style="color:\s*(#[0-9A-Fa-f]{3,6})\s*"\s*>([\s\S]*?)<\/span>/gi,
+    (_, color, inner) => {
+      const c = sanitizeColor(color);
+      const body = String(inner || '').replace(/<[^>]+>/g, '');
+      if (!c) return body;
+      return `\u0001COLOR:${c}:${body}\u0001`;
+    },
+  );
+
+  const lines = esc(prepared).split('\n');
   const out = [];
   let list = null;
 
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
   const openList = (tag) => { if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; } };
 
+  /* esc 之后颜色占位里的正文已转义，只需套 inline，不要再 esc */
+  const restore = (s) => s
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => tokens[Number(i)] || '')
+    .replace(/\u0001COLOR:(#[0-9A-F]{6}):([\s\S]*?)\u0001/g, (_, c, inner) => (
+      `<span style="color:${c}">${inline(inner)}</span>`
+    ));
+
   for (const raw of lines) {
     const line = raw.trimEnd();
     if (!line.trim()) { closeList(); continue; }
 
     const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${inline(h[2])}</h${n}>`); continue; }
+    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${restore(inline(h[2]))}</h${n}>`); continue; }
 
     if (/^(---|\*\*\*|___)\s*$/.test(line)) { closeList(); out.push('<hr />'); continue; }
 
     const ul = line.match(/^\s*[-*+]\s+(.*)$/);
-    if (ul) { openList('ul'); out.push(`<li>${inline(ul[1])}</li>`); continue; }
+    if (ul) { openList('ul'); out.push(`<li>${restore(inline(ul[1]))}</li>`); continue; }
 
     const ol = line.match(/^\s*\d+[.、)]\s+(.*)$/);
-    if (ol) { openList('ol'); out.push(`<li>${inline(ol[1])}</li>`); continue; }
+    if (ol) { openList('ol'); out.push(`<li>${restore(inline(ol[1]))}</li>`); continue; }
 
     const bq = line.match(/^&gt;\s?(.*)$/);
-    if (bq) { closeList(); out.push(`<blockquote>${inline(bq[1])}</blockquote>`); continue; }
+    if (bq) { closeList(); out.push(`<blockquote>${restore(inline(bq[1]))}</blockquote>`); continue; }
 
     closeList();
-    out.push(`<p>${inline(line)}</p>`);
+    out.push(`<p>${restore(inline(line))}</p>`);
   }
   closeList();
   return out.join('');

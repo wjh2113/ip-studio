@@ -1,5 +1,8 @@
 /* 路由 · drafts：创作主流程：三个方向、流式成稿、保存与历史版本、列表、归档、删除。从原 routes.js 原样拆出。 */
-import { Drafts, Frameworks, Materials, Personas, Profile, Revisions, Sections } from '../db.js';
+import { randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve as resolvePath } from 'node:path';
+import { DATA_DIR, Drafts, Frameworks, Materials, Personas, Profile, Revisions, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
 import { pickVariant } from '../abtest.js';
@@ -400,6 +403,24 @@ export async function handleSaveContent(req, res, body, params) {
     draft: await Drafts.byId(Number(params.id), user.id),
     kept: { cuesDropped: saved.cuesDropped, illusDropped: saved.illusDropped },
   });
+}
+
+/* 编辑器粘贴/插入的配图：落到 data/images，URL 走已有的 /image/:uid/:name（v1 不计费） */
+const ASSET_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+export async function handleDraftAsset(req, res, file, params) {
+  const user = await requireUser(req);
+  const draft = await Drafts.byId(Number(params.id), user.id);
+  if (!draft) throw new HttpError(404, '记录不存在');
+  const ext = ASSET_EXT[file.mime] || (file.ext && ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(file.ext) ? (file.ext === 'jpeg' ? 'jpg' : file.ext) : null);
+  if (!ext) throw new HttpError(400, '请上传 png、jpg、webp 或 gif 图片');
+  if (!file.buffer?.length) throw new HttpError(400, '图片是空的');
+  const name = `${draft.id}-a-${randomBytes(8).toString('hex')}.${ext}`;
+  const dir = resolvePath(DATA_DIR, 'images', String(user.id));
+  await mkdir(dir, { recursive: true });
+  await writeFile(resolvePath(dir, name), file.buffer);
+  const url = `/image/${user.id}/${name}`;
+  json(res, 200, { url, name, alt: '' });
 }
 
 /* 正文历史：打开列表时把当前正文补成第一版（已有则不重复），之后每次保存再追加。 */

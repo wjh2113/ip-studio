@@ -1,5 +1,6 @@
 // 框架库二期：范文拆解、栏目默认框架、检查里的防洗稿
 import { chromium } from 'playwright';
+import { setEditorDoc } from './_rich.mjs';
 const B = process.argv[2];
 const shot = process.argv[3];
 const browser = await chromium.launch();
@@ -71,7 +72,8 @@ await step('写一篇抄范文的稿子 → 检查报原创度', async () => {
   await page.click('#topics [data-index="0"]');
   await page.waitForFunction(() => document.querySelector('#content')?.textContent.length > 100 && !document.querySelector('#content .cursor'), null, { timeout: 15000 });
   await page.click('#editBtn');
-  await page.fill('#editor', `# 周末备菜\n\n${SOURCE.slice(0, 80)}\n\n我自己的一段话。`);
+  await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
+  await setEditorDoc(page, `# 周末备菜\n\n${SOURCE.slice(0, 80)}\n\n我自己的一段话。`);
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   await page.click('#backReadBtn');
