@@ -59,11 +59,12 @@ function saveSel() {
 }
 
 function setColor(raw) {
+  if (!editor.value) return;
   const c = sanitizeColor(raw);
-  if (!c || !editor.value) return;
   const chain = editor.value.chain();
   if (savedSel) chain.setTextSelection(savedSel);
-  chain.focus().setColor(c).run();
+  if (!c) chain.focus().unsetColor().run();
+  else chain.focus().setColor(c).run();
   savedSel = null;
 }
 
@@ -128,6 +129,7 @@ function format(op) {
     else brush = captureBrush();
     return;
   }
+  if (op === 'nocolor') { setColor(''); return; }
   if (op === 'clear') {
     const chain = ed.chain();
     if (savedSel) chain.setTextSelection(savedSel);

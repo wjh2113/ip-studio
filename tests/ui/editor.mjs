@@ -64,6 +64,8 @@ await step('编辑：改字 → 自动保存；输入 / 出续写菜单 → 插�
 await step('编辑框里划词 → 改写菜单 → 替换', async () => {
   const len = (await editorDoc(page)).length;
   await selectEditor(page, 2, 12);
+  if (await page.$('#selMenu:not(.hidden)')) throw new Error('划词不该自动弹出改写');
+  await page.click('#rewriteBtn');
   await page.waitForSelector('#selMenu:not(.hidden)');
   await page.click('#selMenu [data-action="shorten"]');
   await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
@@ -133,6 +135,7 @@ await step('划词写自己的意见改这段；整篇「按意见重写」→ �
   if (await page.isVisible('#editBtn')) await page.click('#editBtn');
   await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
   await selectEditor(page, 2, 12);
+  await page.click('#rewriteBtn');
   await page.waitForSelector('#selMenu:not(.hidden)');
   // Vue v-model：fill 后等按钮可点，再回车提交（点 disabled 会一直等到超时）
   await page.fill('#selCustomInput', '加一个具体例子');

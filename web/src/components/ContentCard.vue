@@ -5,7 +5,7 @@
     <div class="card work-main" style="position:relative">
       <!-- sentinel 是吸顶判断用的：它滚出视口说明标题行已经贴在顶上了 -->
       <div ref="sentinel" style="position:absolute;top:0;height:1px;width:1px;pointer-events:none"></div>
-      <div class="head-stick" :class="{ stuck }">
+      <div class="head-stick" ref="headStick" :class="{ stuck }">
         <div class="card-head">
           <button v-if="s.draft?.topics?.length || s.streaming" class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
           <!-- 标题可直接改：编辑模式常显输入框；阅读模式点一下进入改标题（平台版本灰掉，和「起标题」一致） -->
@@ -41,6 +41,7 @@
             <button class="btn ghost small" id="multiBtn" :disabled="actDisabled('multi')" @click="confirmAct('multi')"><Icon name="layers" :size="14" />多平台</button>
             <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
             <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
+            <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
           </div>
           <div class="tb-group" data-group="wrap">
             <span class="tb-label">收尾</span>
@@ -94,7 +95,7 @@
 
       <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」、语音改稿 -->
       <div v-if="s.mode === 'edit'" class="editor-bar" id="editorBar">
-        <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字 → AI 改写　·　输入 <kbd>/</kbd> → 续写</span>
+        <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字，点「改写」　·　输入 <kbd>/</kbd> → 续写</span>
         <span class="grow"></span>
         <div class="mark-dock" id="markDock">
           <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0" title="先把光标点在要插图的地方，再把这个标签拖进去；或点一下插到光标处"
@@ -391,14 +392,8 @@ function onRichInput(value) {
   keepCaretVisible(editorEl()?._rich?.coordsAt?.(editorEl()._rich.getSelection().end));
 }
 
-function onRichSelect({ start, end, text, coords }) {
-  if (end - start < 2) { ed.menus.sel = null; return; }
-  ed.menus.sel = {
-    left: coords?.left ?? 0,
-    top: coords?.top ?? 0,
-    bottom: coords?.bottom ?? 0,
-    target: { start, end, text },
-  };
+function onRichSelect() {
+  /* 划词只更新选区，不自动弹出改写菜单 */
 }
 
 function onRichSlash(info) {
@@ -428,21 +423,40 @@ function locateInRaw(text, range) {
   return { start, end: start + text.length, text };
 }
 
-function onDocMouseUp(e) {
-  if (e?.target?.closest?.('#selMenu')) return;      // 在划词菜单里点输入框：别把菜单关了
-  if (s.mode !== 'read' || !s.draft?.content || s.streaming || v.current) return;
-  setTimeout(() => {
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) { ed.menus.sel = null; return; }
-    const range = sel.getRangeAt(0);
-    if (!article.value?.contains(range.commonAncestorContainer)) return;
-    const text = sel.toString().trim();
-    if (text.length < 2) return;
-    const target = locateInRaw(text, range);
-    if (!target) { toast('这段包含格式符号，切到「编辑」再选一次就能改'); return; }
-    const r = range.getBoundingClientRect();
-    ed.menus.sel = { left: r.left, top: r.top, bottom: r.bottom, target };
-  }, 0);
+/* 改写菜单只在点「改写」时出现，位置跟在当前选区旁边 */
+function openRewrite() {
+  if (s.streaming) return;
+  if (s.mode === 'edit') {
+    const r = editorEl()?._rich;
+    const sel = r?.getSelection?.();
+    const text = String(sel?.text || '').trim();
+    if (!sel || sel.end - sel.start < 2 || text.length < 2) {
+      toast('先选中要改的一段文字');
+      return;
+    }
+    const coords = r.coordsAt?.(sel.end) || {};
+    ed.menus.sel = {
+      left: coords.left ?? 0,
+      top: coords.top ?? 0,
+      bottom: coords.bottom ?? 0,
+      target: { start: sel.start, end: sel.end, text: sel.text },
+    };
+    return;
+  }
+  if (s.mode !== 'read' || !s.draft?.content || v.current) {
+    toast('先选中要改的一段文字');
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel?.rangeCount || sel.isCollapsed) { toast('先选中要改的一段文字'); return; }
+  const range = sel.getRangeAt(0);
+  if (!article.value?.contains(range.commonAncestorContainer)) { toast('先选中要改的一段文字'); return; }
+  const text = sel.toString().trim();
+  if (text.length < 2) { toast('先选中要改的一段文字'); return; }
+  const target = locateInRaw(text, range);
+  if (!target) { toast('这段包含格式符号，切到「编辑」再选一次就能改'); return; }
+  const box = range.getBoundingClientRect();
+  ed.menus.sel = { left: box.left, top: box.top, bottom: box.bottom, target };
 }
 
 /* ---------- 拖「此处放图片」进正文 ---------- */
@@ -548,10 +562,16 @@ function onBeforeUnload(e) {
 
 /* 吸顶：贴到顶了才给分隔线和投影。用 IntersectionObserver 而不是 scroll 事件——只需要知道「越界了没有」 */
 const stuck = ref(false);
+const headStick = ref(null);
 let observer = null;
+let headObs = null;
+
+function syncHeadH() {
+  const h = headStick.value?.offsetHeight || 0;
+  if (h) document.documentElement.style.setProperty('--head-stick-h', `${h}px`);
+}
 
 onMounted(() => {
-  document.addEventListener('mouseup', onDocMouseUp);
   document.addEventListener('click', onDocClick);
   document.addEventListener('mousedown', onDocMouseDown);
   document.addEventListener('keydown', onKey);
@@ -560,14 +580,19 @@ onMounted(() => {
   const top = getComputedStyle(document.documentElement).getPropertyValue('--topbar-h').trim() || '66px';
   observer = new IntersectionObserver(([en]) => { stuck.value = !en.isIntersecting; }, { rootMargin: `-${top} 0px 0px 0px`, threshold: 0 });
   observer.observe(sentinel.value);
+  syncHeadH();
+  if (headStick.value && typeof ResizeObserver !== 'undefined') {
+    headObs = new ResizeObserver(syncHeadH);
+    headObs.observe(headStick.value);
+  }
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mouseup', onDocMouseUp);
   document.removeEventListener('click', onDocClick);
   document.removeEventListener('mousedown', onDocMouseDown);
   document.removeEventListener('keydown', onKey);
   window.removeEventListener('beforeunload', onBeforeUnload);
   observer?.disconnect();
+  headObs?.disconnect();
 });
 </script>

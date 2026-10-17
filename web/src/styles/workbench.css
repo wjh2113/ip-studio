@@ -145,8 +145,8 @@
 }
 .rich-editor { padding: 0; overflow: visible; }
 .rich-toolbar {
-  /* 低于划词浮层（.pop-menu z-index:70），格式操作改嵌在浮层里 */
-  position: relative; z-index: 2;
+  /* 吸在标题工具条下面，往下滚时格式条不动；低于划词浮层（.pop-menu z-index:70） */
+  position: sticky; top: calc(var(--topbar-h) + var(--head-stick-h, 108px)); z-index: 11;
   display: flex; flex-wrap: wrap; align-items: center;
   padding: 6px 8px; border-bottom: 1px solid var(--border);
   background: var(--panel-2);
@@ -182,8 +182,21 @@
   color: var(--text); cursor: pointer; white-space: nowrap;
 }
 .fmt-pop button:hover, .fmt-pop button.on { background: var(--accent-soft); color: var(--accent-ink); }
-.fmt-swatches { flex-direction: row; flex-wrap: wrap; width: 132px; min-width: 0; gap: 6px; padding: 8px; }
-.fmt-swatch { width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid var(--border); }
+.fmt-palette { width: 248px; min-width: 0; padding: 8px 10px 6px; gap: 6px; }
+.fmt-pal-label { font-size: 11px; color: var(--faint); padding: 2px 2px 0; }
+.fmt-pal-row, .fmt-pal-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.fmt-palette .fmt-swatch {
+  width: 18px; height: 18px; padding: 0; border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, .12); justify-self: center;
+}
+.fmt-palette .fmt-swatch.rim { box-shadow: inset 0 0 0 1px var(--border); }
+.fmt-pal-foot { display: flex; justify-content: center; gap: 8px; padding-top: 4px; border-top: 1px solid var(--border); }
+.fmt-pal-act {
+  position: relative; width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer;
+}
+.fmt-native-color { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .fmt-chip {
   display: inline-flex; align-items: center; justify-content: center;
   height: 26px; padding: 0 9px; border: 0; border-radius: 6px;

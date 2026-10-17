@@ -104,6 +104,8 @@ await step('划词菜单：AI + 嵌套格式条', async () => {
   const at = doc.indexOf('第二段');
   if (at < 0) throw new Error('找不到第二段');
   await selectEditor(page, at, at + 3);
+  if (await page.$('#selMenu:not(.hidden)')) throw new Error('划词不该自动弹出改写');
+  await page.click('#rewriteBtn');
   await page.waitForSelector('#selMenu:not(.hidden)');
   for (const key of ['expand', 'shorten', 'humanize']) {
     if (!(await page.$(`#selMenu [data-action="${key}"]`))) throw new Error(`缺 ${key}`);

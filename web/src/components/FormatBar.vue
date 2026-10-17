@@ -31,14 +31,32 @@
         </div>
       </span>
       <button type="button" class="fmt-btn" id="rtQuote" title="引用" :class="{ on: active.quote }" @mousedown.prevent @click="run('quote')"><Icon name="quill" :size="16" /></button>
-      <span class="fmt-drop">
-        <label class="fmt-btn fmt-color" id="rtColor" title="文字颜色" @mousedown.prevent="onColorDown">
-          <input type="color" :value="color" @input="onColor($event.target.value)" />
+      <span class="fmt-drop" id="rtColor" @mousedown.prevent="onColorDown">
+        <input class="fmt-native-color" type="color" :value="color" @input="onColor($event.target.value)" />
+        <button type="button" class="fmt-btn fmt-color" title="文字颜色" @click="toggle('color')">
           <span class="fmt-letter fmt-a" :style="{ borderBottomColor: color }">A</span>
-        </label>
-        <button type="button" class="fmt-btn fmt-caret" title="常用颜色" @mousedown.prevent @click="toggle('color')"><Icon name="chev-down" :size="10" /></button>
-        <div v-if="open === 'color'" class="fmt-pop fmt-swatches" @mousedown.prevent>
-          <button v-for="c in COLORS" :key="c" type="button" class="fmt-swatch" :style="{ background: c }" :title="c" @click="pickSwatch(c)" />
+        </button>
+        <button type="button" class="fmt-btn fmt-caret" title="文字颜色" @click="toggle('color')"><Icon name="chev-down" :size="10" /></button>
+        <div v-if="open === 'color'" class="fmt-pop fmt-palette" @mousedown.prevent>
+          <div class="fmt-pal-label">主题色</div>
+          <div class="fmt-pal-row">
+            <button v-for="c in THEME" :key="c" type="button" class="fmt-swatch" :class="{ rim: c === '#FFFFFF' }" :style="{ background: c }" :title="c" @click="pickSwatch(c)" />
+          </div>
+          <div class="fmt-pal-grid">
+            <button v-for="(c, i) in SHADES" :key="i" type="button" class="fmt-swatch" :style="{ background: c }" :title="c" @click="pickSwatch(c)" />
+          </div>
+          <div class="fmt-pal-label">标准色</div>
+          <div class="fmt-pal-row">
+            <button v-for="c in STANDARD" :key="c" type="button" class="fmt-swatch" :style="{ background: c }" :title="c" @click="pickSwatch(c)" />
+          </div>
+          <div class="fmt-pal-label">最近用过</div>
+          <div class="fmt-pal-row">
+            <button v-for="c in RECENT" :key="c" type="button" class="fmt-swatch" :style="{ background: c }" :title="c" @click="pickSwatch(c)" />
+          </div>
+          <div class="fmt-pal-foot">
+            <button type="button" class="fmt-pal-act" title="去掉颜色" @click="run('nocolor')"><Icon name="eraser" :size="16" /></button>
+            <button type="button" class="fmt-pal-act" title="更多颜色" @click="moreColor"><Icon name="palette" :size="16" /></button>
+          </div>
         </div>
       </span>
       <span class="fmt-sep" />
@@ -69,7 +87,20 @@ defineProps({
   variant: { type: String, default: 'icons' }, // icons | chips
 });
 
-const COLORS = ['#1F2329', '#D83931', '#DE7802', '#245BDB', '#6425D0', '#646A73'];
+const THEME = ['#FFFFFF', '#1F2329', '#F4EFE6', '#1C2B4A', '#5C7A99', '#C4564A', '#6E7D45', '#7D6B86', '#2E6E6A', '#C56A2F'];
+const STANDARD = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+const RECENT = ['#D83931', '#DE7802', '#245BDB', '#6425D0', '#646A73'];
+
+function mix(hex, toward, t) {
+  const h = hex.slice(1);
+  const p = (i) => parseInt(h.slice(i, i + 2), 16);
+  const q = (i) => parseInt(toward.slice(i + 1, i + 3), 16);
+  const ch = (i) => Math.round(p(i) + (q(i) - p(i)) * t).toString(16).padStart(2, '0');
+  return `#${ch(0)}${ch(2)}${ch(4)}`.toUpperCase();
+}
+const SHADES = [0.82, 0.64, 0.46, 0.28, 0.12].flatMap((t) => THEME.map((c) => (
+  c === '#FFFFFF' ? mix('#F3F4F6', '#6B7280', 1 - t) : mix('#FFFFFF', c, 1 - t)
+)));
 
 const ed = useEditorStore();
 const color = ref('#333333');
@@ -140,6 +171,10 @@ function run(op) {
 function pickSwatch(c) {
   onColor(c);
   closeMenus();
+}
+
+function moreColor() {
+  document.querySelector('#rtColor input')?.click();
 }
 
 function onColorDown() {
