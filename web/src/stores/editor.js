@@ -238,6 +238,14 @@ export const useEditorStore = defineStore('editor', () => {
   /* 阅读区现在该显示什么：生成中 / 出错 / 正文 */
   const streamingView = computed(() => s().streaming || Boolean(live.error));
 
+  /* 全屏编辑：整块成稿框铺满视口 */
+  const editFs = ref(false);
+  function setEditFs(on) {
+    editFs.value = !!on;
+    document.body.classList.toggle('edit-fs-on', editFs.value);
+  }
+  function toggleEditFs() { setEditFs(!editFs.value); }
+
   /* ---------- 模式 ---------- */
   function setMode(mode) {
     const st = s();
@@ -245,6 +253,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (st.mode === 'edit' && mode !== 'edit') {
       stopVoice();
       flushSave(true);      // 离开编辑就落盘，并留一版历史
+      setEditFs(false);
     }
     st.mode = mode;
     menus.sel = null;
@@ -765,10 +774,11 @@ export const useEditorStore = defineStore('editor', () => {
     save.kind = '';
     st.mode = 'read';
     st.revOpen = false;
+    setEditFs(false);
   }
 
   return {
-    live, streamingView, generate, setMode,
+    live, streamingView, generate, setMode, editFs, setEditFs, toggleEditFs,
     revise, reviseCompare, closeReviseCompare, revertReviseParagraph, progressLabel,
     save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,

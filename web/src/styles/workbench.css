@@ -14,6 +14,30 @@
 }
 .work-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; font-size: 13px; color: var(--muted); }
 .work-main { padding: 0 32px 32px; min-width: 0; }
+/* 全屏编辑：整块成稿框铺满视口，盖住顶栏和侧栏 */
+.work-main.edit-fs {
+  position: fixed; inset: 0; z-index: 90;
+  width: 100%; height: 100%; max-width: none;
+  margin: 0; border-radius: 0; border: 0;
+  overflow: auto; background: var(--panel);
+  padding: 0 40px 40px;
+  box-shadow: none;
+}
+.work-main.edit-fs .head-stick {
+  top: 0; margin: 0 -40px; padding: 14px 40px 0;
+  border-radius: 0;
+}
+.work-main.edit-fs .rich-toolbar {
+  top: var(--head-stick-h, 108px);
+}
+.work-main.edit-fs .editor, .work-main.edit-fs .rich-editor {
+  min-height: calc(100vh - var(--head-stick-h, 108px) - 120px);
+}
+.work-main.edit-fs .rich-pm { min-height: calc(100vh - var(--head-stick-h, 108px) - 200px); }
+body.edit-fs-on { overflow: hidden; }
+/* 全屏时改写/续写浮层要盖在成稿框上面 */
+body.edit-fs-on .pop-menu,
+body.edit-fs-on .assist-pop { z-index: 100; }
 .work-side { display: grid; gap: 12px; position: sticky; top: calc(var(--topbar-h) + 18px); max-height: calc(100vh - var(--topbar-h) - 36px); overflow-y: auto; padding-bottom: 4px; }
 @media (max-width: 1240px) {
   .work { grid-template-columns: minmax(0, 1fr); }
@@ -26,6 +50,8 @@
 /* 手机：收紧成稿头与工具条，避免标题行 nowrap / 加工组把页面撑出横向滚动 */
 @media (max-width: 720px) {
   .work-main.card { padding: 14px 14px 20px; }
+  .work-main.edit-fs { padding: 0 14px 20px; }
+  .work-main.edit-fs .head-stick { margin: 0 -14px; padding: 12px 14px 0; }
   .head-stick { margin: 0 -14px; padding: 12px 14px 0; }
   .head-stick .card-head { flex-wrap: wrap; gap: 6px 8px; margin-bottom: 10px; }
   .head-stick .card-head > h2,

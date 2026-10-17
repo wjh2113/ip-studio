@@ -92,6 +92,15 @@ await step('工具条「放图标记」', async () => {
   return `${n} 处`;
 });
 
+await step('全屏编辑 / 退出', async () => {
+  await page.click('#rtFullscreen');
+  await page.waitForSelector('#workMain.edit-fs');
+  if (!(await page.$eval('body', (b) => b.classList.contains('edit-fs-on')))) throw new Error('body 没挂 edit-fs-on');
+  await page.click('#rtFullscreen');
+  await page.waitForFunction(() => !document.querySelector('#workMain.edit-fs'));
+  return '全屏开关正常';
+});
+
 await step('保存按钮', async () => {
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''), null, { timeout: 8000 });
