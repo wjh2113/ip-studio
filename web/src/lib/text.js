@@ -81,6 +81,7 @@ export function markdown(src) {
 
 const inline = (s) => s
   .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/~~([^~]+)~~/g, '<s>$1</s>')
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
 

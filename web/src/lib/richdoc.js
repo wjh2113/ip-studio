@@ -54,6 +54,7 @@ function escHtml(s) {
 function inlineToHtml(raw) {
   let s = escHtml(raw);
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/~~([^~]+)~~/g, '<s>$1</s>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   return s;
@@ -116,6 +117,7 @@ function emitTextNode(node, basePos, stream) {
   const hasCode = marks.some((m) => m.type.name === 'code');
   const hasBold = marks.some((m) => m.type.name === 'bold');
   const hasItalic = marks.some((m) => m.type.name === 'italic');
+  const hasStrike = marks.some((m) => m.type.name === 'strike');
   const colorMark = marks.find((m) => m.type.name === 'textStyle' && m.attrs?.color);
   const color = colorMark ? sanitizeColor(colorMark.attrs.color) : '';
 
@@ -123,6 +125,7 @@ function emitTextNode(node, basePos, stream) {
   let suffix = '';
   if (hasCode) { prefix = '`'; suffix = '`'; }
   else {
+    if (hasStrike) { prefix += '~~'; suffix = `~~${suffix}`; }
     if (hasBold) { prefix += '**'; suffix = `**${suffix}`; }
     if (hasItalic) { prefix += '*'; suffix = `*${suffix}`; }
   }

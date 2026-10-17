@@ -51,6 +51,8 @@ const ICONS = {
   download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
   copy: ['M9 9h10v11H9z', 'M5 15V4h10'],
   archive: ['M3 4h18v4H3z', 'M5 8v11h14V8', 'M10 12h4'],
+  brush: ['M15 4l5 5-9 9H6v-5z', 'M14 5l5 5', 'M4 20h6'],
+  eraser: ['M16 20H8l-4-5 9-9 7 7-4 4', 'M4 20h16', 'M9 11l5 5'],
   undo: ['M9 14L4 9l5-5', 'M4 9h10a6 6 0 0 1 0 12h-3'],
   redo: ['M15 14l5-5-5-5', 'M20 9H10a6 6 0 0 0 0 12h3'],
   trash: ['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13'],

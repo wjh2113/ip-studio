@@ -48,6 +48,8 @@ const applying = ref(false);
 const over = ref(false);
 const MARK_MIME = 'application/x-image-mark';
 
+/* 格式刷记下的样式；再点一次刷到当前选区 */
+let brush = null;
 /* 点颜色板会抢走焦点、选区被折叠；先记下再上色 */
 let savedSel = null;
 function saveSel() {
@@ -68,11 +70,46 @@ function setColor(raw) {
 function isActive(name) {
   const ed = editor.value;
   if (!ed) return false;
+  if (name === 'brush') return !!brush;
+  if (name === 'h1') return ed.isActive('heading', { level: 1 });
   if (name === 'h2') return ed.isActive('heading', { level: 2 });
   if (name === 'h3') return ed.isActive('heading', { level: 3 });
+  if (name === 'h4') return ed.isActive('heading', { level: 4 });
   if (name === 'list') return ed.isActive('bulletList');
+  if (name === 'ol') return ed.isActive('orderedList');
   if (name === 'quote') return ed.isActive('blockquote');
   return ed.isActive(name);
+}
+
+function captureBrush() {
+  const ed = editor.value;
+  if (!ed) return null;
+  let heading = 0;
+  for (const n of [1, 2, 3, 4]) {
+    if (ed.isActive('heading', { level: n })) heading = n;
+  }
+  return {
+    bold: ed.isActive('bold'),
+    italic: ed.isActive('italic'),
+    strike: ed.isActive('strike'),
+    color: sanitizeColor(ed.getAttributes('textStyle')?.color),
+    heading,
+  };
+}
+
+function applyBrush() {
+  const ed = editor.value;
+  if (!ed || !brush) return;
+  const chain = ed.chain();
+  if (savedSel) chain.setTextSelection(savedSel);
+  chain.focus().unsetAllMarks();
+  if (brush.bold) chain.setBold();
+  if (brush.italic) chain.setItalic();
+  if (brush.strike) chain.setStrike();
+  if (brush.color) chain.setColor(brush.color);
+  if (brush.heading) chain.setHeading({ level: brush.heading });
+  chain.run();
+  savedSel = null;
 }
 
 function getColor() {
@@ -86,14 +123,34 @@ function format(op) {
   if (op === 'redo') { emit('hist', 'redo'); return; }
   if (op === 'image') { pickImage(); return; }
   if (op === 'mark') { insertMarkAtCaret(); return; }
-  const chain = ed.chain().focus();
+  if (op === 'brush') {
+    if (brush) { applyBrush(); brush = null; }
+    else brush = captureBrush();
+    return;
+  }
+  if (op === 'clear') {
+    const chain = ed.chain();
+    if (savedSel) chain.setTextSelection(savedSel);
+    chain.focus().unsetAllMarks();
+    if (ed.isActive('heading')) chain.setParagraph();
+    chain.run();
+    savedSel = null;
+    return;
+  }
+  const chain = ed.chain();
+  if (savedSel && /^(bold|italic|strike|h\d|list|ol|quote)$/.test(op)) chain.setTextSelection(savedSel);
+  chain.focus();
   if (op === 'bold') chain.toggleBold().run();
   else if (op === 'italic') chain.toggleItalic().run();
   else if (op === 'strike') chain.toggleStrike().run();
+  else if (op === 'h1') chain.toggleHeading({ level: 1 }).run();
   else if (op === 'h2') chain.toggleHeading({ level: 2 }).run();
   else if (op === 'h3') chain.toggleHeading({ level: 3 }).run();
+  else if (op === 'h4') chain.toggleHeading({ level: 4 }).run();
   else if (op === 'list') chain.toggleBulletList().run();
+  else if (op === 'ol') chain.toggleOrderedList().run();
   else if (op === 'quote') chain.toggleBlockquote().run();
+  savedSel = null;
 }
 
 function emitDoc(typing = true) {
