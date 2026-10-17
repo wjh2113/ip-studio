@@ -6,6 +6,7 @@ import { HttpError } from '../auth.js';
 import { generateJSON, generateText } from '../llm.js';
 import { buildDocx } from '../docx.js';
 import { IMAGE_MARK, markAts } from '../../shared/place.js';
+import { reuseIllusImages } from '../keep.js';
 import { assertQuota } from '../quota.js';
 import { defineJob, enqueue, presentJob } from '../jobs.js';
 import { generate, imageInfo } from '../images.js';
@@ -200,13 +201,6 @@ export async function handleIllus(req, res, body, params) {
 
   const store = { ...(draft.illus || {}) };
   const before = store[verKey(v)];
-  // 纯函数，不要写成 async：它在 .map 里用，写成 async 会把每一项变成 Promise，存进库里就成了 {}
-  const keepImage = (it) => {
-    const old = before?.placed === 'mark'
-      ? before.items?.find((o) => o.i === it.i && o.prompt === it.prompt)
-      : before?.items?.find((o) => o.prompt === it.prompt);
-    return old?.image ? { ...it, image: old.image } : it;
-  };
 
   let kept;
   let capped = null;
@@ -218,15 +212,15 @@ export async function handleIllus(req, res, body, params) {
     placed = 'mark';
     const all = markAts(text);
     capped = all.length > marks.length ? { asked: all.length, cap: marks.length } : null;
-    kept = marks.map((at, i) => {
+    kept = reuseIllusImages(before, marks.map((at, i) => {
       const src = data.items[i] || {};
       const prompt = String(src.prompt || '').trim() || '与前后段落相配的场景，不画具体的人，画面里不要写字';
-      return keepImage({
+      return {
         anchor: IMAGE_MARK, at, prompt,
         alt: String(src.alt || '').trim().slice(0, 20),
         i, image: null,
-      });
-    });
+      };
+    }), placed);
   } else {
     const seen = new Set();
     const items = data.items.map((it) => {
@@ -243,7 +237,7 @@ export async function handleIllus(req, res, body, params) {
     if (!items.length) throw new HttpError(502, '配图位置和正文对不上，请再试一次');
 
     const cap = Math.max(1, Math.min(5, Math.round(text.length / 450)));
-    kept = items.slice(0, cap).map((it, i) => keepImage({ ...it, i }));
+    kept = reuseIllusImages(before, items.slice(0, cap).map((it, i) => ({ ...it, i })), placed);
     dropped = data.items.length - kept.length;
     capped = items.length > cap ? { asked: items.length, cap } : null;
   }

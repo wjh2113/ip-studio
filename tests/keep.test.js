@@ -1,7 +1,7 @@
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rebindCues, rebindIllus } from '../server/keep.js';
+import { rebindCues, rebindIllus, reuseIllusImages } from '../server/keep.js';
 import { IMAGE_MARK } from '../shared/place.js';
 
 test('rebindCues：只留下正文里还能逐字找到的提示', async () => {
@@ -31,4 +31,21 @@ test('rebindIllus：有图片标记时按标记顺序对位', async () => {
   assert.equal(next.__main__.placed, 'mark');
   assert.equal(next.__main__.items.length, 2);
   assert.equal(dropped, 1);
+});
+
+test('reuseIllusImages：指定位置重排时提示词变了也按序号保留已出的图', () => {
+  const before = {
+    placed: 'mark',
+    items: [
+      { i: 0, prompt: '旧提示甲', image: { file: '1/a.png' } },
+      { i: 1, prompt: '旧提示乙', image: null },
+    ],
+  };
+  const next = reuseIllusImages(before, [
+    { i: 0, prompt: '全新提示甲', image: null },
+    { i: 1, prompt: '全新提示乙', image: null },
+  ], 'mark');
+  assert.equal(next[0].image.file, '1/a.png');
+  assert.equal(next[1].image, null);
+  assert.equal(next[0].prompt, '全新提示甲');
 });

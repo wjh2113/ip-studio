@@ -238,6 +238,24 @@ test('配图：改过的画面提示词随出图请求带上，存下来并用�
   assert.equal(d.illus.__main__.items[0].prompt, '窗边的一盆绿萝，清晨的光');
 });
 
+test('配图：再按指定位置排版时保留已出的图', async () => {
+  const content = '# 指定位\n\n甲段 <此处放图片>\n\n乙段 <此处放图片>\n\n丙段';
+  let r = await api.call('PUT', `/api/drafts/${draftId}/content`, { content });
+  assert.equal(r.status, 200, r.text);
+  r = await api.call('POST', `/api/drafts/${draftId}/illus`, {});
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.illus.placed, 'mark');
+  assert.ok(r.data.illus.items.length >= 2);
+  r = await api.call('POST', `/api/drafts/${draftId}/illus/0/image`, { async: true });
+  assert.equal(r.status, 202, r.text);
+  const job = await untilJob(api, r.data.job.id);
+  assert.equal(job.status, 'done', job.error);
+  const file = job.result.image.file;
+  r = await api.call('POST', `/api/drafts/${draftId}/illus`, {});
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.illus.items[0].image?.file, file, '第一处已出的图不该被清掉');
+});
+
 test('手改平台版本：PUT 存正文，原文不动；没有的版本 404，空的 400', async () => {
   let r = await api.call('POST', `/api/drafts/${draftId}/variants`, { platform: 'xiaohongshu' });
   assert.equal(r.status, 200, r.text);

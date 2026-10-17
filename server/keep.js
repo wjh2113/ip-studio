@@ -3,6 +3,25 @@
 
 import { IMAGE_MARK, markAts } from '../shared/place.js';
 
+/* 重新排版位时，把上一版已出的图接到新方案上。
+ * 指定位置按第几处标记对位（提示词会重写，不能靠 prompt）；自动位优先按正文偏移。 */
+export function reuseIllusImages(before, items, placed) {
+  const old = before?.items || [];
+  return (items || []).map((it) => {
+    if (it?.image) return it;
+    let hit;
+    if (placed === 'mark') {
+      hit = old.find((o) => o?.i === it.i && o.image);
+      if (!hit && Number.isFinite(it.at)) hit = old.find((o) => o?.at === it.at && o.image);
+    } else {
+      hit = (Number.isFinite(it.at) ? old.find((o) => o?.at === it.at && o.image) : null)
+        || old.find((o) => o?.i === it.i && o.image)
+        || old.find((o) => o?.prompt && o.prompt === it.prompt && o.image);
+    }
+    return hit?.image ? { ...it, image: hit.image } : it;
+  });
+}
+
 export function rebindCues(text, cues) {
   const src = String(text ?? '');
   if (!cues?.cues?.length) return { cues: cues || null, dropped: 0 };
