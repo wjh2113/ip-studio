@@ -9,17 +9,17 @@
     @dragleave="over = false"
     @drop="onDrop"
   >
-    <div class="rich-toolbar" role="toolbar" aria-label="格式">
-      <button type="button" class="rt-btn" title="加粗" :class="{ on: editor?.isActive('bold') }" @mousedown.prevent @click="editor?.chain().focus().toggleBold().run()"><b>B</b></button>
-      <button type="button" class="rt-btn" title="标题" :class="{ on: editor?.isActive('heading', { level: 2 }) }" @mousedown.prevent @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()">H</button>
-      <button type="button" class="rt-btn" title="列表" :class="{ on: editor?.isActive('bulletList') }" @mousedown.prevent @click="editor?.chain().focus().toggleBulletList().run()">≡</button>
-      <button type="button" class="rt-btn" title="引用" :class="{ on: editor?.isActive('blockquote') }" @mousedown.prevent @click="editor?.chain().focus().toggleBlockquote().run()">“</button>
-      <label class="rt-btn rt-color" title="文字颜色">
+    <div class="rich-toolbar" id="richToolbar" role="toolbar" aria-label="格式">
+      <button type="button" class="rt-btn" id="rtBold" title="加粗" :class="{ on: editor?.isActive('bold') }" @mousedown.prevent @click="editor?.chain().focus().toggleBold().run()">加粗</button>
+      <button type="button" class="rt-btn" id="rtHeading" title="标题" :class="{ on: editor?.isActive('heading', { level: 2 }) }" @mousedown.prevent @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()">标题</button>
+      <button type="button" class="rt-btn" id="rtList" title="列表" :class="{ on: editor?.isActive('bulletList') }" @mousedown.prevent @click="editor?.chain().focus().toggleBulletList().run()">列表</button>
+      <button type="button" class="rt-btn" id="rtQuote" title="引用" :class="{ on: editor?.isActive('blockquote') }" @mousedown.prevent @click="editor?.chain().focus().toggleBlockquote().run()">引用</button>
+      <label class="rt-btn rt-color" id="rtColor" title="文字颜色" @mousedown.prevent="saveSel">
         <input type="color" :value="currentColor" @input="setColor($event.target.value)" />
-        A
+        颜色
       </label>
-      <button type="button" class="rt-btn" title="插入图片" @mousedown.prevent @click="pickImage">图</button>
-      <button type="button" class="rt-btn" title="插入「此处放图片」" @mousedown.prevent @click="insertMarkAtCaret">标</button>
+      <button type="button" class="rt-btn" id="rtImage" title="插入图片" @mousedown.prevent @click="pickImage">图片</button>
+      <button type="button" class="rt-btn" id="rtMark" title="插入「此处放图片」" @mousedown.prevent @click="insertMarkAtCaret">放图标记</button>
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFilePicked" />
     </div>
     <EditorContent :editor="editor" class="rich-body" />
@@ -61,10 +61,20 @@ const currentColor = computed(() => {
   return sanitizeColor(c) || '#333333';
 });
 
+/* 点颜色板会抢走焦点、选区被折叠；先记下再上色 */
+let savedSel = null;
+function saveSel() {
+  if (!editor.value) return;
+  const { from, to } = editor.value.state.selection;
+  savedSel = { from, to };
+}
+
 function setColor(raw) {
   const c = sanitizeColor(raw);
   if (!c || !editor.value) return;
-  editor.value.chain().focus().setColor(c).run();
+  const chain = editor.value.chain();
+  if (savedSel) chain.setTextSelection(savedSel);
+  chain.focus().setColor(c).run();
 }
 
 function emitDoc(typing = true) {
@@ -266,7 +276,10 @@ function onDrop(e) {
   insertMark(at ?? selectionToDoc(editor.value).start);
 }
 
+function onDocDragEnd() { over.value = false; }
+
 onMounted(() => {
+  document.addEventListener('dragend', onDocDragEnd);
   const ed = new Editor({
     extensions: [
       StarterKit.configure({
@@ -334,6 +347,7 @@ watch(() => props.modelValue, (v) => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('dragend', onDocDragEnd);
   editor.value?.destroy();
   editor.value = null;
 });

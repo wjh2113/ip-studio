@@ -477,6 +477,12 @@ function onDocClick(e) {
 
 function onDocMouseDown(e) {
   if (e.target.closest('#selMenu, #slashMenu')) return;
+  // 点格式工具条时先关掉划词菜单，避免菜单盖住按钮点不到
+  if (e.target.closest('#richToolbar')) {
+    ed.menus.sel = null;
+    ed.menus.slash = null;
+    return;
+  }
   ed.menus.sel = null;
   ed.menus.slash = null;
 }

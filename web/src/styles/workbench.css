@@ -145,14 +145,16 @@
 }
 .rich-editor { padding: 0; overflow: hidden; }
 .rich-toolbar {
+  /* 高于划词菜单（.pop-menu z-index:70），避免菜单盖住格式按钮点不到 */
+  position: relative; z-index: 80;
   display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
   padding: 8px 10px; border-bottom: 1px solid var(--border);
   background: var(--panel-2);
 }
 .rt-btn {
-  min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid transparent;
+  min-width: 36px; height: 28px; padding: 0 10px; border: 1px solid transparent;
   border-radius: 6px; background: transparent; font: inherit; font-size: 13px;
-  color: var(--muted); cursor: pointer;
+  color: var(--muted); cursor: pointer; white-space: nowrap;
 }
 .rt-btn:hover { background: var(--panel); color: var(--text); }
 .rt-btn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
