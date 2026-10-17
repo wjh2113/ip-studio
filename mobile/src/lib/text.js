@@ -12,7 +12,8 @@ const IMAGE_MARK = '<此处放图片>';
 const stripRich = (s) => String(s || '')
   .replace(/<span\s+style="color:\s*#[0-9A-Fa-f]{3,6}\s*"\s*>([\s\S]*?)<\/span>/gi, '$1')
   .replace(/!\[[^\]]*\]\(\/image\/\d+\/[\w.-]+\)/g, '')
-  .replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+  .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  .replace(/~~([^~]+)~~/g, '$1');
 
 const inline = (s) => s
   .replace(/`([^`]+)`/g, '<code>$1</code>')

@@ -11,6 +11,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fromRoot } from '../server/paths.js';
 import { addDays, extractTags, markdownToText, metricsDueDay, todayUtc } from '../server/routes/mobile.js';
+import { blocks, markdown } from '../mobile/src/lib/text.js';
 
 const PORT = 40000 + (process.pid % 20000);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -384,9 +385,20 @@ test('对标速存：粘贴文本、抓链接（跟跳转）、拒绝 http 以�
   assert.equal((await app.call('GET', `/api/personas/${pid}/benchmarks`)).data.list.length, 2);
 });
 
+test('App 阅读不带网页富文本：颜色、插图、删除线都剥掉', () => {
+  const src = '~~删掉~~ <span style="color:#FF0000">红</span>\n\n![](/image/2/a.png)\n\n<此处放图片>';
+  const html = markdown(src);
+  assert.match(html, /删掉/);
+  assert.match(html, /红/);
+  assert.equal(html.includes('~~'), false);
+  assert.equal(html.includes('/image/'), false);
+  assert.equal(html.includes('此处放图片'), false);
+  assert.equal(blocks(src).some((b) => /~~|!\[/.test(b.text)), false);
+});
+
 test('发布包：Markdown 转纯文本、话题标签、标题上限、配图地址', async () => {
-  assert.equal(markdownToText('# 标题\n\n**粗** *斜* [链接](http://x) ![图](a.png) <span style="color:#FF0000">红</span> <此处放图片>\n\n\n\n- 一条\n> 引用\n---\n`code`'),
-    '标题\n\n粗 斜 链接  红\n\n• 一条\n引用\n\ncode');
+  assert.equal(markdownToText('# 标题\n\n**粗** ~~删~~ *斜* [链接](http://x) ![图](a.png) <span style="color:#FF0000">红</span> <此处放图片>\n\n\n\n- 一条\n> 引用\n---\n`code`'),
+    '标题\n\n粗 删 斜 链接  红\n\n• 一条\n引用\n\ncode');
   assert.deepEqual(extractTags('正文 #好物推荐 #周末 \n#微博话题# 再来#好物推荐 网址 http://a.com/#anchor 和 ## 标题'), ['好物推荐', '周末', '微博话题']);
   assert.deepEqual(extractTags('没有标签'), []);
   assert.equal(extractTags(Array.from({ length: 12 }, (_, i) => `#t${i}`).join(' ')).length, 10);
