@@ -239,7 +239,13 @@ body.edit-fs-on .assist-pop { z-index: 100; }
   font: 15px/1.95 var(--font-read);
 }
 .rich-pm p { margin: 0 0 0.85em; }
-.rich-pm h1, .rich-pm h2, .rich-pm h3, .rich-pm h4 { margin: 1.1em 0 0.5em; line-height: 1.35; }
+.rich-pm h1, .rich-pm h2, .rich-pm h3, .rich-pm h4 {
+  margin: 1.1em 0 0.5em; line-height: 1.35; font-weight: 700; color: var(--text);
+}
+.rich-pm h1 { font-size: 26px; }
+.rich-pm h2 { font-size: 19px; }
+.rich-pm h3 { font-size: 16.5px; }
+.rich-pm h4 { font-size: 15.5px; }
 .rich-pm ul, .rich-pm ol { margin: 0 0 0.85em; padding-left: 1.4em; }
 .rich-pm blockquote {
   margin: 0 0 0.85em; padding: 0.2em 0 0.2em 0.9em;

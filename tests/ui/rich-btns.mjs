@@ -52,10 +52,16 @@ await step('工具条：加粗 / 标题 / 列表 / 引用', async () => {
   let doc = await editorDoc(page);
   if (!/\*\*/.test(doc) && !await page.$('#rtBold.on')) throw new Error('加粗没反应');
   await page.click('#rtHeading');
+  await page.waitForTimeout(150);
+  doc = await editorDoc(page);
+  const h2on = await page.$eval('#rtHeading', (b) => b.classList.contains('on'));
+  const h2dom = await page.$eval('#editor .ProseMirror', (el) => !!el.querySelector('h2'));
+  if (!/##\s/.test(doc)) throw new Error(`H2 没写入 Markdown：on=${h2on} dom=${h2dom} doc=${doc.slice(0, 200)}`);
+  if (!h2dom) throw new Error('编辑区没有 h2 节点');
   await page.click('#rtList');
   await page.click('#rtQuote');
   doc = await editorDoc(page);
-  return `len=${doc.length}`;
+  return `h2ok|len=${doc.length}`;
 });
 
 await step('工具条：字色', async () => {
