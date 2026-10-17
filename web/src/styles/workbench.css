@@ -149,8 +149,11 @@ body.edit-fs-on .assist-pop { z-index: 100; }
 .content hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
 .content code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
 .content em { color: var(--muted); font-style: normal; font-size: 13px; }
-.content figure.illus { margin: 24px 0; }
-.content figure.illus img { width: 100%; border-radius: 10px; display: block; }
+.content figure.illus { margin: 24px 0; max-width: 100%; }
+.content figure.illus img {
+  display: block; width: auto; max-width: 100%; height: auto;
+  border-radius: 10px; margin: 0 auto; object-fit: contain;
+}
 .content figure.illus figcaption { margin-top: 8px; font-size: 12.5px; color: var(--muted); text-align: center; }
 .content figure.illus.empty {
   border: 1px dashed var(--accent-line); border-radius: 10px; background: color-mix(in srgb, var(--accent-soft) 40%, transparent);
@@ -233,7 +236,8 @@ body.edit-fs-on .assist-pop { z-index: 100; }
 .fmt-native-color { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .sel-menu { min-width: 220px; padding: 6px; }
 .sel-menu .sel-acts button { width: 100%; }
-.rich-body { padding: 14px 18px 18px; }
+/* 全屏时编辑区很宽，正文和配图仍按阅读宽度排，避免图被拉成横条 */
+.rich-body { max-width: 760px; margin: 0 auto; padding: 14px 18px 18px; }
 .rich-pm {
   min-height: 360px; outline: none;
   font: 15px/1.95 var(--font-read);
@@ -252,12 +256,16 @@ body.edit-fs-on .assist-pop { z-index: 100; }
   border-left: 3px solid var(--accent-line); color: var(--muted);
 }
 .rich-pm img.doc-img, .rich-pm img {
-  max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0.6em 0;
+  display: block; width: auto; max-width: 100%; height: auto;
+  border-radius: 8px; margin: 0.6em auto; object-fit: contain;
 }
 .image-mark-node.illus-filled { display: none; }
-.illus-widget { margin: 0.6em 0; }
-.illus-widget img { max-width: 100%; height: auto; border-radius: 8px; display: block; }
-.illus-widget figcaption { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+.illus-widget { margin: 0.6em 0; max-width: 100%; }
+.illus-widget img {
+  display: block; width: auto; max-width: 100%; height: auto;
+  border-radius: 8px; margin: 0 auto; object-fit: contain;
+}
+.illus-widget figcaption { margin-top: 4px; font-size: 12.5px; color: var(--muted); text-align: center; }
 .image-mark-node {
   display: inline-flex; align-items: center; gap: 6px;
   margin: 0.5em 0; padding: 6px 12px; border-radius: 8px;
