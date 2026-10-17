@@ -648,6 +648,13 @@ export const useEditorStore = defineStore('editor', () => {
     return safeName(d.title || d.subject || '文案') + (v.current ? `-${v.label}` : '');
   };
 
+  const readDataUri = (blob) => new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result);
+    r.onerror = no;
+    r.readAsDataURL(blob);
+  });
+
   /* 把图读成 data URI。剪贴板里放图片链接没用——指向本站且要登录态，粘到公众号编辑器那边取不到 */
   async function inlineImages(items) {
     const out = new Map();
@@ -655,30 +662,39 @@ export const useEditorStore = defineStore('editor', () => {
       try {
         const res = await fetch(imageUrl(it.image));
         if (!res.ok) return;
-        const blob = await res.blob();
-        out.set(it.i, await new Promise((ok, no) => {
-          const r = new FileReader();
-          r.onload = () => ok(r.result);
-          r.onerror = no;
-          r.readAsDataURL(blob);
-        }));
+        out.set(it.i, await readDataUri(await res.blob()));
       } catch { /* 单张读不到就跳过，别让整次复制失败 */ }
     }));
     return out;
   }
 
-  /* 带图的富文本：和阅读区同一套插图逻辑，只是图换成了 data URI */
+  /* 正文里手贴的图是 ![](/image/…)，不在配图方案里，复制时也要嵌成 data URI */
+  async function inlineDocImages(text) {
+    const urls = [...new Set([...String(text).matchAll(/!\[([^\]]*)\]\((\/image\/\d+\/[\w.-]+)\)/g)].map((m) => m[2]))];
+    const out = new Map();
+    await Promise.all(urls.map(async (url) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        out.set(url, await readDataUri(await res.blob()));
+      } catch { /* 单张读不到就跳过 */ }
+    }));
+    return out;
+  }
+
+  /* 带图的富文本：配图方案和正文里的图都嵌成 data URI */
   async function richHtml(text) {
     const items = useVersionsStore().illus?.items || [];
-    const uris = await inlineImages(items);
-    const html = weave(text, items, markdown, (it) => {
+    const [uris, docImgs] = await Promise.all([inlineImages(items), inlineDocImages(text)]);
+    let html = weave(text, items, markdown, (it) => {
       const uri = uris.get(it.i);
       if (!uri) return '';
       return `<figure style="margin:22px 0"><img src="${uri}" alt="${esc(it.alt)}" style="max-width:100%">`
         + (it.alt ? `<figcaption style="font-size:13px;color:#888;text-align:center;margin-top:6px">${esc(it.alt)}</figcaption>` : '')
         + '</figure>';
     });
-    return { html, imgs: uris.size };
+    html = html.replace(/src="(\/image\/\d+\/[\w.-]+)"/g, (full, url) => (docImgs.get(url) ? `src="${docImgs.get(url)}"` : full));
+    return { html, imgs: uris.size + docImgs.size };
   }
 
   async function copy() {

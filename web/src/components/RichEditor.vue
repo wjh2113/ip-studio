@@ -30,6 +30,7 @@ import { upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { ImageMark, IMAGE_MARK } from '../lib/imageMark.js';
 import { IllusDecor } from '../lib/illusDecor.js';
+import { MdImage } from '../lib/mdImage.js';
 import { useVersionsStore } from '../stores/versions.js';
 import {
   docToHtml, isSafeImageSrc, sanitizeColor, sanitizeDoc, selectionToDoc, serializeEditor,
@@ -382,10 +383,41 @@ onMounted(() => {
       Placeholder.configure({ placeholder: '在这里改正文…' }),
       ImageMark,
       IllusDecor,
+      MdImage,
     ],
     content: docToHtml(props.modelValue),
     editorProps: {
       attributes: { class: 'ProseMirror rich-pm', spellcheck: 'false' },
+      handleDOMEvents: {
+        copy(view, event) {
+          const sel = window.getSelection();
+          if (!sel?.rangeCount || sel.isCollapsed) return false;
+          const box = sel.getRangeAt(0).cloneContents();
+          const imgs = [...box.querySelectorAll('img')];
+          if (!imgs.length) return false;
+          let wrote = false;
+          for (const img of imgs) {
+            const src = img.getAttribute('src') || '';
+            const live = [...view.dom.querySelectorAll('img')].find((el) => el.getAttribute('src') === src || el.src === img.src);
+            if (!live?.complete || !live.naturalWidth) continue;
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = live.naturalWidth;
+              canvas.height = live.naturalHeight;
+              canvas.getContext('2d').drawImage(live, 0, 0);
+              img.setAttribute('src', canvas.toDataURL('image/png'));
+              wrote = true;
+            } catch { /* 跨域图画不进画布就保持原样 */ }
+          }
+          if (!wrote) return false;
+          const holder = document.createElement('div');
+          holder.appendChild(box);
+          event.preventDefault();
+          event.clipboardData.setData('text/html', holder.innerHTML);
+          event.clipboardData.setData('text/plain', sel.toString());
+          return true;
+        },
+      },
       handlePaste: (view, event) => {
         const items = [...(event.clipboardData?.items || [])];
         const img = items.find((it) => it.type.startsWith('image/'));
