@@ -71,8 +71,7 @@ await step('成稿 → 改一句 → 检查', async () => {
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   await page.click('#backReadBtn');
-  await page.click('#confirmBtn');
-  await page.click('#confirmMenu [data-act="review"]');
+  await page.click('#reviewBtn');
   await page.waitForTimeout(1500);
   const d = await page.evaluate(async () => (await (await fetch(`/api/drafts?limit=1`)).json()));
   return 'ok';

@@ -1,16 +1,22 @@
 /* 路由 · drafts：创作主流程：三个方向、流式成稿、保存与历史版本、列表、归档、删除。从原 routes.js 原样拆出。 */
 import { Drafts, Frameworks, Materials, Personas, Profile, Revisions, Sections } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON, streamText } from '../llm.js';
+import { generateJSON } from '../llm.js';
 import { pickVariant } from '../abtest.js';
 import { mockContent, mockTopics } from '../mock.js';
-import { CONTENT_SYSTEM, contentUser, reviseUser, DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser } from '../prompts.js';
+import {
+  CONTENT_SYSTEM, contentUser, reviseUser, revisePatchUser, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM,
+  applyVoiceEdits, isStructuralRevise,
+  DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser,
+} from '../prompts.js';
 import { performanceOf } from '../performance.js';
 import { describe, json, refsOf, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { refCount, weigh } from '../refs.js';
 import { recallMaterials } from './materials.js';
 import { resolveFramework } from './frameworks.js';
 import { frameworkSnapshot } from '../frameworks.js';
+import { runTextStream, openProgressStream } from './stream.js';
+import { packMaterial } from '../snippet.js';
 
 /* 本篇未填的字段，继承所选账号设定 */
 function normalizeForm(body = {}, persona = null) {
@@ -207,6 +213,8 @@ export async function handleContent(req, res, body, params) {
   const nMaterials = refCount(refs, 'materials');
   const recalled = nMaterials ? await recallMaterials(user.id, draft.persona_id, hint, nMaterials) : [];
   if (recalled.length) await Materials.markUsed(recalled.map((m) => m.id), user.id);
+  // 每条只带标题 + 最相关几百字（或已有摘要），不把整篇抓文塞进提示词
+  const materialPack = recalled.map((m) => packMaterial(m, hint, 400));
   const samples = await styleSamples(draft.persona, user.id, hint);
   const context = {
     profile: me.profile.map((e) => ({ id: e.id, title: e.title })),
@@ -221,19 +229,6 @@ export async function handleContent(req, res, body, params) {
   const contentPerf = refs.perf.on ? weigh(performanceBlock(await performanceOf(user.id, draft.persona_id ?? null), 'content'), refs, 'perf') : '';
   const contentVariant = await pickVariant('content', sys('content', CONTENT_SYSTEM));
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  const controller = new AbortController();
-  // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
-  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-
-  send('start', { title: topic.title });
   // 记下生成前的样子：失败或中途断开时恢复它，而不是把已有的稿子清空
   const before = {
     chosen: draft.chosen ?? null, title: draft.title || '', content: draft.content || '', status: draft.status,
@@ -242,32 +237,31 @@ export async function handleContent(req, res, body, params) {
     chosen: index, title: topic.title, content: '', status: 'writing',
   });
 
-  try {
-    const content = await streamText({
+  await runTextStream(res, {
+    start: () => ({ title: topic.title }),
+    before: (send) => send('progress', { step: 'writing', label: '正在成稿…' }),
+    stream: {
       meta: { feature: '成稿', userId: user.id, variant: contentVariant.name },
       system: contentVariant.system,
-      user: contentUser(draft, topic, draft.persona, samples, recalled, me, contentPerf),
-      onDelta: (text) => send('delta', { text }),
+      user: contentUser(draft, topic, draft.persona, samples, materialPack, me, contentPerf),
       mock: () => mockContent(draft, topic),
-      signal: controller.signal,
-    });
-    await Drafts.setContent(draft.id, user.id, {
-      chosen: index, title: topic.title, content, status: 'done',
-    });
-    await Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
-    await Drafts.setContext(draft.id, user.id, context);
-    if (me.profile.length) await Profile.markUsed(me.profile.map((e) => e.id), user.id);
-    send('done', { draft: await Drafts.byId(draft.id, user.id) });
-  } catch (err) {
-    /* 失败或中途关页面：别让草稿停在 writing + 空正文。
-       原来有正文（重新生成、换方向）就原样恢复，这篇不会因为一次失败被清掉；
-       第一次生成就失败的，退回到选方向这一步。 */
-    await restoreAfterFailure(draft.id, user.id, before, index)
-      .catch((e) => console.error('[content] 恢复草稿失败', e?.message));
-    if (!controller.signal.aborted) send('error', { message: describe(err) });
-  } finally {
-    res.end();
-  }
+    },
+    after: async (content) => {
+      await Drafts.setContent(draft.id, user.id, {
+        chosen: index, title: topic.title, content, status: 'done',
+      });
+      await Drafts.setGenerated(draft.id, user.id, content, contentVariant.name);
+      await Drafts.setContext(draft.id, user.id, context);
+      if (me.profile.length) await Profile.markUsed(me.profile.map((e) => e.id), user.id);
+      return { draft: await Drafts.byId(draft.id, user.id) };
+    },
+    onError: async () => {
+      /* 失败或中途关页面：别让草稿停在 writing + 空正文。
+         原来有正文就原样恢复；第一次生成就失败的，退回到选方向。 */
+      await restoreAfterFailure(draft.id, user.id, before, index)
+        .catch((e) => console.error('[content] 恢复草稿失败', e?.message));
+    },
+  });
 }
 
 /* 只在草稿还是「这次请求写进去的样子」（writing、空正文、选的是这个方向）时才恢复：
@@ -300,9 +294,10 @@ export async function handleImport(req, res, body) {
   json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
 }
 
-/* ---------------- 按意见重写：作者写几条修改意见，整篇在原稿上重写 ----------------
- * 流式回给前端看着写；写完才落盘（原稿自动留一版历史，Ctrl+Z / 版本对照都能退回）。中途失败或断开，原稿一个字不动。
- * version：改的是哪一版（'' 原文，否则是平台版本），和版本栏一致。 */
+/* ---------------- 按意见重写 ----------------
+ * 意见只动局部 → find/replace 补丁（快档，输出短）；意见动结构/整体语气 → 整篇流式重写。
+ * 写完才落盘（原稿留历史）。中途失败或断开，原稿不动。
+ * version：改的是哪一版（'' 原文，否则是平台版本）。 */
 export async function handleRevise(req, res, body, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
@@ -316,6 +311,57 @@ export async function handleRevise(req, res, body, params) {
   if (!notes) throw new HttpError(400, '写一下修改意见');
   if (draft.status === 'writing') throw new HttpError(409, '这篇正在生成，等它写完再改');
 
+  const saveOut = async (out) => {
+    if (version) {
+      await Drafts.upsertVariant(draft.id, user.id, version, {
+        content: out, chars: out.length, editedAt: new Date().toISOString(),
+      });
+    } else {
+      await Drafts.saveContent(draft.id, user.id, out, { snapshot: true });
+    }
+    return { version, draft: await Drafts.byId(draft.id, user.id), before: text };
+  };
+
+  /* 局部：像语音改稿一样只回替换列表，代码负责改正文 */
+  if (!isStructuralRevise(notes)) {
+    const { send, end, aborted } = openProgressStream(res);
+    try {
+      send('start', { version, mode: 'patch' });
+      send('progress', { step: 'revising', label: '正在按意见改局部…' });
+      const data = await withRetry(async () => {
+        const out = await generateJSON({
+          meta: { feature: '按意见重写·局部', userId: user.id },
+          system: sys('revise-patch', REVISE_PATCH_SYSTEM),
+          user: revisePatchUser(text, notes),
+          schema: REVISE_PATCH_SCHEMA,
+          mock: () => ({
+            note: `演示：落实「${notes.slice(0, 24)}」`,
+            // 演示模式：在文末加一句，让测试和界面能看到意见已落实
+            edits: text
+              ? [{ find: text, replace: `${text}\n\n（演示模式：这里会按修改意见改——${notes.slice(0, 40)}）`, all: false }]
+              : [],
+          }),
+        });
+        if (!out || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到改写结果');
+        return out;
+      }, '按意见改写失败，请再试一次');
+      if (aborted) return;
+      const { content: out, applied, skipped } = applyVoiceEdits(text, data.edits);
+      if (!applied.length) {
+        const why = skipped[0] || data.note || '意见没有对应到可改的句子';
+        throw new HttpError(502, `没有落实改动：${why}。原稿没动`);
+      }
+      // 前端流式区期待 delta；局部改完把结果一次性推过去，体验和整篇一致
+      send('delta', { text: out });
+      send('done', await saveOut(out));
+    } catch (err) {
+      if (!aborted) send('error', { message: describe(err) });
+    } finally {
+      end();
+    }
+    return;
+  }
+
   // 账号还在就用最新设定（含成稿参考），否则退回创作时的快照
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const hint = `${draft.subject} ${draft.title || ''} ${notes}`;
@@ -323,42 +369,21 @@ export async function handleRevise(req, res, body, params) {
   const samples = await styleSamples(persona, user.id, hint);
   const target = { ...draft, platform: version || draft.platform };
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  const controller = new AbortController();
-  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-  send('start', { version });
-
-  try {
-    const out = String(await streamText({
+  await runTextStream(res, {
+    start: () => ({ version, mode: 'full' }),
+    before: (send) => send('progress', { step: 'revising', label: '正在按意见重写全文…' }),
+    stream: {
       meta: { feature: '按意见重写', userId: user.id },
       system: sys('content', CONTENT_SYSTEM),
       user: reviseUser(target, persona, samples, me, text, notes),
-      onDelta: (t) => send('delta', { text: t }),
       mock: () => `${text}\n\n（演示模式：这里会按修改意见重写全文——${notes.slice(0, 40)}）`,
-      signal: controller.signal,
-    }) || '').trim();
-    if (out.length < Math.min(40, text.length / 4)) throw new HttpError(502, '没有拿到改写结果，原稿没动');
-    if (version) {
-      const fresh = await Drafts.byId(draft.id, user.id);
-      const variants = { ...(fresh.variants || {}) };
-      variants[version] = { ...(variants[version] || {}), content: out, chars: out.length, editedAt: new Date().toISOString() };
-      await Drafts.setVariants(draft.id, user.id, variants);
-    } else {
-      // 留一版历史：原稿在「版本」里能找回来
-      await Drafts.saveContent(draft.id, user.id, out, { snapshot: true });
-    }
-    send('done', { version, draft: await Drafts.byId(draft.id, user.id) });
-  } catch (err) {
-    if (!controller.signal.aborted) send('error', { message: describe(err) });
-  } finally {
-    res.end();
-  }
+    },
+    after: async (raw) => {
+      const out = String(raw || '').trim();
+      if (out.length < Math.min(40, text.length / 4)) throw new HttpError(502, '没有拿到改写结果，原稿没动');
+      return saveOut(out);
+    },
+  });
 }
 
 /* ---------------- 编辑器：手工保存 ---------------- */

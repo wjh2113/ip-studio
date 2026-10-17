@@ -73,7 +73,12 @@ export const useVersionsStore = defineStore('versions', () => {
   });
 
   function switchTo(key) {
+    const prev = current.value;
     current.value = key;
+    if (prev === key) return;
+    const s = useStudioStore();
+    const name = key ? s.platformLabel(key) : `${s.platformLabel(s.draft?.platform)}（原文）`;
+    toast(`已切换到：${name}`);
   }
 
   /* 换稿子了：回到原文，收起两条工具栏 */

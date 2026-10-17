@@ -14,7 +14,12 @@ const step = async (name, fn) => {
   try { const r = await fn(); log.push(`ok   ${name}${r !== undefined ? ` → ${r}` : ''}`); }
   catch (e) { log.push(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
 };
-const menu = async (act) => { await page.click('#confirmBtn'); await page.click(`#confirmMenu [data-act="${act}"]`); };
+const menu = async (act) => {
+  const map = { review: '#reviewBtn', multi: '#multiBtn', illus: '#illusBtn', cues: '#cuesBtn', titles: '#titlesBtn', metrics: '#metricsBtn', archive: '#archiveBtn' };
+  const sel = map[act];
+  if (!sel) throw new Error('unknown act ' + act);
+  await page.click(sel);
+};
 const done = () => page.waitForFunction(() => document.querySelector('#content')?.textContent.length > 100 && !document.querySelector('#content .cursor'), null, { timeout: 15000 });
 
 await step('注册 → 建号 → 成稿（流式）', async () => {
@@ -154,7 +159,7 @@ await step('多平台：出一个版本 → 切过去 → 切回原文', async (
   await page.waitForSelector('#verTabs button[data-ver]:not([data-ver=""])', { timeout: 15000 });
   await page.click('#verTabs button[data-ver]:not([data-ver=""])');
   const other = (await page.textContent('#verTabs .on')).trim();
-  const disabled = await (async () => { await page.click('#confirmBtn'); const d = await page.$eval('#confirmMenu [data-act="cues"]', (b) => b.disabled); await page.click('#confirmBtn'); return d; })();
+  const disabled = await page.$eval('#cuesBtn', (b) => b.disabled);
   await page.click('#verTabs button[data-ver=""]');
   return `${other}｜看别的版本时口播灰掉=${disabled}`;
 });

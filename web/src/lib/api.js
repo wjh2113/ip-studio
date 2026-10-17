@@ -84,6 +84,31 @@ export async function upload(path, blob, filename) {
   return data;
 }
 
+/* 二进制上传 + SSE 进度（语音改稿）。onEvent(event, data)；done 的 data 作为返回值 */
+export async function streamUpload(path, blob, filename, onEvent) {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': blob.type || 'application/octet-stream',
+      'X-Filename': encodeURIComponent(filename || 'upload.webm'),
+      Accept: 'text/event-stream',
+    },
+    body: blob,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 402) emit('quota', { message: data.error, quota: data.quota });
+    throw httpError(data.error || `上传失败（${res.status}）`, res.status);
+  }
+  let done = null;
+  await readSSE(res, (event, data) => {
+    if (event === 'done') done = data;
+    onEvent?.(event, data);
+  });
+  emit('spent');
+  return done;
+}
+
 /* 下载成文件：Blob → 临时链接 → 点一下 */
 export function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

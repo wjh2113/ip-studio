@@ -25,13 +25,14 @@ const OPENAI_MODEL_FAST = process.env.OPENAI_MODEL_FAST || OPENAI_MODEL;
  * 当前取值和拆表前的实际行为完全一致（JSON 默认 fast、文本和流式默认 quality）。 */
 export const FEATURE_TIER = {
   成稿: 'quality',
-  按意见重写: 'quality',
+  按意见重写: 'quality',          // 结构/整体语气：整篇重写
+  '按意见重写·局部': 'fast',       // 小改：find/replace 补丁
   划词改写: 'quality',
   编辑器续写: 'quality',
-  多平台适配: 'quality',
+  多平台适配: 'fast',             // 短平台默认快档；公众号/知乎/B 站用 channel: quality
   语气档案: 'quality',
-  原文概要: 'quality',
-  语音改稿: 'quality',
+  原文概要: 'fast',
+  语音改稿: 'fast',
   口播总评: 'quality',
   选题方向: 'fast',
   '选题方向·换一批': 'fast',

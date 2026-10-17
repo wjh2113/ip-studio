@@ -1,4 +1,5 @@
 /* 路由 · review：成稿检查：语言错误 + 调性与风险两层。从原 routes.js 原样拆出。 */
+import { createHash } from 'node:crypto';
 import { Drafts, Frameworks, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
@@ -7,6 +8,8 @@ import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { mergeLexicon } from '../lexicon.js';
 import { mergeAiTone, scanAiTone } from '../aitone.js';
 import { copyOverlap } from '../frameworks.js';
+
+const textHash = (text) => createHash('sha256').update(String(text || '')).digest('hex');
 
 /* ---------------- 成稿检查：错字与通顺性 ---------------- */
 
@@ -23,13 +26,23 @@ export async function handleReview(req, res, body, params) {
   if (!text) throw new HttpError(400, '还没有正文可检查');
   if (text.length > 20000) throw new HttpError(400, '正文过长，请分段检查');
 
+  const hash = textHash(`${version}\n${text}`);
+  // 正文和上次检查时一样：直接用缓存，不调模型
+  if (!version) {
+    const cached = await Drafts.reviewCache(draft.id, user.id);
+    if (cached?.hash === hash && cached?.full && typeof cached.full === 'object') {
+      json(res, 200, { review: { ...cached.full, version, cached: true } });
+      return;
+    }
+  }
+
   // 检查要看到账号设定、平台规范、语气档案和借势的热点，才谈得上"符合度"
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const target = version ? { ...draft, platform: version } : draft;
   const review = await reviewText(target, text, persona, await styleSamples(persona, user.id, `${draft.subject} ${draft.title || ''}`),
     { feature: '成稿检查', userId: user.id });
-  // 记下这次的替换建议，线上指标看作者后来改没改（指标按原文算，平台版本不记）
-  if (!version) await Drafts.setReview(draft.id, user.id, review.issues);
+  // 记下这次的替换建议 + 全文缓存（指标按原文算，平台版本不记）
+  if (!version) await Drafts.setReview(draft.id, user.id, review.issues, { hash, full: review });
   json(res, 200, { review: { ...review, version } });
 }
 

@@ -75,8 +75,7 @@ await step('写一篇抄范文的稿子 → 检查报原创度', async () => {
   await page.click('#saveBtn');
   await page.waitForFunction(() => /已保存/.test(document.querySelector('#saveState')?.textContent || ''));
   await page.click('#backReadBtn');
-  await page.click('#confirmBtn');
-  await page.click('#confirmMenu [data-act="review"]');
+  await page.click('#reviewBtn');
   await page.waitForFunction(() => /原创度/.test(document.querySelector('#reviewFlags')?.textContent || ''), null, { timeout: 10000 });
   if (shot) await page.screenshot({ path: shot + '-copy.png' });
   return (await page.textContent('#reviewFlags .flag')).replace(/\s+/g, ' ').trim().slice(0, 80);

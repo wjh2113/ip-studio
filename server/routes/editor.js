@@ -1,11 +1,12 @@
 /* 路由 · editor：编辑器：划词改写、/ 续写、语音改稿。从原 routes.js 原样拆出。 */
 import { Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON, streamText } from '../llm.js';
+import { generateJSON } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
 import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
-import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { openProgressStream, runTextStream } from './stream.js';
 
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
 
@@ -47,32 +48,16 @@ export async function handleAssist(req, res, body, params) {
     user_prompt = assistUser(draft, persona, samples, { instruction, selection, before, after }, me);
   }
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  const controller = new AbortController();
-  // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发，监听它等于永远收不到
-  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-
-  try {
-    const text = await streamText({
+  await runTextStream(res, {
+    start: () => ({ kind: body?.kind === 'compose' ? 'compose' : 'assist' }),
+    stream: {
       meta: { feature: body?.kind === 'compose' ? '编辑器续写' : '划词改写', userId: user.id },
       system: sys('assist', ASSIST_SYSTEM),
       user: user_prompt,
-      onDelta: (t) => send('delta', { text: t }),
       mock: () => mockAssist(body, selection),
-      signal: controller.signal,
-    });
-    send('done', { text });
-  } catch (err) {
-    if (!controller.signal.aborted) send('error', { message: describe(err) });
-  } finally {
-    res.end();
-  }
+    },
+    after: (text) => ({ text }),
+  });
 }
 
 const mockAssist = (body, selection) => {
@@ -109,43 +94,66 @@ export async function handleVoiceEdit(req, res, file, params) {
   if (!content.trim()) throw new HttpError(400, '还没有正文');
   if (content.length > 20000) throw new HttpError(400, '正文太长，语音改稿先控制在 2 万字以内');
 
-  let transcript = '';
+  // 网页带 Accept: text/event-stream 看进度；手机和单测仍收一整包 JSON
+  const wantSSE = String(req.headers.accept || '').includes('text/event-stream');
+  const stream = wantSSE ? openProgressStream(res) : null;
+  const progress = (step, label) => { if (stream) stream.send('progress', { step, label }); };
+
   try {
-    const tr = await transcribeAudio(file.buffer, {
-      filename: `voice.${file.ext}`,
-      mime: file.mime,
-      userId: user.id,
-      script: content,
-    });
-    transcript = String(tr.text || '').trim();
+    progress('transcribe', '转写中…');
+    let transcript = '';
+    try {
+      const tr = await transcribeAudio(file.buffer, {
+        filename: `voice.${file.ext}`,
+        mime: file.mime,
+        userId: user.id,
+        script: content,
+      });
+      transcript = String(tr.text || '').trim();
+    } catch (err) {
+      throw new HttpError(502, String(err?.message || err));
+    }
+    if (transcript.length < 2) throw new HttpError(400, '没有听清，请再说一次');
+    if (stream?.aborted) return;
+
+    progress('understand', '理解中…');
+    const data = await withRetry(async () => {
+      const out = await generateJSON({
+        // 改稿方案走快档：结构化短输出，转写已经花过时间
+        meta: { feature: '语音改稿', userId: user.id },
+        system: sys('voice-edit', VOICE_EDIT_SYSTEM),
+        user: voiceEditUser({ ...draft, content, platform: version || draft.platform }, transcript),
+        schema: VOICE_EDIT_SCHEMA,
+        mock: () => ({
+          note: '演示模式：这里会复述听懂的修改要求',
+          edits: [{ find: content.slice(0, Math.min(12, content.length)), replace: content.slice(0, Math.min(12, content.length)), all: false }],
+        }),
+      });
+      if (!out || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到修改方案');
+      return out;
+    }, '语音改稿失败，请再试一次');
+    if (stream?.aborted) return;
+
+    progress('apply', '改写中…');
+    const result = applyVoiceEdits(content, data.edits);
+    const payload = {
+      transcript,
+      note: String(data.note || '').trim(),
+      applied: result.applied,
+      skipped: result.skipped,
+      content: result.content,
+      changed: result.content !== content,
+      version,
+    };
+    if (stream) stream.send('done', payload);
+    else json(res, 200, payload);
   } catch (err) {
-    throw new HttpError(502, String(err?.message || err));
+    if (stream) {
+      if (!stream.aborted) stream.send('error', { message: String(err?.message || err) });
+    } else {
+      throw err;
+    }
+  } finally {
+    stream?.end();
   }
-  if (transcript.length < 2) throw new HttpError(400, '没有听清，请再说一次');
-
-  const data = await withRetry(async () => {
-    const out = await generateJSON({
-      meta: { feature: '语音改稿', userId: user.id, channel: 'quality' },
-      system: sys('voice-edit', VOICE_EDIT_SYSTEM),
-      user: voiceEditUser({ ...draft, content, platform: version || draft.platform }, transcript),
-      schema: VOICE_EDIT_SCHEMA,
-      mock: () => ({
-        note: '演示模式：这里会复述听懂的修改要求',
-        edits: [{ find: content.slice(0, Math.min(12, content.length)), replace: content.slice(0, Math.min(12, content.length)), all: false }],
-      }),
-    });
-    if (!out || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到修改方案');
-    return out;
-  }, '语音改稿失败，请再试一次');
-
-  const result = applyVoiceEdits(content, data.edits);
-  json(res, 200, {
-    transcript,
-    note: String(data.note || '').trim(),
-    applied: result.applied,
-    skipped: result.skipped,
-    content: result.content,
-    changed: result.content !== content,
-    version,
-  });
 }

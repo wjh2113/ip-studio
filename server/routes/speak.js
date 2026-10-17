@@ -31,23 +31,46 @@ async function saveTrackCues(draft, userId, track, cues, text = null) {
     await Drafts.setCues(draft.id, userId, cues);
     return;
   }
-  const variants = { ...(draft.variants || {}) };
-  const cur = { ...variants[track.version], cues };
-  if (text !== null) { cur.content = text; cur.chars = text.length; cur.editedAt = new Date().toISOString(); }
-  variants[track.version] = cur;
-  await Drafts.setVariants(draft.id, userId, variants);
+  // 只写这一版的 cues（和可选的正文）；不会整块盖掉别的平台版本
+  const patch = { cues };
+  if (text !== null) { patch.content = text; patch.chars = text.length; patch.editedAt = new Date().toISOString(); }
+  await Drafts.upsertVariant(draft.id, userId, track.version, patch);
 }
 
 const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 
-/* 一条提示 → 能存的样子；quote 对不上正文的丢掉，重读词必须在这一段里 */
+/* 一条提示 → 能存的样子；用 head/tail（或旧的 quote）在正文里截出整段，重读词必须在这一段里 */
 /* 脚本里的分栏标注：【口播】后面才是要念的；【画面】【字幕】这些不念 */
 const SPOKEN_TAG = /^\s*【(口播|台词|旁白)】\s*/;
 const SILENT_TAG = /^\s*【(画面|画面提示|字幕|转场|镜头|BGM|音效)】/i;
 
+/** 用首尾锚点在正文里截出一段；对不上就空串。也兼容旧数据里的完整 quote。 */
+export function resolveCueQuote(c, text) {
+  const strip = (s) => {
+    const raw = String(s || '');
+    if (SILENT_TAG.test(raw)) return '';
+    return raw.replace(SPOKEN_TAG, '').trim();
+  };
+  // 旧格式：整段 quote
+  const legacy = strip(c?.quote);
+  if (legacy && text.includes(legacy)) return legacy;
+
+  const head = strip(c?.head);
+  const tail = strip(c?.tail);
+  if (!head) return '';
+  const start = text.indexOf(head);
+  if (start < 0) return '';
+  if (!tail || head === tail) {
+    // 短段：整段就是 head；或只给了开头时先取 head（下游会再校验）
+    return head;
+  }
+  const end = text.indexOf(tail, start + head.length);
+  if (end < 0) return '';
+  return text.slice(start, end + tail.length);
+}
+
 function cleanCue(c, text) {
-  const raw = String(c?.quote || '');
-  const quote = SILENT_TAG.test(raw) ? '' : raw.replace(SPOKEN_TAG, '');
+  const quote = resolveCueQuote(c, text);
   const stress = (Array.isArray(c?.stress) ? c.stress : String(c?.stress || '').split(/[、,，\s]+/))
     .map((w) => String(w).trim())
     .filter((w) => w && quote.includes(w))
@@ -355,13 +378,18 @@ const mockCues = (text) => {
     .filter((l) => l && !l.startsWith('#') && !l.startsWith('---')).slice(0, 3);
   return {
     overall: { tone: '演示模式：这里会给整体情绪基调', pace: '演示模式：这里会给语速节奏建议', note: '' },
-    cues: lines.map((l, i) => ({
-      quote: l,
-      emotion: i === 0 ? '演示模式：开场用什么情绪' : '平述',
-      stress: [],
-      pause: i === 0 ? '演示模式：这里会标停顿' : '',
-      expression: i === 0 ? '演示模式：这里会标表情' : '',
-      gesture: '',
-    })),
+    cues: lines.map((l, i) => {
+      const head = l.slice(0, Math.min(16, l.length));
+      const tail = l.length <= 16 ? head : l.slice(-Math.min(16, l.length));
+      return {
+        head, tail,
+        emotion: i === 0 ? '演示模式：开场用什么情绪' : '平述',
+        tone_tag: '日常',
+        stress: [],
+        pause: i === 0 ? '演示模式：这里会标停顿' : '',
+        expression: i === 0 ? '演示模式：这里会标表情' : '',
+        gesture: '',
+      };
+    }),
   };
 };

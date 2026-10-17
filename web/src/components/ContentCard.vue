@@ -9,6 +9,7 @@
         <div class="card-head">
           <button v-if="s.draft?.topics?.length || s.streaming" class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
           <h2 id="contentTitle">{{ title }}</h2>
+          <span class="ver-editing" id="verEditing" :class="{ on: Boolean(v.current) }">{{ editingLabel }}</span>
           <span class="counter" id="counter">{{ counter }}</span>
           <span class="grow"></span>
           <!-- 模式指示器：只说明「你现在在哪个模式」，切换动作在工具条上 -->
@@ -16,26 +17,24 @@
           <span class="mode-now" id="modeNow" :class="`m-${s.mode}`">{{ s.mode === 'edit' ? '编辑中' : s.mode === 'cue' ? '口播' : '阅读' }}</span>
         </div>
 
-        <!-- 三组动作：改 / 认了 / 拿走。后两个各带一个菜单——一次只让人做一个决定 -->
+        <!-- 三组：改稿 / 加工 / 收尾。每个功能只留一个主入口 -->
         <div class="toolbar">
-          <div class="tb-group">
+          <div class="tb-group" data-group="edit">
+            <span class="tb-label">改稿</span>
             <button v-if="s.mode !== 'read'" class="btn ghost small" id="backReadBtn" @click="ed.setMode('read')"><Icon name="arrow-left" :size="14" />返回阅读</button>
             <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')"><Icon name="pen" :size="14" />修改</button>
-            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见，整篇在原稿上重写；原稿留在「版本」里" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
-            <button class="btn ghost small" id="revBtn" :class="{ on: s.revOpen }" @click="toggleRevs"><Icon name="clock" :size="14" />版本</button>
+            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见：小改只换句子，动结构才整篇重写" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
+            <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
           </div>
-          <div class="tb-group">
-            <div class="menu-wrap">
-              <button class="btn primary small" id="confirmBtn" aria-haspopup="true" @click.stop="toggleMenu('confirm')"><Icon name="check-circle" :size="14" />确认<Icon name="chev-down" :size="13" /></button>
-              <div v-if="menu === 'confirm'" class="menu" id="confirmMenu">
-                <div class="menu-head">这稿定了，接下来</div>
-                <button v-for="a in CONFIRM.slice(0, 6)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-                  :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
-                <hr>
-                <button v-for="a in CONFIRM.slice(6)" :key="a.act" type="button" :data-act="a.act" :disabled="actDisabled(a.act)"
-                  :title="actDisabled(a.act) && a.act !== 'archive' ? (a.act === 'cues' ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : '这几项都针对原文，先切回原文版本') : ''" @click="confirmAct(a.act)"><Icon :name="a.icon" :size="15" /><span>{{ a.label }}<em>{{ a.hint }}</em></span></button>
-              </div>
-            </div>
+          <div class="tb-group" data-group="craft">
+            <span class="tb-label">加工</span>
+            <button class="btn ghost small" id="titlesBtn" :disabled="actDisabled('titles')" title="按不同写法出 6 个候选" @click="confirmAct('titles')"><Icon name="tag" :size="14" />起标题</button>
+            <button class="btn ghost small" id="multiBtn" :disabled="actDisabled('multi')" @click="confirmAct('multi')"><Icon name="layers" :size="14" />多平台</button>
+            <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
+            <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
+          </div>
+          <div class="tb-group" data-group="wrap">
+            <span class="tb-label">收尾</span>
             <div class="menu-wrap">
               <button class="btn ghost small" id="exportBtn" aria-haspopup="true" @click.stop="toggleMenu('export')"><Icon name="download" :size="14" />导出<Icon name="chev-down" :size="13" /></button>
               <div v-if="menu === 'export'" class="menu narrow" id="exportMenu">
@@ -47,10 +46,11 @@
                 <button type="button" data-fmt="pdf" @click="exportAs('pdf')"><Icon name="download" :size="15" /><span>PDF<em>打印另存为 PDF</em></span></button>
               </div>
             </div>
+            <button class="btn ghost small" id="metricsBtn" :disabled="!s.draft?.content" @click="confirmAct('metrics')"><Icon name="chart" :size="14" />回填数据</button>
+            <button class="btn ghost small" id="archiveBtn" :disabled="actDisabled('archive')" @click="confirmAct('archive')"><Icon name="archive" :size="14" />归档</button>
           </div>
           <span class="grow"></span>
-          <span class="hint" id="toolHint">{{ ed.toolHint }}</span>
-          <!-- 保存跟着编辑模式出现在这一行，和「确认 / 导出」在一起 -->
+          <span class="hint" id="toolHint">{{ ed.progressLabel || ed.toolHint }}</span>
           <template v-if="s.mode === 'edit'">
             <span class="save-state" id="saveState" :class="ed.save.kind">{{ ed.save.text }}</span>
             <button class="btn primary small" id="saveBtn" @click="ed.flushSave(true)">保存</button>
@@ -73,6 +73,7 @@
       </div>
 
       <RevPane v-if="s.revOpen" />
+      <ReviseDiff />
       <VersionBars part="tabs" />
 
       <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
@@ -112,34 +113,30 @@
         <span>工具</span>
         <button type="button" class="rail-btn" id="workFoldBtn" title="收起右侧工具，给正文腾地方" aria-label="收起右栏" @click="layout.toggleWork()"><Icon name="chev-right" :size="16" /></button>
       </div>
-      <WorkPanel title="版本对照" icon="clock" :active="s.revOpen" :badge="s.revOpen ? '展开中' : ''">
-        <p class="wp-text">每次保存前都会留下上一版，点开逐行对照。</p>
-        <button class="btn ghost small" type="button" data-side="revs" @click="toggleRevs">{{ s.revOpen ? '收起对照' : '打开版本对照' }}</button>
-      </WorkPanel>
+      <!-- 右栏顺序与工具条一致：改稿 → 加工 → 收尾细节 -->
       <WorkPanel title="检查结果" icon="shield" :active="review.open" :badge="reviewBadge">
         <ReviewBox />
         <ToneBox />
         <template v-if="!review.open">
-          <p class="wp-text">错字、通顺、调性与风险，逐条给建议，可一键采纳；顺带标出像 AI 写的地方。</p>
-          <div class="wp-acts">
-            <BusyBtn class="btn ghost small" data-side="review" :busy="review.running" :disabled="!ed.text" @click="review.run()">检查一遍</BusyBtn>
-            <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!ed.text"
-              title="只看说法和结构，不调模型、不花点数" @click="review.scanTone()">扫 AI 味</BusyBtn>
-          </div>
+          <p class="wp-text">错字、通顺、调性与风险；也可扫 AI 味（不花点数）。主入口在工具条「检查」。</p>
+          <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!ed.text"
+            title="只看说法和结构，不调模型、不花点数" @click="review.scanTone()">扫 AI 味</BusyBtn>
         </template>
+      </WorkPanel>
+      <WorkPanel title="版本对照" icon="clock" :active="s.revOpen || Boolean(ed.reviseCompare)" :badge="s.revOpen || ed.reviseCompare ? '展开中' : ''">
+        <p class="wp-text">保存前留下的每一版，或按意见重写后的段落对照。</p>
+        <button class="btn ghost small" type="button" id="revBtn" data-side="revs" @click="toggleRevs">{{ s.revOpen ? '收起历史对照' : '打开版本对照' }}</button>
       </WorkPanel>
       <WorkPanel title="多平台" icon="layers" :active="v.multi.open" :badge="v.tabs.length > 1 ? `${v.tabs.length - 1} 个版本` : ''">
         <VersionBars part="multi" />
         <template v-if="!(v.multi.open && s.draft?.content)">
-          <p class="wp-text">事实不变，按各平台的篇幅和结构重排。</p>
-          <button class="btn ghost small" type="button" data-side="multi" :disabled="!s.draft?.content || Boolean(v.current)" @click="v.openMulti()">出多平台版本</button>
+          <p class="wp-text">事实不变，按各平台重排。主入口在工具条「多平台」。</p>
         </template>
       </WorkPanel>
       <WorkPanel title="配图" icon="image" :active="v.ill.open" :badge="illusBadge">
         <VersionBars part="illus" />
         <template v-if="!v.ill.open">
-          <p class="wp-text">正文里写「此处放图片」就插在那里；没写就自动排位。</p>
-          <button class="btn ghost small" type="button" data-side="illus" :disabled="!s.draft?.content" @click="v.toggleIllus()">开始配图</button>
+          <p class="wp-text">正文写「此处放图片」就插在那里。主入口在工具条「配图」。</p>
         </template>
       </WorkPanel>
       <WorkPanel title="口播" icon="mic" :badge="cueBadge">
@@ -147,7 +144,13 @@
         <div class="wp-acts">
           <button v-if="panelTrack?.cues" class="btn ghost small" type="button" data-side="prompter" @click="openPrompter">提词器</button>
           <button v-if="panelTrack?.cues" class="btn ghost small" type="button" data-side="copyCues" @click="copyPanelCues">复制口播稿</button>
-          <button class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || !cueOk" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : panelTrack?.cues ? '进入口播' : '生成口播提示' }}</button>
+          <button v-if="s.mode === 'cue' || panelTrack?.cues" class="btn ghost small" type="button" data-side="cues" :disabled="!s.draft?.content || !cueOk" @click="confirmAct('cues')">{{ s.mode === 'cue' ? '口播区' : '进入口播' }}</button>
+        </div>
+      </WorkPanel>
+      <WorkPanel title="收尾" icon="check-circle">
+        <p class="wp-text">发完填数据、喂给账号学语气、归档。</p>
+        <div class="wp-acts">
+          <button class="btn ghost small" type="button" data-side="learn" :disabled="actDisabled('learn')" @click="confirmAct('learn')">喂给账号学习</button>
         </div>
       </WorkPanel>
     </aside>
@@ -159,6 +162,7 @@
  * review.js（检查）、speak.js（口播）；这里管界面：模式切换、菜单、划词和 / 的位置、拖标签进正文。 */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RevPane from './RevPane.vue';
+import ReviseDiff from './ReviseDiff.vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import WorkPanel from './WorkPanel.vue';
@@ -202,9 +206,10 @@ const cueText = computed(() => {
   return s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了，可以逐段改。' : '把成稿切成段、标好语气，配合提词器照着念。';
 });
 const RAIL = [
-  { icon: 'clock', title: '版本对照' }, { icon: 'shield', title: '检查结果' }, { icon: 'layers', title: '多平台' },
+  { icon: 'shield', title: '检查结果' }, { icon: 'clock', title: '版本对照' }, { icon: 'layers', title: '多平台' },
   { icon: 'image', title: '配图' }, { icon: 'mic', title: '口播' },
 ];
+const editingLabel = computed(() => (v.current ? `正在编辑：${v.label}版` : '正在编辑：原文'));
 const s = useStudioStore();
 const brief = useBriefStore();
 const ed = useEditorStore();
@@ -240,18 +245,6 @@ function copyPanelCues() {
 const sentinel = ref(null);
 const article = ref(null);
 const editor = ref(null);
-
-const CONFIRM = [
-  { act: 'revise', icon: 'pen', label: '按意见重写', hint: '写几条修改意见，整篇在原稿上重写；原稿留在版本里' },
-  { act: 'cues', icon: 'mic', label: '生成口播提示', hint: '切段、标语气，配合提词器照着念' },
-  { act: 'titles', icon: 'tag', label: '起标题', hint: '按不同写法出 6 个候选，挑一个替换' },
-  { act: 'multi', icon: 'layers', label: '出多平台版本', hint: '事实不变，按各平台重排结构和篇幅' },
-  { act: 'illus', icon: 'image', label: '配图', hint: '正文写 <此处放图片> 就插在那里；没写则自动排位。出图要点「全部出图」' },
-  { act: 'learn', icon: 'user', label: '喂给账号学习', hint: '作为语气样本，影响以后的成稿' },
-  { act: 'review', icon: 'shield', label: '再检查一遍', hint: '错字、通顺性、调性与风险' },
-  { act: 'metrics', icon: 'chart', label: '回填发布数据', hint: '发完填几个数字，复盘才知道什么有效' },
-  { act: 'archive', icon: 'archive', label: '归档', hint: '收进「已归档」，随时能恢复' },
-];
 
 /* ---------- 标题、字数、阅读区 ---------- */
 const title = computed(() => ed.live.title || s.draft?.title || '完整文案');
@@ -300,12 +293,10 @@ function actDisabled(act) {
 async function confirmAct(act) {
   if (actDisabled(act)) return;
   closeMenu();
-  if (act === 'revise') { await reviseWithNotes(); return; }
   if (act === 'cues') { sp.version = v.current || ''; ed.setMode('cue'); if (!sp.cues) sp.runCues(); return; }
   if (act === 'multi') { v.openMulti(); return; }
   if (act === 'illus') { v.toggleIllus(); return; }
   if (act === 'learn') { useAccountStore().learn(s.draft, { beforeSave: () => ed.flushSave() }); return; }
-  if (act === 'review') { useReviewStore().run(); return; }
   if (act === 'metrics') { useInsightsStore().openMetrics(); return; }
   if (act === 'titles') { useTitlesStore().open(); return; }
   if (act === 'archive') await ed.archiveCurrent();

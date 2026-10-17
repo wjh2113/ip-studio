@@ -15,7 +15,7 @@ import {
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
-  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM,
+  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM,
   TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
   DIGEST_MERGE_SYSTEM, PREF_LEARN_SCHEMA, PREF_LEARN_SYSTEM, PROFILE_PARSE_SCHEMA, PROFILE_PARSE_SYSTEM,
   SAMPLE_NOTES_SCHEMA, SAMPLE_NOTES_SYSTEM,
@@ -146,7 +146,7 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '先用 speech 把话筒转成文字。这段转写是修改要求。',
-      '理解走 **quality-chat**。模型返回若干 find / replace，find 必须从当前正文逐字照抄。',
+      '理解走 **fast-chat**（定位和替换够用）。模型返回若干 find / replace，find 必须从当前正文逐字照抄。',
       '用户说「所有」「每一处」时 all 为 true，否则只改唯一能对上的那一处。',
       '改完写回编辑器，并留下这一次之前的正文，可以撤销。',
     ],
@@ -158,8 +158,26 @@ export const PROMPT_DOCS = () => [
     system: VOICE_EDIT_SYSTEM, schema: VOICE_EDIT_SCHEMA,
   },
   {
+    key: 'revise-patch', name: '按意见局部改', stage: 'polish', mode: '结构化输出',
+    where: '成稿工具栏「按意见重写」：意见只动局部时走这条；动结构/整体语气才整篇重写',
+    positioning: '小改不要整篇重输出。模型和语音改稿一样只回 find/replace，代码负责替换。',
+    value: [
+      '用户：改一句结尾不用等整篇再生成一遍。',
+      '产品：小改输出从几千字降到几百字，省额度也更快。',
+    ],
+    logic: [
+      '意见匹配结构关键词（重排、换语气、整篇…）→ 仍走成稿的整篇流式重写。',
+      '否则 → 本提示词 + 快档，输出 edits；applyVoiceEdits 落盘。',
+    ],
+    guards: [
+      'find 对不上正文的改动丢掉，原稿不动',
+      '一条都落实不了时返回错误，不写空改',
+    ],
+    system: REVISE_PATCH_SYSTEM, schema: REVISE_PATCH_SCHEMA,
+  },
+  {
     key: 'review', name: '成稿检查', stage: 'polish', mode: '结构化输出',
-    where: '出稿后自动跑一次，工具栏也能手动触发',
+    where: '工具栏「检查」手动触发；正文未改过则复用上次结果',
     positioning: '发布前的最后一道关。从最初的"检查错字"扩成账号调性、平台调性、公序良俗、法律、热点五个维度。',
     value: [
       '用户：自媒体发出去就收不回来，这一步把可挽回的成本前置。',
@@ -237,12 +255,12 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '切段规则不是按标点也不是按段落，是"**一口气念完的一句或几句**"。',
-      'quote 必须从正文**逐字照抄**，按顺序、不重叠——因为后续要靠它在正文里定位。',
+      '模型只给 head/tail（各 8～20 字），代码在正文里截出整段 quote——避免把全文再输出一遍。',
       '`tone_tag` 是**枚举**（日常/激动/沉稳/吐槽/温柔），不是自由文本——下游工具靠它做确定性匹配。',
       '刻意要求**留空**：一篇稿子里真需要标表情或动作的地方通常不到三分之一，每句都配等于提线木偶。',
     ],
     guards: [
-      '**quote 必须能在正文里找到**，找不到的整条丢弃并统计 dropped——否则位置对不上',
+      '**head/tail 截不出整段的丢掉**并统计 dropped；旧数据里的完整 quote 仍兼容',
       '**重读词必须真的出现在这段 quote 里**，不在的过滤掉',
       '`tone_tag` 用 schema enum 限死：早期靠关键词匹配模型的自由发挥，命中率极低',
       '覆盖率低于 60% 时如实提示"只覆盖了正文约 X%"，而不是假装标全了',

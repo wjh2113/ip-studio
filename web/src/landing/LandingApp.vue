@@ -64,7 +64,7 @@
         <div class="lp-tr head"><span>对比维度</span><span>通用 AI</span><span><span class="brand-mark sm"></span>自媒体助手</span></div>
         <div class="lp-tr"><span>理解账号</span><span>不知道你是谁，每篇都是同一个语气，换个号也能发</span><span>按这个号的定位、栏目和你的人设写，喂几篇旧稿学你的语感</span></div>
         <div class="lp-tr"><span>内容可靠</span><span>编一个没发生过的案例来举例</span><span><b>只用你提供的真实素材</b>，不许编造之外的经历、时间、数字</span></div>
-        <div class="lp-tr"><span>文字质感</span><span>「在当今快速发展的时代」这类开头</span><span>先出三个角度不同的方向，选定再写；成稿后自动检查套话和风险</span></div>
+        <div class="lp-tr"><span>文字质感</span><span>「在当今快速发展的时代」这类开头</span><span>先出三个角度不同的方向，选定再写；成稿后可一键检查套话和风险</span></div>
         <div class="lp-tr"><span>写完之后</span><span>改平台版本、拆口播稿还得自己来</span><span>一路做到多平台版本、配图、口播提示和提词器</span></div>
       </div>
     </section>

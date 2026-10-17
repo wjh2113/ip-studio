@@ -183,7 +183,7 @@ const PROMPT_CATALOG = () => [
     } },
   { key: 'voice-edit', label: '语音改稿', where: '修改模式里按住话筒说改哪里、怎么改。转写走 speech，理解走 quality-chat',
     system: sys('voice-edit', VOICE_EDIT_SYSTEM), schema: VOICE_EDIT_SCHEMA },
-  { key: 'review', label: '成稿检查', where: '出稿后自动跑 + 工具栏「检查」',
+  { key: 'review', label: '成稿检查', where: '工具栏「检查」（正文未改过则复用上次结果）',
     system: sys('review', REVIEW_SYSTEM), schema: REVIEW_SCHEMA },
   { key: 'subjects', label: '题材推荐', where: '创作简报里的三条推荐题材',
     system: sys('subjects', SUBJECTS_SYSTEM), schema: SUBJECTS_SCHEMA },

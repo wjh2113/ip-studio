@@ -13,7 +13,12 @@ const step = async (name, fn) => {
   try { const r = await fn(); log.push(`ok   ${name}${r !== undefined ? ` → ${r}` : ''}`); }
   catch (e) { log.push(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
 };
-const menu = async (act) => { await page.click('#confirmBtn'); await page.click(`#confirmMenu [data-act="${act}"]`); };
+const menu = async (act) => {
+  const map = { review: '#reviewBtn', multi: '#multiBtn', illus: '#illusBtn', cues: '#cuesBtn', titles: '#titlesBtn', metrics: '#metricsBtn', archive: '#archiveBtn' };
+  const sel = map[act];
+  if (!sel) throw new Error('unknown act ' + act);
+  await page.click(sel);
+};
 
 await step('注册 → 升级 → 成稿', async () => {
   await page.goto(B + '/app');

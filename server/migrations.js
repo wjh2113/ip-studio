@@ -211,7 +211,53 @@ export const MIGRATIONS = [
   { version: 11, name: '成稿参考：每个账号各自的开关和权重', up: async (db) => {
     await db.exec("ALTER TABLE personas ADD COLUMN IF NOT EXISTS refs_json text NOT NULL DEFAULT '{}'");
   } },
+  { version: 12, name: '平台版本拆表：每版一行，避免整块 JSON 互相覆盖', up: migrateDraftVariants },
 ];
+
+/* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */
+async function migrateDraftVariants(db) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS draft_variants (
+      id            integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      draft_id      integer NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+      user_id       integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      platform      text NOT NULL,
+      content       text NOT NULL DEFAULT '',
+      chars         integer NOT NULL DEFAULT 0,
+      from_chars    integer,
+      from_platform text NOT NULL DEFAULT '',
+      cues_json     text NOT NULL DEFAULT 'null',
+      at            text NOT NULL DEFAULT '',
+      edited_at     text NOT NULL DEFAULT '',
+      created_at    text NOT NULL,
+      updated_at    text NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_draft_variants_one ON draft_variants(draft_id, platform);
+    CREATE INDEX IF NOT EXISTS idx_draft_variants_user ON draft_variants(user_id, draft_id);
+  `);
+  const rows = await db.all("SELECT id, user_id, variants_json FROM drafts WHERE variants_json IS NOT NULL AND variants_json <> '' AND variants_json <> 'null'");
+  const t = new Date().toISOString();
+  for (const r of rows) {
+    let map;
+    try { map = JSON.parse(r.variants_json); } catch { continue; }
+    if (!map || typeof map !== 'object') continue;
+    for (const [platform, v] of Object.entries(map)) {
+      if (!platform || !v || typeof v !== 'object') continue;
+      const content = String(v.content || '');
+      const chars = Number.isFinite(Number(v.chars)) ? Math.round(Number(v.chars)) : content.length;
+      const fromChars = Number.isFinite(Number(v.fromChars)) ? Math.round(Number(v.fromChars)) : null;
+      const cues = v.cues == null ? 'null' : JSON.stringify(v.cues);
+      await db.run(
+        `INSERT INTO draft_variants
+          (draft_id, user_id, platform, content, chars, from_chars, from_platform, cues_json, at, edited_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (draft_id, platform) DO NOTHING`,
+        [r.id, r.user_id, String(platform), content, chars, fromChars, String(v.from || ''), cues,
+          String(v.at || ''), String(v.editedAt || ''), t, t],
+      );
+    }
+  }
+}
 
 function toPg(text) {
   let n = 0;

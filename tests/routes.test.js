@@ -153,17 +153,24 @@ test('按意见改：选中一段写自己的意见；整篇按意见重写（�
   r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'custom', instruction: '  ', selection: '周末备菜很省事' });
   assert.equal(r.status, 400);
 
-  // 整篇：没写意见 400；写了就流式重写，落盘后原稿在历史版本里
+  // 局部意见：走 patch；结构意见：整篇流式。没写意见 400；落盘后原稿在历史版本里
   const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
   r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '' });
   assert.equal(r.status, 400);
   r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '开头直接上案例' });
   assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /"mode":"patch"/);
   assert.match(r.text, /event: delta/);
   assert.match(r.text, /event: done/);
-  const after = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  let after = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
   assert.notEqual(after, before);
   assert.match(after, /开头直接上案例/);
+  // 结构意见走整篇
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '整篇换语气，改成轻松幽默' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /"mode":"full"/);
+  assert.match(r.text, /event: done/);
+  after = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
   const revs = (await api.call('GET', `/api/drafts/${draftId}/revisions`)).data.revisions;
   assert.ok(revs.length >= 2, `原稿没留版本：${revs.length}`);
   // 还没有的平台版本 404

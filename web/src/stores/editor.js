@@ -10,7 +10,7 @@
  * 多平台版本和配图在 versions.js，口播在 speak.js，成稿检查在 review.js。 */
 import { defineStore } from 'pinia';
 import { computed, nextTick, reactive, ref } from 'vue';
-import { api, saveBlob, stream } from '../lib/api.js';
+import { api, saveBlob, stream, streamUpload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { esc, markdown, safeName } from '../lib/text.js';
 import { caretRect } from '../lib/caret.js';
@@ -19,7 +19,6 @@ import { useStudioStore } from './studio.js';
 import { useBriefStore } from './brief.js';
 import { useHistoryStore } from './history.js';
 import { imageUrl, useVersionsStore, weave } from './versions.js';
-import { useReviewStore } from './review.js';
 import { useSpeakStore } from './speak.js';
 
 export const ASSIST_ACTIONS = [
@@ -131,7 +130,7 @@ export const useEditorStore = defineStore('editor', () => {
           live.title = '';
           useBriefStore().goStep(3, { done: true, scroll: false });
           useHistoryStore().load();
-          useReviewStore().run();          // 出稿后自动过一遍错字和通顺性
+          // 成稿检查改手动：工具栏点「检查」。避免重新生成 / 换方向时反复花额度
         } else if (event === 'error') {
           throw new Error(data.message);
         }
@@ -162,6 +161,10 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /* 按意见重写之后的段落对照：before/after，可单独退回某段 */
+  const reviseCompare = ref(null);   // { version, before, after } | null
+  const progressLabel = ref('');     // 慢操作当前步骤文案
+
   /* 按意见重写：写几条修改意见，整篇在原稿上重写（版本栏开着哪一版就改哪一版）。
      流式显示；写完服务端才落盘，原稿留一版历史，这里再记一步撤销，Ctrl+Z 能退回。失败原稿不动 */
   async function revise(notes) {
@@ -173,35 +176,65 @@ export const useEditorStore = defineStore('editor', () => {
     if (st.mode === 'edit') { stopVoice(); await flushSave(true); st.mode = 'read'; }
     else await flushSave();
     closeAssist();
+    reviseCompare.value = null;
     st.streaming = true;
     live.title = '按意见重写中';
     live.text = '';
     live.error = '';
+    progressLabel.value = '正在按意见重写…';
     let ok = false;
+    let after = '';
     try {
       await stream(`/drafts/${draft.id}/revise`, { notes, version: ver }, (event, data) => {
-        if (event === 'delta') live.text += data.text;
+        if (event === 'progress') progressLabel.value = data.label || progressLabel.value;
+        else if (event === 'delta') live.text += data.text;
         else if (event === 'done') {
           if (st.draft?.id !== draft.id) return;
           if (hist.id !== histKey()) resetHistory();
           hist.undo.push(before);
           hist.redo = [];
           st.draft = data.draft;
+          after = textOf(ver) || data.before || live.text;
+          // 服务端可能带回 before；当前正文才是 after
+          after = textOf(ver);
           ok = true;
         } else if (event === 'error') throw new Error(data.message);
       });
       if (ok) {
-        toast('已按意见重写，原稿在「版本」里，Ctrl+Z 也能退回');
+        reviseCompare.value = { version: ver, before, after: textOf(ver) };
+        toast('已按意见重写：对照里可把某段退回');
         useHistoryStore().load();
+        if (!ver) await toggleRevs(true);   // 原文顺带打开历史对照
       }
     } catch (err) {
       toast(`没改成：${err.message}。原稿没动`);
     } finally {
       live.title = '';
       live.text = '';
+      progressLabel.value = '';
       st.streaming = false;
     }
     return ok;
+  }
+
+  function closeReviseCompare() { reviseCompare.value = null; }
+
+  /* 把第 i 段（按空行分段）退回重写前的内容 */
+  function revertReviseParagraph(i) {
+    const cmp = reviseCompare.value;
+    if (!cmp) return;
+    const oldParts = splitParas(cmp.before);
+    const newParts = splitParas(textOf(cmp.version));
+    if (i < 0 || i >= newParts.length || i >= oldParts.length) return;
+    newParts[i] = oldParts[i];
+    const next = newParts.join('\n\n');
+    replaceContent(next, cmp.version);
+    reviseCompare.value = { ...cmp, after: next };
+    toast(`已退回第 ${i + 1} 段`);
+  }
+
+  function splitParas(text) {
+    return String(text || '').replace(/\r\n?/g, '\n').split(/\n{2,}/);
   }
 
   /* 阅读区现在该显示什么：生成中 / 出错 / 正文 */
@@ -541,14 +574,18 @@ export const useEditorStore = defineStore('editor', () => {
     const id = st.draft.id;
     const ver = editVer.value;      // 改的是编辑框正开着的那一版
     voice.recognizing = true;
+    progressLabel.value = '转写中…';
     try {
-      const res = await fetch(`/api/drafts/${id}/voice-edit${ver ? `?version=${encodeURIComponent(ver)}` : ''}`, {
-        method: 'POST',
-        headers: { 'Content-Type': blob.type || 'audio/webm', 'X-Filename': 'voice.webm' },
-        body: blob,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `语音改稿失败（${res.status}）`);
+      const data = await streamUpload(
+        `/drafts/${id}/voice-edit${ver ? `?version=${encodeURIComponent(ver)}` : ''}`,
+        blob,
+        'voice.webm',
+        (event, payload) => {
+          if (event === 'progress') progressLabel.value = payload.label || progressLabel.value;
+          else if (event === 'error') throw new Error(payload.message || '语音改稿失败');
+        },
+      );
+      if (!data) throw new Error('语音改稿失败');
       // 识别期间换了稿子或离开了编辑：结果对不上了，不能写到现在这篇上
       if (st.draft?.id !== id || st.mode !== 'edit' || editVer.value !== ver) { toast('已经换了稿子或版本，这次语音改稿没有应用'); return; }
       const note = {
@@ -569,6 +606,7 @@ export const useEditorStore = defineStore('editor', () => {
       toast(err.message);
     } finally {
       voice.recognizing = false;
+      progressLabel.value = '';
     }
   }
 
@@ -716,6 +754,8 @@ export const useEditorStore = defineStore('editor', () => {
     clearTimeout(saveTimer);
     stopVoice();
     voiceNote.value = null;
+    reviseCompare.value = null;
+    progressLabel.value = '';
     closeAssist();
     menus.sel = null;
     menus.slash = null;
@@ -730,7 +770,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     live, streamingView, generate, setMode,
-    revise,
+    revise, reviseCompare, closeReviseCompare, revertReviseParagraph, progressLabel,
     save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,

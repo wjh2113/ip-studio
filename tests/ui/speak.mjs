@@ -13,7 +13,12 @@ const step = async (name, fn) => {
   try { const r = await fn(); log.push(`ok   ${name}${r !== undefined ? ` → ${r}` : ''}`); }
   catch (e) { log.push(`FAIL ${name}: ${e.message.split('\n')[0]}`); }
 };
-const menu = async (act) => { await page.click('#confirmBtn'); await page.click(`#confirmMenu [data-act="${act}"]`); };
+const menu = async (act) => {
+  const map = { review: '#reviewBtn', multi: '#multiBtn', illus: '#illusBtn', cues: '#cuesBtn', titles: '#titlesBtn', metrics: '#metricsBtn', archive: '#archiveBtn' };
+  const sel = map[act];
+  if (!sel) throw new Error('unknown act ' + act);
+  await page.click(sel);
+};
 
 await step('注册 → 成稿 → 口播上传', async () => {
   await page.goto(B + '/app');
@@ -61,7 +66,7 @@ await step('两版口播：切到视频号口播版生成；逐段改语气和�
 });
 
 await step('抖音版本：版本栏切过去也有口播、提词器、复制口播稿', async () => {
-  await page.click('#workSide [data-side="multi"]');
+  await page.click('#multiBtn');
   await page.waitForSelector('#multiPick');
   for (const box of await page.$$('#multiPick input')) await box.setChecked(false);
   await page.check('#multiPick input[value="douyin"]');

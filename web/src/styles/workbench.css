@@ -45,6 +45,19 @@
 }
 .mode-now.m-edit { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent-line); }
 .mode-now.m-cue { color: #6142e6; background: #f1edff; border-color: transparent; }
+.ver-editing {
+  font-size: 12.5px; padding: 3px 10px; border-radius: 6px; font-weight: 600;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap;
+}
+.ver-editing.on { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent-line); }
+.revise-diff { margin: 0 0 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.revise-paras { display: grid; gap: 10px; padding: 12px 14px 14px; max-height: 360px; overflow: auto; }
+.revise-para { padding: 10px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid transparent; }
+.revise-para.changed { border-color: var(--accent-line); background: var(--accent-soft); }
+.revise-para-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12.5px; }
+.revise-tag { font-size: 11px; color: var(--accent-ink); font-weight: 600; }
+.revise-para-body { font: 14px/1.7 var(--font-read); white-space: pre-wrap; }
+.revise-para-old { margin-top: 8px; font-size: 12.5px; color: var(--muted); line-height: 1.6; white-space: pre-wrap; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0 0 14px; }
 .toolbar .grow { flex: 1; }

@@ -31,8 +31,7 @@ await step('注册 → 建号 → 三个方向 → 成稿', async () => {
   await page.waitForFunction(() => document.querySelector('#content')?.textContent.length > 100 && !document.querySelector('#content .cursor'), null, { timeout: 15000 });
 });
 await step('确认 → 起标题', async () => {
-  await page.click('#confirmBtn');
-  await page.click('#confirmMenu [data-act="titles"]');
+  await page.click('#titlesBtn');
   await page.waitForSelector('#titleModal:not(.hidden) .title-row');
   return (await page.$$('.title-row')).length + ' 个候选';
 });

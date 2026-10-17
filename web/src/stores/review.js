@@ -2,7 +2,8 @@
  * 查的是版本栏正开着的那一版（原文或小红书等平台版本），采纳也改那一版。
  * 采纳只替换第一处：同一片段可能在文中出现多次，全替换风险太大。
  * 采纳是本地改正文，马上生效、马上定位到改过的地方；不再自动整篇重查（要等模型，整张清单还会被置灰），
- * 剩下的条目照样能点。改得多了想再看一遍，点「再检查一遍」。 */
+ * 剩下的条目照样能点。改得多了想再看一遍，点「再检查一遍」。
+ * 成稿后不自动检查——工具栏手动点；正文和上次相同时直接复用结果。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
@@ -12,6 +13,17 @@ import { useEditorStore } from './editor.js';
 
 export const VERDICT_LABEL = { ok: '没发现问题', minor: '有几处小毛病', bad: '大面积不通顺' };
 
+function hashText(s) {
+  // 轻量指纹：够判断「正文有没有改过」；不追求密码学强度
+  let h = 2166136261;
+  const str = String(s || '');
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `${str.length}:${(h >>> 0).toString(16)}`;
+}
+
 export const useReviewStore = defineStore('review', () => {
   const open = ref(false);
   const running = ref(false);
@@ -20,16 +32,23 @@ export const useReviewStore = defineStore('review', () => {
   const result = ref(null);
   const error = ref('');
   const handled = reactive(new Set());   // 采纳或忽略过的条目
+  const checkedAt = ref('');         // 上次检查时的正文指纹（version + text）
 
-  async function run({ silent = false } = {}) {
+  async function run({ silent = false, force = false } = {}) {
     const s = useStudioStore();
     const draft = s.draft;
     const ed = useEditorStore();
     // 重查沿用上次那一版；新查用版本栏正开着的那一版
     const version = silent && result.value ? (result.value.version || '') : ed.editVer;
     const text = textOf(version);
-    // 一次只查一遍：出稿后的自动检查还没回来时再点，别多花一次模型调用
     if (!text.trim() || running.value) return;
+    const fp = `${version}\n${hashText(text)}`;
+    // 正文没改过：直接亮上次结果，不调接口
+    if (!force && !silent && result.value && checkedAt.value === fp) {
+      open.value = true;
+      toast('正文没改过，还是上次的检查结果');
+      return;
+    }
     await ed.flushSave();
     if (!silent) {
       open.value = true;
@@ -42,10 +61,12 @@ export const useReviewStore = defineStore('review', () => {
       const { review } = await api(`/drafts/${draft.id}/review`, { method: 'POST', body: { content: textOf(version), version } });
       if (s.draft?.id !== draft.id) return;
       result.value = review;
+      checkedAt.value = fp;
       error.value = '';
       handled.clear();
       applied.value = 0;
       open.value = true;
+      if (review?.cached) toast('正文没改过，用了上次的检查结果');
     } catch (err) {
       open.value = true;
       error.value = err.message;
@@ -54,11 +75,11 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  /* 手动再查一遍：旧清单留着（置灰），新的回来再换 */
+  /* 手动再查一遍：旧清单留着（置灰），新的回来再换；强制走模型 */
   async function recheck() {
     if (running.value) return;
     stale.value = true;
-    try { await run({ silent: true }); } finally { stale.value = false; }
+    try { await run({ silent: true, force: true }); } finally { stale.value = false; }
   }
 
   /* 某一版的正文：'' = 原文 */
@@ -131,6 +152,7 @@ export const useReviewStore = defineStore('review', () => {
     applied.value = 0;
     result.value = null;
     error.value = '';
+    checkedAt.value = '';
     handled.clear();
   }
 

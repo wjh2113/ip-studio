@@ -90,9 +90,15 @@ export async function handleVariant(req, res, body, params) {
 
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
 
+  // 小红书 / 微博等短版走快档；公众号、知乎、B 站长文留质量档
+  const LONG_ADAPT = new Set(['gongzhonghao', 'zhihu', 'bilibili']);
   const out = await withRetry(async () => {
     const t = await generateText({
-      meta: { feature: '多平台适配', userId: user.id },
+      meta: {
+        feature: '多平台适配',
+        userId: user.id,
+        ...(LONG_ADAPT.has(to) ? { channel: 'quality' } : {}),
+      },
       system: sys('adapt', ADAPT_SYSTEM),
       user: adaptUser(draft, persona, text, from, to),
       mock: () => `演示模式：这里会是「${PLATFORMS[to].label}」版本的正文。\n\n`
@@ -103,17 +109,15 @@ export async function handleVariant(req, res, body, params) {
     return clean;
   }, '改写失败，请再试一次');
 
-  const variants = { ...(draft.variants || {}) };
-  variants[to] = {
+  const variant = await Drafts.upsertVariant(draft.id, user.id, to, {
     content: out,
     chars: out.length,
     // 记下改写时依据的原文长度：正文后来被编辑过的话，界面上要提示这版已经旧了
     fromChars: text.length,
     from,
     at: new Date().toISOString(),
-  };
-  await Drafts.setVariants(draft.id, user.id, variants);
-  json(res, 200, { platform: to, variant: variants[to] });
+  });
+  json(res, 200, { platform: to, variant });
 }
 
 /* 手改某个平台版本：编辑框切到这一版时自动保存。只改正文，其他（口播提示、配图）留着 */
@@ -122,24 +126,22 @@ export async function handleVariantSave(req, res, body, params) {
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
   const key = String(params.platform);
-  const prev = draft.variants?.[key];
-  if (!prev) throw new HttpError(404, '还没有这个平台的版本');
+  if (!draft.variants?.[key]) throw new HttpError(404, '还没有这个平台的版本');
   const content = String(body?.content ?? '');
   if (!content.trim()) throw new HttpError(400, '正文不能是空的');
   if (content.length > 20000) throw new HttpError(400, '正文过长');
-  const variants = { ...(draft.variants || {}) };
-  variants[key] = { ...prev, content, chars: content.length, editedAt: new Date().toISOString() };
-  await Drafts.setVariants(draft.id, user.id, variants);
-  json(res, 200, { platform: key, variant: variants[key] });
+  // 只改正文这一列，口播提示（cues）留在同表另一列，不会被盖掉
+  const variant = await Drafts.upsertVariant(draft.id, user.id, key, {
+    content, chars: content.length, editedAt: new Date().toISOString(),
+  });
+  json(res, 200, { platform: key, variant });
 }
 
 export async function handleVariantDelete(req, res, body, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  const variants = { ...(draft.variants || {}) };
-  delete variants[String(params.platform)];
-  await Drafts.setVariants(draft.id, user.id, variants);
+  await Drafts.deleteVariant(draft.id, user.id, String(params.platform));
   json(res, 200, { ok: true });
 }
 
@@ -246,7 +248,7 @@ export async function handleIllus(req, res, body, params) {
     capped = items.length > cap ? { asked: items.length, cap } : null;
   }
 
-  store[verKey(v)] = {
+  const pack = {
     look: String(data.look || '').trim(),
     version: v,
     placed,
@@ -255,8 +257,9 @@ export async function handleIllus(req, res, body, params) {
     items: kept,
     at: new Date().toISOString(),
   };
-  await Drafts.setIllus(draft.id, user.id, store);
-  json(res, 200, { version: v, illus: store[verKey(v)], image: imageInfo() });
+  // 锁里只改这一版的配图位，别的版本上已经出好的图不会被盖掉
+  const nextStore = await Drafts.patchIllus(draft.id, user.id, (prev) => ({ ...prev, [verKey(v)]: pack }));
+  json(res, 200, { version: v, illus: nextStore?.[verKey(v)], image: imageInfo() });
 }
 
 /* 出一张图：请求只登记，出图在任务队列里做（几十秒，刷新页面也不丢） */
@@ -273,13 +276,15 @@ export async function handleIllusImage(req, res, body, params, url) {
   const edited = typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : '';
   if (edited && edited !== item.prompt) {
     item = { ...item, prompt: edited };
-    // 写之前重读一次：同一稿可能有别的图刚出完（任务队列在写 image），拿开头读到的旧 illus 整个覆盖会把它冲掉
-    const fresh = await Drafts.byId(draft.id, user.id);
-    const now = fresh?.illus?.[verKey(v)];
-    if (now?.items?.[idx]) {
-      const next = { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, prompt: edited } : it)) };
-      await Drafts.setIllus(draft.id, user.id, { ...fresh.illus, [verKey(v)]: next });
-    }
+    // 锁里只改这一张的提示词，别的图刚出完也不会被盖掉
+    await Drafts.patchIllus(draft.id, user.id, (prev) => {
+      const now = prev?.[verKey(v)];
+      if (!now?.items?.[idx]) return prev;
+      return {
+        ...prev,
+        [verKey(v)]: { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, prompt: edited } : it)) },
+      };
+    });
   }
   if (!item.prompt) throw new HttpError(400, '这一张还没有画面提示词');
   // 额度不够当场告诉，别等排到了才失败
@@ -328,13 +333,15 @@ defineJob('image', {
 
     const file = await saveImage(userId, draftId, `${verKey(v)}-${idx}`, out);
     const image = { file, mime: out.mime, bytes: out.buffer.length, at: new Date().toISOString() };
-    // 出图要几十秒，这期间别的图可能已经写回去了：落库前重新读一遍，只改自己这一张
-    const fresh = await Drafts.byId(draftId, userId);
-    const now = fresh?.illus?.[verKey(v)];
-    if (now?.items?.[idx]) {
-      const next = { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, image } : it)) };
-      await Drafts.setIllus(draftId, userId, { ...(fresh.illus || {}), [verKey(v)]: next });
-    }
+    // 出图要几十秒：锁里只改自己这一张，别的图刚写完也不会丢
+    await Drafts.patchIllus(draftId, userId, (prev) => {
+      const now = prev?.[verKey(v)];
+      if (!now?.items?.[idx]) return prev;
+      return {
+        ...prev,
+        [verKey(v)]: { ...now, items: now.items.map((it, i) => (i === idx ? { ...it, image } : it)) },
+      };
+    });
     return { version: v, index: idx, image, draftId };
   },
 });

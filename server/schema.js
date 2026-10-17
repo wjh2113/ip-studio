@@ -130,6 +130,26 @@ export const drafts = pgTable('drafts', {
   index('idx_drafts_persona').on(t.user_id, t.persona_id, t.id),
 ]);
 
+/* 多平台版本：每篇稿子 × 每个平台一行。正文和口播提示分列存，改一处不会整块盖掉另一处。 */
+export const draftVariants = pgTable('draft_variants', {
+  id: id(),
+  draft_id: integer('draft_id').notNull().references(() => drafts.id, { onDelete: 'cascade' }),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  platform: text('platform').notNull(),
+  content: text('content').notNull().default(''),
+  chars: integer('chars').notNull().default(0),
+  from_chars: integer('from_chars'),
+  from_platform: text('from_platform').notNull().default(''),
+  cues_json: text('cues_json').notNull().default('null'),
+  at: text('at').notNull().default(''),
+  edited_at: text('edited_at').notNull().default(''),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_draft_variants_one').on(t.draft_id, t.platform),
+  index('idx_draft_variants_user').on(t.user_id, t.draft_id),
+]);
+
 export const speakTakes = pgTable('speak_takes', {
   id: id(),
   user_id: integer('user_id').notNull(),

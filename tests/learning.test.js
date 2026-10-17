@@ -82,12 +82,17 @@ test('提示词块：个人档案「只作背景」不写机构名，偏好规�
   const entries = [
     { kind: 'work', title: '电商运营主管', period: '2019-2022', org: '某某电商', role: '运营主管', body: '带 5 人小组', result: '转化率 2%→3.5%', visibility: 'background' },
     { kind: 'opinion', title: '管理就是翻译', body: '把目标翻译成每个人听得懂的话', visibility: 'public' },
+    { kind: 'work', title: '第三段经历', body: '这段经过不应展开', result: '只留结果一行', visibility: 'public' },
   ];
   const full = profileBlock(entries);
   assert.ok(!full.includes('某某电商'));
   assert.match(full, /机构只作背景/);
   assert.match(full, /结果：转化率 2%→3\.5%/);
   assert.match(full, /不许编造这里没有的个人经历/);
+  // 前 2 条全文，第 3 条只一行
+  assert.match(full, /经过：把目标翻译/);
+  assert.ok(!full.includes('这段经过不应展开'));
+  assert.match(full, /第三段经历：只留结果一行/);
   const compact = profileBlock(entries, { compact: true });
   assert.ok(!compact.includes('经过：'));
   assert.equal(profileBlock([]), null);

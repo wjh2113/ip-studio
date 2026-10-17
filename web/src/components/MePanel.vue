@@ -8,7 +8,7 @@
         <input id="autoLearnToggle" type="checkbox" :checked="L.me.autoLearn" @change="L.setAutoLearn($event.target.checked)" />
         <span><b>自动学习</b>　稿子标成已发布（或第一次回填发布数据）时，自动把它加进语气样本，并从你的改稿里学习惯</span>
       </label>
-      <p class="hint">每次自动学习会用掉一点额度（两三次短调用）。</p>
+      <p class="hint">每次自动学习会用掉一点额度（两三次短调用）；每月还会从头梳理一次语气档案。账号多、发得多时会累积，不需要就关掉。</p>
     </div>
 
     <!-- 待确认的经历 -->
