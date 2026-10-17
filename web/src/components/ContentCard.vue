@@ -32,8 +32,6 @@
             <span class="tb-label">改稿</span>
             <button v-if="s.mode !== 'read'" class="btn ghost small" id="backReadBtn" @click="ed.setMode('read')"><Icon name="arrow-left" :size="14" />返回阅读</button>
             <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')"><Icon name="pen" :size="14" />修改</button>
-            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见：小改只换句子，动结构才整篇重写" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
-            <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
             <div class="menu-wrap">
               <button class="btn ghost small" id="exportBtn" aria-haspopup="true" @click.stop="toggleMenu('export')"><Icon name="download" :size="14" />导出<Icon name="chev-down" :size="13" /></button>
               <div v-if="menu === 'export'" class="menu narrow" id="exportMenu">
@@ -55,6 +53,8 @@
             <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
             <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
             <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
+            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见：小改只换句子，动结构才整篇重写" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
+            <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
           </div>
           <span class="grow"></span>
           <span class="hint" id="toolHint">{{ ed.progressLabel || ed.toolHint }}</span>

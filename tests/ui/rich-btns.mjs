@@ -177,12 +177,15 @@ await step('检查按钮', async () => {
 
 await step('导出菜单各格式入口', async () => {
   if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
-  const placed = await page.$eval('[data-group="edit"]', (g) => {
-    const ids = [...g.querySelectorAll('button')].map((b) => b.id).filter(Boolean);
-    const at = (id) => ids.indexOf(id);
-    return at('reviewBtn') < at('exportBtn') && at('exportBtn') < at('metricsBtn') && at('metricsBtn') < at('archiveBtn');
+  const placed = await page.$eval('.toolbar', (bar) => {
+    const ids = (sel) => [...bar.querySelectorAll(`${sel} button`)].map((b) => b.id).filter(Boolean);
+    const at = (list, id) => list.indexOf(id);
+    const edit = ids('[data-group="edit"]');
+    const craft = ids('[data-group="craft"]');
+    return at(edit, 'exportBtn') < at(edit, 'metricsBtn') && at(edit, 'metricsBtn') < at(edit, 'archiveBtn')
+      && at(craft, 'rewriteBtn') < at(craft, 'reviseBtn') && at(craft, 'reviseBtn') < at(craft, 'reviewBtn');
   });
-  if (!placed) throw new Error('导出、回填、归档应排在检查后面');
+  if (!placed) throw new Error('导出应在改稿行；按意见重写和检查应在改写后面');
   if (await page.$('[data-group="wrap"]')) throw new Error('不该再有单独的收尾行');
   await page.click('#exportBtn');
   await page.waitForSelector('#exportMenu');
