@@ -8,7 +8,16 @@
       <div class="head-stick" :class="{ stuck }">
         <div class="card-head">
           <button v-if="s.draft?.topics?.length || s.streaming" class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
-          <h2 id="contentTitle">{{ title }}</h2>
+          <!-- 标题可直接改：编辑模式常显输入框；阅读模式点一下进入改标题（平台版本灰掉，和「起标题」一致） -->
+          <input v-if="titleEditing" id="contentTitle" class="content-title-input" maxlength="100"
+            :value="titleDraft" :disabled="titles.saving || s.streaming"
+            placeholder="这篇的标题" title="改完回车或点别处保存"
+            @input="titleDraft = $event.target.value"
+            @keydown.enter.prevent="commitTitle"
+            @keydown.esc.prevent="cancelTitleEdit"
+            @blur="commitTitle" />
+          <h2 v-else id="contentTitle" :class="{ 'title-clickable': canEditTitle }"
+            :title="canEditTitle ? '点一下改标题' : ''" @click="canEditTitle && startTitleEdit()">{{ title }}</h2>
           <span class="ver-editing" id="verEditing" :class="{ on: Boolean(v.current) }">{{ editingLabel }}</span>
           <span class="counter" id="counter">{{ counter }}</span>
           <span class="grow"></span>
@@ -247,7 +256,39 @@ const article = ref(null);
 const editor = ref(null);
 
 /* ---------- 标题、字数、阅读区 ---------- */
-const title = computed(() => ed.live.title || s.draft?.title || '完整文案');
+const titles = useTitlesStore();
+const cleanTitle = (t) => String(t || '').replace(/^#+\s*/, '').trim();
+const title = computed(() => cleanTitle(ed.live.title || s.draft?.title) || '完整文案');
+/* 原文可改标题；生成中、看平台版本时不行（和「起标题」一致） */
+const canEditTitle = computed(() => Boolean(s.draft?.id && !s.streaming && !ed.live.title && !v.current));
+const titleEditing = ref(false);
+const titleDraft = ref('');
+function startTitleEdit() {
+  if (!canEditTitle.value) return;
+  titleDraft.value = cleanTitle(s.draft?.title) || '';
+  titleEditing.value = true;
+  nextTick(() => document.querySelector('#contentTitle')?.focus?.());
+}
+async function commitTitle() {
+  if (!titleEditing.value) return;
+  const next = cleanTitle(titleDraft.value);
+  const prev = cleanTitle(s.draft?.title);
+  titleEditing.value = false;
+  if (!next || next === prev) return;
+  const ok = await titles.setTitle(next);
+  if (!ok) titleDraft.value = prev;
+}
+function cancelTitleEdit() {
+  titleDraft.value = cleanTitle(s.draft?.title) || '';
+  titleEditing.value = false;
+}
+watch(() => s.draft?.title, (t) => {
+  if (!titleEditing.value) titleDraft.value = cleanTitle(t) || '';
+});
+/* 切走或开始生成时收起标题编辑，避免悬空输入 */
+watch([() => s.mode, () => s.streaming, () => v.current], () => {
+  if (!canEditTitle.value && titleEditing.value) titleEditing.value = false;
+});
 
 const counter = computed(() => {
   if (s.streaming) return ed.live.text ? `${countChars(ed.live.text)} 字 · 生成中` : '生成中…';

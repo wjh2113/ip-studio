@@ -44,6 +44,15 @@ await step('用第二个', async () => {
   const first = (await page.textContent('#content h1'))?.trim();
   return `${want === h ? '标题已替换' : `标题不一致 ${h}`}；正文 H1：${first === want ? '一致' : first}`;
 });
+await step('点顶栏标题直接改', async () => {
+  await page.click('#contentTitle');
+  await page.waitForSelector('input#contentTitle');
+  await page.fill('#contentTitle', '我手改的标题');
+  await page.press('#contentTitle', 'Enter');
+  await page.waitForFunction(() => document.querySelector('h2#contentTitle')?.textContent?.trim() === '我手改的标题');
+  const first = (await page.textContent('#content h1'))?.trim();
+  return first === '我手改的标题' ? '顶栏和正文 H1 都改了' : `正文 H1：${first}`;
+});
 await step('历史里多了一版', async () => {
   await page.click('#revBtn');
   await page.waitForSelector('#revList > *');

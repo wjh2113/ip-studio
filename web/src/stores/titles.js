@@ -1,12 +1,13 @@
-/* 标题候选：定稿后按不同写法出一批标题，挑一个替换草稿标题和正文第一行 */
+/* 标题：定稿后可点顶栏直接改，或用「起标题」出一批候选再挑。
+ * 改标题会同步草稿 title 和正文第一行的 Markdown 标题，并留一版历史。 */
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { useStudioStore } from './studio.js';
-import { useBriefStore } from './brief.js';
 import { useHistoryStore } from './history.js';
 import { useEditorStore } from './editor.js';
+import { useVersionsStore } from './versions.js';
 
 export const useTitlesStore = defineStore('titles', () => {
   const show = ref(false);
@@ -15,6 +16,7 @@ export const useTitlesStore = defineStore('titles', () => {
   const titles = ref([]);
   const limit = ref(0);
   const applying = ref(null);
+  const saving = ref(false);
 
   async function load() {
     const s = useStudioStore();
@@ -41,23 +43,45 @@ export const useTitlesStore = defineStore('titles', () => {
     load();
   }
 
-  async function apply(i) {
+  /** 直接改标题（顶栏输入或候选列表采用）。看平台版本时不能改原文标题。 */
+  async function setTitle(raw, { toastOk = '标题已改' } = {}) {
     const s = useStudioStore();
-    const text = titles.value[i]?.text;
-    if (!text || !s.draft) return;
-    applying.value = i;
+    if (!s.draft?.id) return false;
+    if (useVersionsStore().current) {
+      toast('看别的平台版本时不能改原文标题，请先切回原文');
+      return false;
+    }
+    const title = String(raw || '').replace(/[\r\n]+/g, ' ').replace(/^#+\s*/, '').trim().slice(0, 100);
+    if (!title) { toast('标题不能为空'); return false; }
+    if (title === String(s.draft.title || '').replace(/^#+\s*/, '').trim()) return true;
+    if (saving.value) return false;
+    saving.value = true;
     try {
-      const { draft } = await api(`/drafts/${s.draft.id}/title`, { method: 'PUT', body: { title: text } });
-      useBriefStore().setDraft(draft);
-      useHistoryStore().load();                // 左侧创作记录里的标题也跟着换
-      show.value = false;
-      toast('标题已替换，上一版留在历史里');
+      await useEditorStore().flushSave(true);
+      const { draft } = await api(`/drafts/${s.draft.id}/title`, { method: 'PUT', body: { title } });
+      // 原地换稿，不走 setDraft，免得打断编辑模式
+      s.draft = draft;
+      useHistoryStore().load();
+      if (toastOk) toast(toastOk);
+      return true;
     } catch (err) {
       toast(err.message);
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  async function apply(i) {
+    const text = titles.value[i]?.text;
+    if (!text) return;
+    applying.value = i;
+    try {
+      if (await setTitle(text, { toastOk: '标题已替换，上一版留在历史里' })) show.value = false;
     } finally {
       applying.value = null;
     }
   }
 
-  return { show, loading, error, titles, limit, applying, load, open, apply };
+  return { show, loading, error, titles, limit, applying, saving, load, open, apply, setTitle };
 });

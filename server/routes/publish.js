@@ -405,7 +405,8 @@ export async function handleTitleApply(req, res, body, params) {
   const content = String(draft.content || '');
   const lines = content.split('\n');
   const first = lines.findIndex((l) => l.trim());
-  if (first >= 0 && /^#\s/.test(lines[first])) lines[first] = `# ${title}`;
+  // 正文第一行不论是 # 还是 ####，都换成一级标题；没有标题行就插在最前
+  if (first >= 0 && /^#{1,6}\s/.test(lines[first])) lines[first] = `# ${title}`;
   else lines.unshift(`# ${title}`, '');
   await Drafts.saveContent(draft.id, user.id, lines.join('\n'), { snapshot: true });
   await Drafts.setTitle(draft.id, user.id, title);

@@ -28,7 +28,8 @@
   .work-main.card { padding: 14px 14px 20px; }
   .head-stick { margin: 0 -14px; padding: 12px 14px 0; }
   .head-stick .card-head { flex-wrap: wrap; gap: 6px 8px; margin-bottom: 10px; }
-  .head-stick .card-head > h2 { flex: 1 1 100%; font-size: 17px; }
+  .head-stick .card-head > h2,
+  .head-stick .card-head > .content-title-input { flex: 1 1 100%; font-size: 17px; max-width: none; }
   .mode-label { display: none; }
   .toolbar { gap: 8px 6px; }
   .tb-group { flex-wrap: wrap; }
@@ -50,8 +51,18 @@
 .head-stick.stuck { border-radius: 0; box-shadow: 0 8px 16px -14px rgba(16, 24, 40, .45); }
 .head-stick .card-head { margin-bottom: 14px; flex-wrap: nowrap; }
 .head-stick .card-head > * { flex: none; }
-.head-stick .card-head > h2 { flex: 0 1 auto; }
+.head-stick .card-head > h2,
+.head-stick .card-head > .content-title-input { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .head-stick h2 { font-size: 20px; }
+.head-stick h2.title-clickable { cursor: text; border-radius: 6px; }
+.head-stick h2.title-clickable:hover { background: var(--panel-2); }
+.content-title-input {
+  flex: 1 1 auto; min-width: 120px; max-width: min(560px, 100%);
+  margin: 0; padding: 4px 10px; border: 1px solid var(--accent-line);
+  border-radius: 8px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: 20px; font-weight: 600; line-height: 1.3;
+}
+.content-title-input:focus { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
 .mode-label { font-size: 12.5px; color: var(--muted); }
 .mode-now {
   font-size: 12.5px; padding: 3px 10px; border-radius: 6px; font-weight: 600;
