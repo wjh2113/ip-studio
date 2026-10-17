@@ -1,3 +1,4 @@
+import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { packMaterial, relevantSnippet } from '../server/snippet.js';
@@ -32,4 +33,14 @@ test('resolveCueQuote：用 head/tail 截出整段，兼容旧 quote', () => {
   assert.equal(resolveCueQuote({ head: '中间还有一句。', tail: '中间还有一句。' }, text), '中间还有一句。');
   assert.equal(resolveCueQuote({ quote: '最后收束。' }, text), '最后收束。');
   assert.equal(resolveCueQuote({ head: '没有', tail: '这段' }, text), '');
+});
+
+test('resolveCueQuote：按顺序找（同样的开头落到后面那段）；不跨【画面】、不截超长段', () => {
+  const text = '好，我们开始。第一段讲背景。\n\n好，我们开始。第二段讲方法。';
+  const first = text.indexOf('第一段讲背景。') + '第一段讲背景。'.length;
+  assert.equal(resolveCueQuote({ head: '好，我们开始。', tail: '第二段讲方法。' }, text, first), '好，我们开始。第二段讲方法。');
+  const script = '【口播】先说结论。\n【画面】切到图表\n【口播】再讲原因。';
+  assert.equal(resolveCueQuote({ head: '先说结论。', tail: '再讲原因。' }, script), '');
+  const long = `开头${'很长'.repeat(400)}结尾。`;
+  assert.equal(resolveCueQuote({ head: '开头', tail: '结尾。' }, long), '');
 });

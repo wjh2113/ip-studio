@@ -324,7 +324,8 @@ export async function handleRevise(req, res, body, params) {
 
   /* 局部：像语音改稿一样只回替换列表，代码负责改正文 */
   if (!isStructuralRevise(notes)) {
-    const { send, end, aborted } = openProgressStream(res);
+    const ps = openProgressStream(res);       // ps.aborted 是 getter：别解构，解构只拿到开流那一刻的 false
+    const { send, end } = ps;
     try {
       send('start', { version, mode: 'patch' });
       send('progress', { step: 'revising', label: '正在按意见改局部…' });
@@ -345,7 +346,7 @@ export async function handleRevise(req, res, body, params) {
         if (!out || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到改写结果');
         return out;
       }, '按意见改写失败，请再试一次');
-      if (aborted) return;
+      if (ps.aborted) return;
       const { content: out, applied, skipped } = applyVoiceEdits(text, data.edits);
       if (!applied.length) {
         const why = skipped[0] || data.note || '意见没有对应到可改的句子';
@@ -355,7 +356,7 @@ export async function handleRevise(req, res, body, params) {
       send('delta', { text: out });
       send('done', await saveOut(out));
     } catch (err) {
-      if (!aborted) send('error', { message: describe(err) });
+      if (!ps.aborted) send('error', { message: describe(err) });
     } finally {
       end();
     }

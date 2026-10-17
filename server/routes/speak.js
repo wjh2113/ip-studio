@@ -44,33 +44,44 @@ const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 const SPOKEN_TAG = /^\s*【(口播|台词|旁白)】\s*/;
 const SILENT_TAG = /^\s*【(画面|画面提示|字幕|转场|镜头|BGM|音效)】/i;
 
-/** 用首尾锚点在正文里截出一段；对不上就空串。也兼容旧数据里的完整 quote。 */
-export function resolveCueQuote(c, text) {
-  const strip = (s) => {
-    const raw = String(s || '');
+/** 用首尾锚点在正文里截出一段；对不上就空串。也兼容旧数据里的完整 quote。
+ *  from：从哪里开始找（按顺序处理时传上一段的结尾，免得同样的开头句落到前面去）。
+ *  一段不能跨过【画面】这类不念的标注行，也不能长到不像「一口气念完的一段」——那多半是 tail 落错了地方。 */
+const MAX_CUE = 600;
+export function resolveCueAt(c, text, from = 0) {
+  const strip = (x) => {
+    const raw = String(x || '');
     if (SILENT_TAG.test(raw)) return '';
     return raw.replace(SPOKEN_TAG, '').trim();
   };
+  const find = (needle, at) => {
+    const i = text.indexOf(needle, at);
+    return i >= 0 ? i : text.indexOf(needle);
+  };
+  const ok = (start, quote) => (quote && quote.length <= MAX_CUE
+    && !quote.split('\n').some((line) => SILENT_TAG.test(line)) ? { quote, start } : { quote: '', start: -1 });
+
   // 旧格式：整段 quote
   const legacy = strip(c?.quote);
-  if (legacy && text.includes(legacy)) return legacy;
-
+  if (legacy) {
+    const at = find(legacy, from);
+    if (at >= 0) return { quote: legacy, start: at };
+  }
   const head = strip(c?.head);
   const tail = strip(c?.tail);
-  if (!head) return '';
-  const start = text.indexOf(head);
-  if (start < 0) return '';
-  if (!tail || head === tail) {
-    // 短段：整段就是 head；或只给了开头时先取 head（下游会再校验）
-    return head;
-  }
+  if (!head) return { quote: '', start: -1 };
+  const start = find(head, from);
+  if (start < 0) return { quote: '', start: -1 };
+  // 短段：整段就是 head
+  if (!tail || head === tail) return ok(start, head);
   const end = text.indexOf(tail, start + head.length);
-  if (end < 0) return '';
-  return text.slice(start, end + tail.length);
+  if (end < 0) return { quote: '', start: -1 };
+  return ok(start, text.slice(start, end + tail.length));
 }
+export const resolveCueQuote = (c, text, from = 0) => resolveCueAt(c, text, from).quote;
 
-function cleanCue(c, text) {
-  const quote = resolveCueQuote(c, text);
+function cleanCue(c, text, from = 0) {
+  const quote = resolveCueQuote(c, text, from);
   const stress = (Array.isArray(c?.stress) ? c.stress : String(c?.stress || '').split(/[、,，\s]+/))
     .map((w) => String(w).trim())
     .filter((w) => w && quote.includes(w))
@@ -114,7 +125,14 @@ export async function handleCues(req, res, body, params) {
     return out;
   }, '生成口播提示失败，请再试一次');
 
-  const cues = data.cues.map((c) => cleanCue(c, text)).filter((c) => c.quote && c.locatable);
+  // 按顺序定位：每段从上一段的结尾往后找
+  let cursor = 0;
+  const cues = data.cues.map((c) => {
+    const x = cleanCue(c, text, cursor);
+    const at = x.quote ? text.indexOf(x.quote, cursor) : -1;
+    if (at >= 0) cursor = at + x.quote.length;
+    return x;
+  }).filter((c) => c.quote && c.locatable);
   if (!cues.length) throw new HttpError(502, '提示和正文对不上，请再试一次');
 
   const payload = {
