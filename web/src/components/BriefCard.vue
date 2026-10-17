@@ -87,6 +87,7 @@
 
         <div class="submit-row">
           <BusyBtn type="submit" class="btn primary lg" id="topicsBtn" :busy="b.submitting"><Icon name="sparkles" />生成三个话题方向</BusyBtn>
+          <BusyBtn type="button" class="btn ghost lg" id="importDraftBtn" :busy="b.importing" title="别处写好或写了一半的稿子，直接贴进来用 AI 改；不花点数" @click="b.importDraft()"><Icon name="clipboard" />贴已有稿</BusyBtn>
           <span class="hint" id="briefHint" :class="{ error: b.hint.error }">{{ b.hint.text || '会按你的简报，出 3 个角度不同的话题方向供你选' }}</span>
           <button type="button" class="link-btn" id="briefRefsBtn" title="生成时带哪些资料（个人档案、范文、素材……），每项能关、能调权重" @click="useRefsStore().openFor(s.personaId)">成稿参考设置</button>
         </div>

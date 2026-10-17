@@ -282,6 +282,24 @@ export async function restoreAfterFailure(draftId, userId, before, index) {
   return Drafts.setContentIf(draftId, userId, { status: 'writing', content: '', chosen: index }, next);
 }
 
+/* ---------------- 贴已有稿：别处写好（或写了一半）的稿子直接进成稿页 ----------------
+ * 不调模型、不花点数：建一篇状态是「已完成」的稿子，之后划词改、按意见重写、检查、多平台、口播都能用。
+ * 标题不填时取正文第一行的 # 标题，再不行取第一句。没有选方向，所以 topics 为空、context 记 imported。 */
+export async function handleImport(req, res, body) {
+  const user = await requireUser(req);
+  const content = String(body?.content ?? '').replace(/\r\n?/g, '\n').trim();
+  if (!content) throw new HttpError(400, '把稿子贴进来');
+  if (content.length > 60000) throw new HttpError(400, '正文过长（最多 6 万字）');
+  const persona = await resolvePersona(user.id, body?.persona_id);
+  const head = content.match(/^#{1,3}\s+(.+)$/m)?.[1] || content.split(/[\n。！？!?]/)[0];
+  const title = (String(body?.title ?? '').trim() || head || '未命名').slice(0, 80);
+  const form = normalizeForm({ ...body, subject: title }, persona);
+  const draft = await Drafts.create(user.id, form, persona);
+  await Drafts.setContent(draft.id, user.id, { chosen: null, title, content, status: 'done' });
+  await Drafts.setContext(draft.id, user.id, { imported: true });
+  json(res, 200, { draft: await Drafts.byId(draft.id, user.id) });
+}
+
 /* ---------------- 按意见重写：作者写几条修改意见，整篇在原稿上重写 ----------------
  * 流式回给前端看着写；写完才落盘（原稿自动留一版历史，Ctrl+Z / 版本对照都能退回）。中途失败或断开，原稿一个字不动。
  * version：改的是哪一版（'' 原文，否则是平台版本），和版本栏一致。 */

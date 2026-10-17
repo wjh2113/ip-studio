@@ -155,6 +155,20 @@ await step('成稿参考：简报下点「成稿参考设置」→ 账号设定�
   await page.click('#personaCloseBtn');
   return '已存，恢复默认也行';
 });
+await step('贴已有稿：不花点数，直接进成稿页；没有「换方向」', async () => {
+  await page.click('#newBtn');
+  await page.waitForSelector('#importDraftBtn', { state: 'visible' });
+  await page.click('#importDraftBtn');
+  await page.fill('.ask [data-k="title"]', '我写了一半的稿子');
+  await page.fill('.ask [data-k="content"]', '周末备菜，先把蔬菜洗好切好分装。\n\n接下来要写的是');
+  await page.click('.ask [data-yes]');
+  await page.waitForFunction(() => /周末备菜/.test(document.querySelector('#content')?.textContent || ''), null, { timeout: 8000 });
+  const title = (await page.textContent('#contentTitle')).trim();
+  if (title !== '我写了一半的稿子') throw new Error(`标题不对：${title}`);
+  if (await page.isVisible('.step-back')) throw new Error('贴进来的稿子不该有「换方向」');
+  await page.waitForSelector('#history .history-item.active');
+  return title;
+});
 await step('删掉第二个账号', async () => {
   await page.click('#personaList .persona-row:nth-child(2)');
   await page.waitForFunction(() => document.querySelector('#personaList .persona-row.on b')?.textContent === '通勤听书');

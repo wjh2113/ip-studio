@@ -174,6 +174,30 @@ test('按意见改：选中一段写自己的意见；整篇按意见重写（�
   assert.equal(r.status, 200, r.text);
 });
 
+test('贴已有稿：不调模型直接建成一篇已完成的稿子；标题取 # 行；之后能按意见重写', async () => {
+  let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
+  assert.equal(r.status, 400);
+  const usedBefore = (await api.call('GET', '/api/plan')).data;
+  r = await api.call('POST', '/api/drafts/import', { content: '# 我写了一半的稿子\n\n周末备菜，先把蔬菜洗好切好分装。\n\n接下来', platform: 'xiaohongshu' });
+  assert.equal(r.status, 200, r.text);
+  const d = r.data.draft;
+  assert.equal(d.title, '我写了一半的稿子');
+  assert.equal(d.status, 'done');
+  assert.equal(d.platform, 'xiaohongshu');
+  assert.ok(d.content.includes('周末备菜'));
+  assert.deepEqual(d.topics, []);
+  assert.equal(d.context.imported, true);
+  // 不花点数
+  assert.equal((await api.call('GET', '/api/plan')).data.quota.left, usedBefore.quota.left);
+  // 标题不填、也没有 # 行：取第一句
+  r = await api.call('POST', '/api/drafts/import', { content: '第一句话。后面的内容' });
+  assert.equal(r.data.draft.title, '第一句话');
+  // 贴进来的稿子能按意见重写
+  r = await api.call('POST', `/api/drafts/${d.id}/revise`, { notes: '补完结尾' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: done/);
+});
+
 test('AI 味扫描：不调模型，直接回规则命中', async () => {
   const r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: '在当今快节奏的时代，备菜至关重要。\n\n让我们一起加油，未来可期！' });
   assert.equal(r.status, 200, r.text);

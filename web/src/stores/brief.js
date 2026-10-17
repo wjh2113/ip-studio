@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia';
 import { computed, reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
-import { toast } from '../lib/feedback.js';
+import { ask, toast } from '../lib/feedback.js';
 import { useStudioStore } from './studio.js';
 import { useFrameworksStore } from './frameworks.js';
 import { useHistoryStore } from './history.js';
@@ -324,7 +324,40 @@ export const useBriefStore = defineStore('brief', () => {
     try { await api(`/pool/${x.id}`, { method: 'PUT', body: { status: 'done' } }); await loadPool(); } catch { /* 标记失败不影响填入 */ }
   }
 
+  /* 贴已有稿：别处写好（或写了一半）的稿子直接建成一篇、进成稿页。不调模型、不花点数。
+     平台、调性用简报上现在选的；挂在当前账号下 */
+  const importing = ref(false);
+  async function importDraft() {
+    const s = useStudioStore();
+    if (s.streaming || importing.value) return;
+    const got = await ask.form({
+      title: '贴已有稿',
+      body: '把别处写好、或写了一半的稿子贴进来，直接进成稿页，不花点数。之后可以划词改、按意见重写、检查、续写结尾。平台和调性按简报上现在选的。',
+      fields: [
+        { key: 'title', label: '标题', placeholder: '可不填：取正文第一行的标题' },
+        { key: 'content', label: '正文', multiline: true, rows: 12, required: true, placeholder: '支持 Markdown；没写完也没关系' },
+      ],
+      ok: '贴进来',
+    });
+    if (!got?.content?.trim()) return;
+    importing.value = true;
+    try {
+      const { draft } = await api('/drafts/import', {
+        method: 'POST',
+        body: { title: got.title, content: got.content, platform: form.platform, tone: form.tone, persona_id: s.personaId ?? '' },
+      });
+      setDraft(draft);
+      useHistoryStore().load();
+      toast('已贴进来：可以划词改、按意见重写，或在结尾打 / 让 AI 续写');
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      importing.value = false;
+    }
+  }
+
   return {
+    importing, importDraft,
     stepDone, reachable, goStep, clickStep,
     form, locked, draftNote, hint, pendingHotspot, inputs, submitting, retopicking, section,
     syncLength, applyPersonaDefaults, setHint, pickSection, submit, retopics, setDraft, reset,

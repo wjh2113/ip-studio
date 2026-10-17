@@ -7,7 +7,7 @@
       <div ref="sentinel" style="position:absolute;top:0;height:1px;width:1px;pointer-events:none"></div>
       <div class="head-stick" :class="{ stuck }">
         <div class="card-head">
-          <button class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
+          <button v-if="s.draft?.topics?.length || s.streaming" class="btn ghost small step-back" data-goto="2" @click="!s.streaming && brief.goStep(2)"><Icon name="arrow-left" :size="14" />换方向</button>
           <h2 id="contentTitle">{{ title }}</h2>
           <span class="counter" id="counter">{{ counter }}</span>
           <span class="grow"></span>
