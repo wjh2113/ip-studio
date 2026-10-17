@@ -1,12 +1,8 @@
 <template>
 <div class="pop-menu sel-menu" id="selMenu" ref="box" :class="{ hidden: !m }" :style="pos">
-  <!-- 划词浮层：AI 改写 + 格式条（嵌在浮层里，不再被顶栏工具条穿透） -->
+  <!-- 改写只出 AI 动作；加粗、颜色、列表在顶栏工具条 -->
   <div class="sel-acts">
-    <button v-for="a in topActs" :key="a.key" type="button" :data-action="a.key" @mousedown.prevent @click="pick(a)">{{ a.label }}</button>
-  </div>
-  <FormatBar variant="chips" class="sel-fmt" />
-  <div class="sel-acts">
-    <button v-for="a in bottomActs" :key="a.key" type="button" :data-action="a.key" @mousedown.prevent @click="pick(a)">{{ a.label }}</button>
+    <button v-for="a in acts" :key="a.key" type="button" :data-action="a.key" @mousedown.prevent @click="pick(a)">{{ a.label }}</button>
   </div>
   <form class="pop-custom sel-custom" id="selCustom" @submit.prevent="custom">
     <input id="selCustomInput" v-model="want" maxlength="500" placeholder="按我的意见改：比如「加一个具体例子」「语气再坚定些」" @keydown.stop />
@@ -17,7 +13,6 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
-import FormatBar from './FormatBar.vue';
 import { ASSIST_ACTIONS, useEditorStore } from '../stores/editor.js';
 import { placeNear } from '../lib/caret.js';
 
@@ -27,9 +22,7 @@ const box = ref(null);
 const pos = ref({});
 const want = ref('');
 
-/* 对照截图：上三下三夹格式条；缩写仍保留在下组 */
-const topActs = ASSIST_ACTIONS.filter((a) => ['expand', 'professional', 'casual'].includes(a.key));
-const bottomActs = ASSIST_ACTIONS.filter((a) => ['shorten', 'example', 'simplify', 'humanize'].includes(a.key));
+const acts = ASSIST_ACTIONS;
 
 watch(m, async (v) => {
   if (!v) return;

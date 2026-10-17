@@ -223,22 +223,8 @@ body.edit-fs-on .assist-pop { z-index: 100; }
   border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer;
 }
 .fmt-native-color { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.fmt-chip {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
-  background: transparent; font: inherit; font-size: 12.5px;
-  color: var(--muted); cursor: pointer; white-space: nowrap;
-}
-.fmt-chip:hover { background: var(--panel); color: var(--text); }
-.fmt-chip.on { background: var(--accent-soft); color: var(--accent-ink); }
-.fmt-chips {
-  gap: 2px; padding: 4px; margin: 4px 0; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--border);
-}
-.sel-menu { min-width: 272px; padding: 6px; }
+.sel-menu { min-width: 220px; padding: 6px; }
 .sel-menu .sel-acts button { width: 100%; }
-.sel-menu .sel-fmt { width: 100%; }
-.pop-menu .fmt-chip { width: auto; }
 .rich-body { padding: 14px 18px 18px; }
 .rich-pm {
   min-height: 360px; outline: none;

@@ -10,7 +10,7 @@
     @drop="onDrop"
   >
     <div class="rich-toolbar" id="richToolbar">
-      <FormatBar variant="icons" />
+      <FormatBar />
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFilePicked" />
     </div>
     <EditorContent :editor="editor" class="rich-body" />

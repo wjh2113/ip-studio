@@ -1,7 +1,6 @@
 <template>
-  <div class="fmt-bar" :class="[`fmt-${variant}`, variant === 'chips' ? 'fmt-chips' : '']" role="toolbar" aria-label="格式" @mousedown.stop>
-    <!-- 顶栏图标版 / 划词浮层文字版；命令走 #editor._rich -->
-    <template v-if="variant === 'icons'">
+  <div class="fmt-bar fmt-icons" role="toolbar" aria-label="格式" @mousedown.stop>
+    <!-- 顶栏图标；命令走 #editor._rich -->
       <button type="button" class="fmt-btn" id="rtUndo" title="撤销" :disabled="!ed.canUndo" @mousedown.prevent @click="run('undo')"><Icon name="undo" :size="16" /></button>
       <button type="button" class="fmt-btn" id="rtRedo" title="重做" :disabled="!ed.canRedo" @mousedown.prevent @click="run('redo')"><Icon name="redo" :size="16" /></button>
       <span class="fmt-sep" />
@@ -66,19 +65,6 @@
       <button type="button" class="fmt-btn" id="rtFullscreen" :title="ed.editFs ? '退出全屏' : '全屏编辑'" :class="{ on: ed.editFs }" @mousedown.prevent @click="ed.toggleEditFs()">
         <Icon :name="ed.editFs ? 'collapse' : 'expand'" :size="16" />
       </button>
-    </template>
-    <template v-else>
-      <button type="button" class="fmt-chip" data-fmt="bold" :class="{ on: active.bold }" @mousedown.prevent @click="run('bold')">加粗</button>
-      <button type="button" class="fmt-chip" data-fmt="h2" :class="{ on: active.h2 }" @mousedown.prevent @click="run('h2')">标题</button>
-      <button type="button" class="fmt-chip" data-fmt="list" :class="{ on: active.list }" @mousedown.prevent @click="run('list')">列表</button>
-      <button type="button" class="fmt-chip" data-fmt="quote" :class="{ on: active.quote }" @mousedown.prevent @click="run('quote')">引用</button>
-      <label class="fmt-chip fmt-color" data-fmt="color" @mousedown.prevent="onColorDown">
-        <input type="color" :value="color" @input="onColor($event.target.value)" />
-        颜色
-      </label>
-      <button type="button" class="fmt-chip" data-fmt="image" @mousedown.prevent @click="run('image')">图片</button>
-      <button type="button" class="fmt-chip" data-fmt="mark" @mousedown.prevent @click="run('mark')">放图标记</button>
-    </template>
   </div>
 </template>
 
@@ -86,10 +72,6 @@
 import { onMounted, onBeforeUnmount, reactive, ref } from 'vue';
 import Icon from './common/Icon.vue';
 import { useEditorStore } from '../stores/editor.js';
-
-defineProps({
-  variant: { type: String, default: 'icons' }, // icons | chips
-});
 
 const THEME = ['#FFFFFF', '#1F2329', '#F4EFE6', '#1C2B4A', '#5C7A99', '#C4564A', '#6E7D45', '#7D6B86', '#2E6E6A', '#C56A2F'];
 const STANDARD = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
