@@ -313,6 +313,7 @@ export async function handleInboxFile(req, res, body, params) {
 /* Markdown → 纯文本：去标题井号、强调、引用、代码标记，链接留文字，图片和插图占位删掉，列表换成 • */
 export function markdownToText(src) {
   const inline = (s) => s
+    .replace(/<span\s+style="color:\s*#[0-9A-Fa-f]{3,6}\s*"\s*>([\s\S]*?)<\/span>/gi, '$1')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/`([^`]+)`/g, '$1')

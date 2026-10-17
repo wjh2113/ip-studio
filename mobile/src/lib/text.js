@@ -8,6 +8,12 @@ export const esc = (s) => String(s ?? '')
 
 const IMAGE_MARK = '<此处放图片>';
 
+/* 网页富文本落库的白名单：颜色 span、同域插图。App 阅读区只显示纯文字，先剥掉再渲染 */
+const stripRich = (s) => String(s || '')
+  .replace(/<span\s+style="color:\s*#[0-9A-Fa-f]{3,6}\s*"\s*>([\s\S]*?)<\/span>/gi, '$1')
+  .replace(/!\[[^\]]*\]\(\/image\/\d+\/[\w.-]+\)/g, '')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g, '');
+
 const inline = (s) => s
   .replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -15,7 +21,7 @@ const inline = (s) => s
 
 /* 先转义再套标签：rich-text 只接这里产出的字符串。class 名给阅读页样式用 */
 export function markdown(src, { highlight = -1 } = {}) {
-  const lines = String(src || '').split('\n').filter((l) => l.trim() !== IMAGE_MARK);
+  const lines = stripRich(src).split('\n').filter((l) => l.trim() !== IMAGE_MARK);
   const out = [];
   let list = null;
   let para = -1;
@@ -41,7 +47,7 @@ export function markdown(src, { highlight = -1 } = {}) {
 
 /* 正文按段切开（阅读页点段落改写、语音改稿选段用）。和 markdown() 里的段落计数一致：标题、列表不算段 */
 export function paragraphs(src) {
-  return String(src || '').split('\n').map((l) => l.trim())
+  return stripRich(src).split('\n').map((l) => l.trim())
     .filter((l) => l && l !== IMAGE_MARK && !/^#{1,4}\s/.test(l) && !/^(---|\*\*\*|___)$/.test(l) && !/^[-*+]\s/.test(l) && !/^\d+[.、)]\s/.test(l));
 }
 
@@ -126,7 +132,9 @@ export function blocks(src) {
     else if ((m = t.match(/^[-*+]\s+(.*)$/))) { type = 'li'; text = m[1]; }
     else if ((m = t.match(/^(\d+)[.、)]\s+(.*)$/))) { type = 'oli'; text = `${m[1]}. ${m[2]}`; }
     else if ((m = t.match(/^>\s?(.*)$/))) { type = 'quote'; text = m[1]; }
-    text = text.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+    // 显示用纯文字；raw 仍是原文一行，改一点 / 语音改按偏移写回
+    text = stripRich(text).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').trim();
+    if (!text && type === 'p') continue;   // 整行只是一张插图时跳过，不当空段
     out.push({ type, text, start, end: start + line.length, raw: line });
   }
   return out;
