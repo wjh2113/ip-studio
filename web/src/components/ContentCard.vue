@@ -501,16 +501,6 @@ function onDocMouseDown(e) {
   ed.menus.slash = null;
 }
 
-/* 撤销后把光标放到改动的地方：从两头找第一处不同，光标落在新文本里改动段的末尾 */
-function changeEnd(a, b) {
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
-  let ja = a.length;
-  let jb = b.length;
-  while (ja > i && jb > i && a[ja - 1] === b[jb - 1]) { ja -= 1; jb -= 1; }
-  return jb;
-}
-
 /* Ctrl+Z 撤销、Ctrl+Shift+Z / Ctrl+Y 重做（Mac 上是 ⌘）。编辑框里接管浏览器自带的撤销；
    阅读模式下（焦点不在别的输入框里）也能撤回刚才的 AI 改写、采纳 */
 function undoKey(e) {
@@ -520,23 +510,29 @@ function undoKey(e) {
   if (k === 'y' && !e.shiftKey) return 'redo';
   return null;
 }
-function runUndo(which, { inEditor }) {
+function runUndo(which, { inEditor, caret }) {
   const r = which === 'undo' ? ed.undo() : ed.redo();
   if (!r) return;
   if (!inEditor) { toast(which === 'undo' ? '已撤销' : '已重做'); return; }
   nextTick(() => {
     const el = editorEl();
-    if (!el?._rich) return;
-    const at = changeEnd(r.before, r.after);
-    el._rich.focus();
-    el._rich.setSelection(at, at);
-    keepCaretVisible(el._rich.coordsAt(at));
+    if (!el?._rich || !caret) return;
+    const len = el._rich.getDoc().length;
+    const start = Math.min(caret.start, len);
+    const end = Math.min(Math.max(caret.end, start), len);
+    el._rich.setSelection(start, end, { scroll: false });
+    el._rich.scrollTop = caret.scrollTop;
   });
 }
 function onRichHist(which) {
   ed.menus.slash = null;
   ed.menus.sel = null;
-  runUndo(which, { inEditor: true });
+  const rich = editorEl()?._rich;
+  const sel = rich?.getSelection?.() || { start: 0, end: 0 };
+  runUndo(which, {
+    inEditor: true,
+    caret: { start: sel.start, end: sel.end, scrollTop: rich?.scrollTop || 0 },
+  });
 }
 
 function onKey(e) {

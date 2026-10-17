@@ -174,7 +174,7 @@ function bindBridge() {
       emit('update:modelValue', next);
     },
     getSelection: () => selectionToDoc(editor.value),
-    setSelection: (start, end) => selectDocRange(start, end),
+    setSelection: (start, end, opts) => selectDocRange(start, end, opts),
     insertAt: (at, chunk) => insertAtDoc(at, chunk),
     locate: (quote) => locateQuote(quote),
     focus: (opts) => editor.value?.commands.focus(opts?.preventScroll ? undefined : 'end'),
@@ -230,12 +230,15 @@ function applyExternal(raw) {
   applying.value = false;
 }
 
-function selectDocRange(start, end) {
+function selectDocRange(start, end, { scroll = true } = {}) {
   if (!editor.value) return;
   const { docToPm } = serializeEditor(editor.value);
   const from = docToPm(start);
   const to = docToPm(Math.max(start, end));
-  editor.value.chain().focus().setTextSelection({ from, to: Math.max(from, to) }).run();
+  const chain = editor.value.chain();
+  if (scroll) chain.focus();
+  else chain.focus(undefined, { scrollIntoView: false });
+  chain.setTextSelection({ from, to: Math.max(from, to) }).run();
 }
 
 function insertAtDoc(at, chunk) {
