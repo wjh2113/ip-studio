@@ -243,6 +243,12 @@ export const useEditorStore = defineStore('editor', () => {
   function setEditFs(on) {
     editFs.value = !!on;
     document.body.classList.toggle('edit-fs-on', editFs.value);
+    if (!editFs.value) return;
+    window.scrollTo(0, 0);
+    requestAnimationFrame(() => {
+      const el = document.getElementById('workMain');
+      if (el) el.scrollTop = 0;
+    });
   }
   function toggleEditFs() { setEditFs(!editFs.value); }
 

@@ -116,6 +116,9 @@ await step('全屏编辑 / 退出', async () => {
   await page.click('#rtFullscreen');
   await page.waitForSelector('#workMain.edit-fs');
   if (!(await page.$eval('body', (b) => b.classList.contains('edit-fs-on')))) throw new Error('body 没挂 edit-fs-on');
+  const pos = await page.$eval('#workMain', (el) => getComputedStyle(el).position);
+  if (pos !== 'fixed') throw new Error(`全屏没有铺满视口：${pos}`);
+  if (await page.$eval('.topbar', (el) => getComputedStyle(el).display !== 'none')) throw new Error('全屏时顶栏还在');
   await page.click('#rtFullscreen');
   await page.waitForFunction(() => !document.querySelector('#workMain.edit-fs'));
   return '全屏开关正常';

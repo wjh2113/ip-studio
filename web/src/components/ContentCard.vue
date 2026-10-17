@@ -2,7 +2,7 @@
   <section class="work" id="contentCard" :class="{ 'work-folded': layout.work }">
     <!-- 第三步：成稿工作台。左边是正文（标题行 + 工具条吸顶），右边是一列可收起的面板：版本、检查、多平台、配图、口播。
          正文是主角，工具都在边上，不抢阅读 -->
-    <div class="card work-main" id="workMain" :class="{ 'edit-fs': ed.editFs }" style="position:relative">
+    <div class="card work-main" id="workMain" :class="{ 'edit-fs': ed.editFs }">
       <!-- sentinel 是吸顶判断用的：它滚出视口说明标题行已经贴在顶上了 -->
       <div ref="sentinel" style="position:absolute;top:0;height:1px;width:1px;pointer-events:none"></div>
       <div class="head-stick" ref="headStick" :class="{ stuck }">
