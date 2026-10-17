@@ -24,6 +24,9 @@
           <!-- 模式指示器：只说明「你现在在哪个模式」，切换动作在工具条上 -->
           <span class="mode-label">当前模式</span>
           <span class="mode-now" id="modeNow" :class="`m-${s.mode}`">{{ s.mode === 'edit' ? '编辑中' : s.mode === 'cue' ? '口播' : '阅读' }}</span>
+          <button type="button" class="btn ghost small" id="rtFullscreen" :title="ed.editFs ? '退出全屏' : '中间正文区铺满屏幕'" @click="ed.toggleEditFs()">
+            <Icon :name="ed.editFs ? 'collapse' : 'expand'" :size="14" />{{ ed.editFs ? '退出全屏' : '全屏' }}
+          </button>
         </div>
 
         <!-- 两组：改稿（含导出、回填、归档）/ 加工。每个功能只留一个主入口 -->

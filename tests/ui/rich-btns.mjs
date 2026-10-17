@@ -93,6 +93,8 @@ await step('工具条「放图标记」', async () => {
 });
 
 await step('全屏编辑 / 退出', async () => {
+  const next = await page.$eval('#modeNow', (el) => el.nextElementSibling?.id);
+  if (next !== 'rtFullscreen') throw new Error('全屏按钮应在当前模式后面');
   await page.click('#rtFullscreen');
   await page.waitForSelector('#workMain.edit-fs');
   if (!(await page.$eval('body', (b) => b.classList.contains('edit-fs-on')))) throw new Error('body 没挂 edit-fs-on');

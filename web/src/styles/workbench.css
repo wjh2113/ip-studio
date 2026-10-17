@@ -34,6 +34,7 @@
   min-height: calc(100vh - var(--head-stick-h, 108px) - 120px);
 }
 .work-main.edit-fs .rich-pm { min-height: calc(100vh - var(--head-stick-h, 108px) - 200px); }
+.work-main.edit-fs .content { min-height: calc(100vh - var(--head-stick-h, 108px) - 48px); }
 body.edit-fs-on { overflow: hidden; }
 /* 全屏时改写/续写浮层要盖在成稿框上面 */
 body.edit-fs-on .pop-menu,
@@ -96,6 +97,7 @@ body.edit-fs-on .assist-pop { z-index: 100; }
 }
 .mode-now.m-edit { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent-line); }
 .mode-now.m-cue { color: #6142e6; background: #f1edff; border-color: transparent; }
+#rtFullscreen { margin-left: 2px; }
 .ver-editing {
   font-size: 12.5px; padding: 3px 10px; border-radius: 6px; font-weight: 600;
   background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap;

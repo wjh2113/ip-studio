@@ -61,10 +61,6 @@
       <span class="fmt-sep" />
       <button type="button" class="fmt-btn" id="rtImage" title="插入图片" @mousedown.prevent @click="run('image')"><Icon name="image" :size="16" /></button>
       <button type="button" class="fmt-btn" id="rtMark" title="插入「此处放图片」" @mousedown.prevent @click="run('mark')"><Icon name="layers" :size="16" /></button>
-      <span class="fmt-sep" />
-      <button type="button" class="fmt-btn" id="rtFullscreen" :title="ed.editFs ? '退出全屏' : '全屏编辑'" :class="{ on: ed.editFs }" @mousedown.prevent @click="ed.toggleEditFs()">
-        <Icon :name="ed.editFs ? 'collapse' : 'expand'" :size="16" />
-      </button>
   </div>
 </template>
 

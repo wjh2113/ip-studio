@@ -238,7 +238,7 @@ export const useEditorStore = defineStore('editor', () => {
   /* 阅读区现在该显示什么：生成中 / 出错 / 正文 */
   const streamingView = computed(() => s().streaming || Boolean(live.error));
 
-  /* 全屏编辑：整块成稿框铺满视口 */
+  /* 全屏：中间成稿框铺满视口，阅读和编辑都可用 */
   const editFs = ref(false);
   function setEditFs(on) {
     editFs.value = !!on;
@@ -253,7 +253,6 @@ export const useEditorStore = defineStore('editor', () => {
     if (st.mode === 'edit' && mode !== 'edit') {
       stopVoice();
       flushSave(true);      // 离开编辑就落盘，并留一版历史
-      setEditFs(false);
     }
     st.mode = mode;
     menus.sel = null;
