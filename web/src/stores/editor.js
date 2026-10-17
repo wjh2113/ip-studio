@@ -751,6 +751,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   async function downloadDocx() {
+    await flushSave(true);
     const st = s();
     const v = useVersionsStore();
     if (!st.draft?.id) return;
@@ -769,11 +770,20 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /* PDF 走浏览器打印。自己生成 PDF 要嵌中文字体，体积和复杂度都不划算；交给浏览器排版，断行和图片都是对的 */
-  function exportPdf() {
+  /* 打印时先露出阅读排版（编辑框在打印样式里是藏掉的），加粗和颜色才进得了 PDF */
+  const printing = ref(false);
+  async function exportPdf() {
+    await flushSave(true);
+    printing.value = true;
     toolHint.value = '打印窗口里选「目标：另存为 PDF」';
-    setTimeout(() => { window.print(); }, 60);
-    setTimeout(() => { toolHint.value = ''; }, 6000);
+    await nextTick();
+    const done = () => {
+      printing.value = false;
+      toolHint.value = '';
+      window.removeEventListener('afterprint', done);
+    };
+    window.addEventListener('afterprint', done);
+    window.print();
   }
 
   /* 换了一篇稿子：成稿区回到初始状态 */
@@ -804,7 +814,7 @@ export const useEditorStore = defineStore('editor', () => {
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,
     voice, voiceNote, toggleVoice, undoVoice, stopVoice,
-    archiveCurrent, toolHint, exporting, copy, download, downloadDocx, exportPdf,
+    archiveCurrent, toolHint, exporting, printing, copy, download, downloadDocx, exportPdf,
     reset,
   };
 });

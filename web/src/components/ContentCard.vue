@@ -88,13 +88,13 @@
 
       <article v-show="showArticle" class="content" id="content" ref="article" v-html="articleHtml"></article>
 
-      <RichEditor v-show="s.mode === 'edit'" ref="rich" :model-value="ed.text" :draft-id="s.draft?.id"
+      <RichEditor v-show="s.mode === 'edit' && !ed.printing" ref="rich" :model-value="ed.text" :draft-id="s.draft?.id"
         @update:model-value="onRichInput" @select="onRichSelect" @slash="onRichSlash" @hist="onRichHist" />
 
       <CuesPane v-if="s.mode === 'cue' && cueOk" />
 
       <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」、语音改稿 -->
-      <div v-if="s.mode === 'edit'" class="editor-bar" id="editorBar">
+      <div v-if="s.mode === 'edit' && !ed.printing" class="editor-bar" id="editorBar">
         <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字，点「改写」　·　输入 <kbd>/</kbd> → 续写</span>
         <span class="grow"></span>
         <div class="mark-dock" id="markDock">
@@ -304,7 +304,7 @@ const articleHtml = computed(() => {
 });
 
 // 编辑针对原文；口播模式下切到不做口播的平台版本（小红书、知乎这些）时只看那个版本的正文
-const showArticle = computed(() => s.streaming || s.mode === 'read' || (s.mode === 'cue' && !cueOk.value));
+const showArticle = computed(() => ed.printing || s.streaming || s.mode === 'read' || (s.mode === 'cue' && !cueOk.value));
 
 /* 成稿时参考了什么（服务端在生成成稿时记下的） */
 const ctx = computed(() => s.draft?.context || {});

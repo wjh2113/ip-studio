@@ -503,11 +503,14 @@ body.edit-fs-on .assist-pop { z-index: 100; }
 
 /* ---------- 导出 PDF：只留正文 ---------- */
 @media print {
-  .topbar, .sidebar, .steps, .toolbar, .head-stick, .work-side, .ver-tabs, .cues, .editor, .editor-bar, .onboard, .rev-pane, #historyFoot { display: none !important; }
+  .topbar, .sidebar, .steps, .toolbar, .head-stick, .work-side, .ver-tabs, .cues, .editor, .rich-editor, .rich-toolbar, .editor-bar, .onboard, .rev-pane, #historyFoot, .toast, .pop-menu, .assist-pop { display: none !important; }
   .layout, .work { display: block; }
   .main { max-width: none; padding: 0; }
   .card { border: 0; box-shadow: none; padding: 0; }
-  .content { font-size: 12pt; line-height: 1.8; max-width: none; }
+  #content { display: block !important; }
+  .content { font-size: 12pt; line-height: 1.8; max-width: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .content strong, .content b { font-weight: 700; }
   .content figure.illus { break-inside: avoid; }
   .content figure.illus.empty { display: none; }
+  .content img { max-width: 100%; }
 }

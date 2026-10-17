@@ -79,34 +79,67 @@ function emuSize(px) {
   return { cx, cy };
 }
 
-function runs(text, { bold = false, size = 21, color = '' } = {}) {
+function wordColor(c) {
+  let s = String(c || '').replace('#', '');
+  if (/^[0-9A-Fa-f]{3}$/.test(s)) s = s.split('').map((ch) => ch + ch).join('');
+  return /^[0-9A-Fa-f]{6}$/.test(s) ? s.toUpperCase() : '';
+}
+
+function runXml(text, { bold = false, italic = false, strike = false, size = 21, color = '' } = {}) {
+  if (!text) return '';
+  const rPr = `${bold ? '<w:b/>' : ''}${italic ? '<w:i/>' : ''}${strike ? '<w:strike/>' : ''}<w:sz w:val="${size}"/>${color ? `<w:color w:val="${color}"/>` : ''}`;
+  return `<w:r><w:rPr>${rPr}</w:rPr><w:t xml:space="preserve">${xml(text)}</w:t></w:r>`;
+}
+
+/* 加粗、斜体、删除线、颜色可以套在一起。颜色 span 里的 ** 仍是加粗，不把标签写进 Word */
+function runs(text, opt = {}) {
+  const src = String(text || '');
   const bits = [];
-  const re = /\*\*(.+?)\*\*/g;
-  let last = 0;
-  let m = re.exec(text);
-  const push = (s, b) => {
-    if (!s) return;
-    bits.push(`<w:r><w:rPr>${b || bold ? '<w:b/>' : ''}<w:sz w:val="${size}"/>${color ? `<w:color w:val="${color}"/>` : ''}</w:rPr><w:t xml:space="preserve">${xml(s)}</w:t></w:r>`);
-  };
-  while (m) {
-    push(text.slice(last, m.index), false);
-    push(m[1], true);
-    last = m.index + m[0].length;
-    m = re.exec(text);
+  let i = 0;
+  while (i < src.length) {
+    const rest = src.slice(i);
+    const span = rest.match(/^<span\s+style="color:\s*(#[0-9A-Fa-f]{3,6})\s*"\s*>([\s\S]*?)<\/span>/i);
+    if (span) {
+      bits.push(runs(span[2], { ...opt, color: wordColor(span[1]) || opt.color || '' }));
+      i += span[0].length;
+      continue;
+    }
+    const bold = rest.match(/^\*\*([\s\S]+?)\*\*/);
+    if (bold) {
+      bits.push(runs(bold[1], { ...opt, bold: true }));
+      i += bold[0].length;
+      continue;
+    }
+    const strike = rest.match(/^~~([\s\S]+?)~~/);
+    if (strike) {
+      bits.push(runs(strike[1], { ...opt, strike: true }));
+      i += strike[0].length;
+      continue;
+    }
+    const italic = rest.match(/^\*([^*\n]+)\*/);
+    if (italic) {
+      bits.push(runs(italic[1], { ...opt, italic: true }));
+      i += italic[0].length;
+      continue;
+    }
+    const next = rest.slice(1).search(/<span\s+style="color:|\*\*|~~|\*/i);
+    const take = next < 0 ? rest.length : next + 1;
+    bits.push(runXml(rest.slice(0, take), opt));
+    i += take;
   }
-  push(text.slice(last), false);
-  return bits.join('') || `<w:r><w:t></w:t></w:r>`;
+  return bits.join('');
 }
 
 function paragraph(text, opt = {}) {
-  const heading = /^#{1,3}\s+/.test(text);
-  const body = heading ? text.replace(/^#{1,3}\s+/, '') : text;
+  const heading = /^#{1,4}\s+/.test(text);
+  const body = heading ? text.replace(/^#{1,4}\s+/, '') : text;
   const align = opt.center ? '<w:jc w:val="center"/>' : '';
-  return `<w:p><w:pPr>${align}</w:pPr>${runs(body, {
+  const inner = runs(body, {
     bold: heading || opt.bold,
     size: heading ? 32 : (opt.size || 21),
     color: opt.color || '',
-  })}</w:p>`;
+  });
+  return `<w:p><w:pPr>${align}</w:pPr>${inner || '<w:r><w:t></w:t></w:r>'}</w:p>`;
 }
 
 function blocks(text) {
@@ -147,16 +180,7 @@ export async function buildDocx({ title, text, items, readImage }) {
   const parts = [];
   if (title) parts.push(paragraph(title, { bold: true, size: 36 }));
 
-  const emitText = (chunk) => {
-    for (const block of blocks(chunk)) parts.push(paragraph(block));
-  };
-
-  let from = 0;
-  const src = String(text || '');
-  for (const c of cuts) {
-    emitText(src.slice(from, c.at));
-    from = c.at + (c.skip || 0);
-    const file = c.item?.image?.file;
+  const embedFile = async (file, alt) => {
     const ext = extOf(file);
     const buf = file && (ext === 'png' || ext === 'jpg' || ext === 'jpeg') ? await readImage(file) : null;
     if (buf?.length) {
@@ -166,12 +190,51 @@ export async function buildDocx({ title, text, items, readImage }) {
       media.push({ name, data: buf, use });
       rels.push({ id: `rId${n}`, name });
       parts.push(drawing(n, `rId${n}`, name, imagePx(buf)));
-      if (c.item.alt) parts.push(paragraph(c.item.alt, { center: true, size: 18, color: '888888' }));
-    } else if (c.item) {
-      parts.push(paragraph(c.item.image ? '（这张图的格式写不进 Word）' : '（此处配图还没出）', { center: true, size: 18, color: '888888' }));
+      if (alt) parts.push(paragraph(alt, { center: true, size: 18, color: '888888' }));
+      return;
     }
+    parts.push(paragraph(file ? '（这张图的格式写不进 Word）' : '（此处配图还没出）', { center: true, size: 18, color: '888888' }));
+  };
+
+  const emitLine = async (line) => {
+    const imgRe = /!\[([^\]]*)\]\((\/image\/(\d+)\/([\w.-]+))\)/g;
+    let last = 0;
+    let m = imgRe.exec(line);
+    while (m) {
+      if (m.index > last) parts.push(paragraph(line.slice(last, m.index)));
+      await embedFile(`${m[3]}/${m[4]}`, m[1]);
+      last = m.index + m[0].length;
+      m = imgRe.exec(line);
+    }
+    const rest = line.slice(last);
+    if (!rest.trim() && last) return;
+    if (!rest.trim()) return;
+    let body = rest.trim();
+    const ul = body.match(/^[-*+]\s+(.*)$/);
+    const ol = body.match(/^(\d+)[.、)]\s+(.*)$/);
+    const bq = body.match(/^>\s?(.*)$/);
+    if (ul) body = ul[1];
+    else if (ol) body = `${ol[1]}. ${ol[2]}`;
+    else if (bq) body = bq[1];
+    parts.push(paragraph(body));
+  };
+
+  const emitText = async (chunk) => {
+    for (const block of blocks(chunk)) {
+      for (const line of block.split('\n')) await emitLine(line);
+    }
+  };
+
+  let from = 0;
+  const src = String(text || '');
+  for (const c of cuts) {
+    await emitText(src.slice(from, c.at));
+    from = c.at + (c.skip || 0);
+    const file = c.item?.image?.file;
+    if (file) await embedFile(file, c.item.alt || '');
+    else if (c.item) parts.push(paragraph('（此处配图还没出）', { center: true, size: 18, color: '888888' }));
   }
-  emitText(src.slice(from));
+  await emitText(src.slice(from));
   if (!parts.length) parts.push(paragraph(''));
 
   const body = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
