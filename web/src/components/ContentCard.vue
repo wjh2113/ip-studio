@@ -26,7 +26,7 @@
           <span class="mode-now" id="modeNow" :class="`m-${s.mode}`">{{ s.mode === 'edit' ? '编辑中' : s.mode === 'cue' ? '口播' : '阅读' }}</span>
         </div>
 
-        <!-- 三组：改稿 / 加工 / 收尾。每个功能只留一个主入口 -->
+        <!-- 两组：改稿（含导出、回填、归档）/ 加工。每个功能只留一个主入口 -->
         <div class="toolbar">
           <div class="tb-group" data-group="edit">
             <span class="tb-label">改稿</span>
@@ -34,17 +34,6 @@
             <button v-else class="btn ghost small" id="editBtn" :disabled="s.streaming" @click="ed.setMode('edit')"><Icon name="pen" :size="14" />修改</button>
             <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见：小改只换句子，动结构才整篇重写" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
             <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
-          </div>
-          <div class="tb-group" data-group="craft">
-            <span class="tb-label">加工</span>
-            <button class="btn ghost small" id="titlesBtn" :disabled="actDisabled('titles')" title="按不同写法出 6 个候选" @click="confirmAct('titles')"><Icon name="tag" :size="14" />起标题</button>
-            <button class="btn ghost small" id="multiBtn" :disabled="actDisabled('multi')" @click="confirmAct('multi')"><Icon name="layers" :size="14" />多平台</button>
-            <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
-            <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
-            <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
-          </div>
-          <div class="tb-group" data-group="wrap">
-            <span class="tb-label">收尾</span>
             <div class="menu-wrap">
               <button class="btn ghost small" id="exportBtn" aria-haspopup="true" @click.stop="toggleMenu('export')"><Icon name="download" :size="14" />导出<Icon name="chev-down" :size="13" /></button>
               <div v-if="menu === 'export'" class="menu narrow" id="exportMenu">
@@ -58,6 +47,14 @@
             </div>
             <button class="btn ghost small" id="metricsBtn" :disabled="!s.draft?.content" @click="confirmAct('metrics')"><Icon name="chart" :size="14" />回填数据</button>
             <button class="btn ghost small" id="archiveBtn" :disabled="actDisabled('archive')" @click="confirmAct('archive')"><Icon name="archive" :size="14" />归档</button>
+          </div>
+          <div class="tb-group" data-group="craft">
+            <span class="tb-label">加工</span>
+            <button class="btn ghost small" id="titlesBtn" :disabled="actDisabled('titles')" title="按不同写法出 6 个候选" @click="confirmAct('titles')"><Icon name="tag" :size="14" />起标题</button>
+            <button class="btn ghost small" id="multiBtn" :disabled="actDisabled('multi')" @click="confirmAct('multi')"><Icon name="layers" :size="14" />多平台</button>
+            <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
+            <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
+            <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
           </div>
           <span class="grow"></span>
           <span class="hint" id="toolHint">{{ ed.progressLabel || ed.toolHint }}</span>

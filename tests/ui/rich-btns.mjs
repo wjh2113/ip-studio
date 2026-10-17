@@ -177,6 +177,13 @@ await step('检查按钮', async () => {
 
 await step('导出菜单各格式入口', async () => {
   if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
+  const placed = await page.$eval('[data-group="edit"]', (g) => {
+    const ids = [...g.querySelectorAll('button')].map((b) => b.id).filter(Boolean);
+    const at = (id) => ids.indexOf(id);
+    return at('reviewBtn') < at('exportBtn') && at('exportBtn') < at('metricsBtn') && at('metricsBtn') < at('archiveBtn');
+  });
+  if (!placed) throw new Error('导出、回填、归档应排在检查后面');
+  if (await page.$('[data-group="wrap"]')) throw new Error('不该再有单独的收尾行');
   await page.click('#exportBtn');
   await page.waitForSelector('#exportMenu');
   for (const fmt of ['copy', 'md', 'html', 'docx', 'pdf']) {
