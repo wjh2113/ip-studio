@@ -205,11 +205,13 @@ test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行�
   assert.match(r.text, /event: done/);
 });
 
-test('AI 味扫描：不调模型，直接回规则命中', async () => {
+test('AI 味扫描：调模型并合并规则命中', async () => {
   const r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: '在当今快节奏的时代，备菜至关重要。\n\n让我们一起加油，未来可期！' });
   assert.equal(r.status, 200, r.text);
-  assert.ok(r.data.flags.some((f) => f.rule === 'cliche-open'));
-  assert.ok(r.data.flags.some((f) => f.rule === 'uplift'));
+  assert.ok(r.data.flags.some((f) => f.source === '模型'), `应有模型条：${JSON.stringify(r.data.flags)}`);
+  assert.ok(r.data.flags.some((f) => f.rule === 'cliche-open' || f.rule === 'uplift' || f.rule === 'ai-words'),
+    `应并上规则：${JSON.stringify(r.data.flags.map((f) => f.rule))}`);
+  assert.ok(r.data.flags.every((f) => !f.quote || '在当今快节奏的时代，备菜至关重要。\n\n让我们一起加油，未来可期！'.includes(f.quote)));
   assert.equal((await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: ' ' })).status, 400);
 });
 

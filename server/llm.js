@@ -39,6 +39,7 @@ export const FEATURE_TIER = {
   题材推荐: 'fast',
   热点比对: 'fast',
   成稿检查: 'fast',
+  AI味扫描: 'fast',
   口播提示: 'fast',
   图文配图方案: 'fast',
   标题候选: 'fast',

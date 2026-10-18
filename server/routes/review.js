@@ -3,10 +3,13 @@ import { createHash } from 'node:crypto';
 import { Drafts, Frameworks, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
-import { platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser } from '../prompts.js';
+import {
+  AI_TONE_SCHEMA, AI_TONE_SYSTEM, aiToneUser,
+  platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser,
+} from '../prompts.js';
 import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
 import { mergeLexicon } from '../lexicon.js';
-import { mergeAiTone, scanAiTone } from '../aitone.js';
+import { combineAiTone, mergeAiTone } from '../aitone.js';
 import { copyOverlap } from '../frameworks.js';
 
 const textHash = (text) => createHash('sha256').update(String(text || '')).digest('hex');
@@ -46,16 +49,51 @@ export async function handleReview(req, res, body, params) {
   json(res, 200, { review: { ...review, version } });
 }
 
-/* AI 味扫描：只跑规则，不调模型、不花额度，随时可以点。POST /api/drafts/:id/ai-tone */
+/* AI 味扫描：快档模型看说法和节奏，再并本地规则（硬词、三件套）。POST /api/drafts/:id/ai-tone */
 export async function handleAiTone(req, res, body, params) {
   const user = await requireUser(req);
   const draft = await Drafts.byId(Number(params.id), user.id);
   if (!draft) throw new HttpError(404, '记录不存在');
-  const text = String(body?.content ?? draft.content ?? '');
-  if (!text.trim()) throw new HttpError(400, '还没有正文可扫');
+
+  const version = String(body?.version || '');
+  if (version && !draft.variants?.[version]) throw new HttpError(404, '还没有这个平台的版本');
+  const own = version ? draft.variants[version].content : draft.content;
+  const text = String(body?.content ?? own ?? '').trim();
+  if (!text) throw new HttpError(400, '还没有正文可扫');
   if (text.length > 20000) throw new HttpError(400, '正文过长，请分段扫');
-  json(res, 200, { flags: scanAiTone(text) });
+
+  const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
+  const samples = await styleSamples(persona, user.id, `${draft.subject} ${draft.title || ''}`);
+  const data = await withRetry(async () => {
+    const out = await generateJSON({
+      meta: { feature: 'AI味扫描', userId: user.id },
+      system: sys('ai-tone', AI_TONE_SYSTEM),
+      user: aiToneUser(text, persona, samples),
+      schema: AI_TONE_SCHEMA,
+      mock: () => mockAiTone(text),
+    });
+    if (!out || !Array.isArray(out.flags)) throw new HttpError(502, '返回结构不对');
+    return out;
+  }, 'AI 味扫描失败，请再试一次');
+
+  json(res, 200, { flags: combineAiTone(text, data.flags), version });
 }
+
+const mockAiTone = (text) => {
+  const src = String(text || '');
+  if (/在当今|至关重要|赋能|未来可期|让我们一起/.test(src)) {
+    const quote = ['至关重要', '在当今快节奏的时代', '赋能', '未来可期', '让我们一起'].find((q) => src.includes(q)) || '';
+    return {
+      flags: [{
+        level: '中',
+        quote,
+        what: '演示模式：这段说法偏通稿腔，像模板填出来的',
+        suggestion: '换成具体的人、事或数字，删掉空泛大词',
+      }],
+    };
+  }
+  return { flags: [] };
+};
 
 async function reviewText(draft, text, persona, samples, meta = {}) {
   const data = await withRetry(async () => {

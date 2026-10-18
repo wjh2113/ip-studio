@@ -122,7 +122,57 @@ export function scanAiTone(text) {
   return flags.sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level)).slice(0, 12);
 }
 
-/* 并进成稿检查的结果：模型已经报过同一处的不重复 */
+/* 模型 flags → 和规则扫同形；quote 对不上原文的丢掉；凑数句丢掉。 */
+export function cleanAiToneFlags(flags, text) {
+  const src = String(text || '');
+  const LEVELS = ['高', '中', '低'];
+  const PADDING = /((?<![不未没])符合|未涉及|不存在|没有明显|无明显|不涉及)[^，。；]{0,14}[，,、]?\s*(但|不过)/;
+  const seen = new Set();
+  return (Array.isArray(flags) ? flags : [])
+    .map((f) => ({
+      dimension: 'AI 味',
+      level: LEVELS.includes(f?.level) ? f.level : '中',
+      quote: String(f?.quote || '').trim(),
+      what: String(f?.what || '').trim(),
+      suggestion: String(f?.suggestion || '').trim(),
+      source: '模型',
+      rule: 'model',
+    }))
+    .filter((f) => {
+      if (!f.what || !f.suggestion || PADDING.test(f.what)) return false;
+      if (f.quote && !src.includes(f.quote)) return false;
+      const k = `${f.quote}|${f.what}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .map((f) => ({ ...f, locatable: Boolean(f.quote) && src.includes(f.quote) }))
+    .sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level))
+    .slice(0, 12);
+}
+
+function quoteOverlap(a, b) {
+  const x = String(a || '');
+  const y = String(b || '');
+  if (!x || !y) return false;
+  return x.includes(y) || y.includes(x);
+}
+
+/* 模型结果为主，规则扫补漏（硬词、三件套等）；同一处不重复。 */
+export function combineAiTone(text, modelFlags) {
+  const model = cleanAiToneFlags(modelFlags, text);
+  const rules = scanAiTone(text);
+  const out = [...model];
+  for (const r of rules) {
+    if (r.quote && out.some((g) => quoteOverlap(g.quote, r.quote))) continue;
+    if (!r.quote && out.some((g) => g.rule === r.rule && !g.quote)) continue;
+    out.push(r);
+  }
+  const order = ['高', '中', '低'];
+  return out.sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level)).slice(0, 12);
+}
+
+/* 并进成稿检查的结果：模型已经报过同一处的不重复（检查里只并规则扫，不另调模型） */
 export function mergeAiTone(review, text) {
   const tone = scanAiTone(text);
   if (!tone.length) return { ...review, aiTone: 0 };

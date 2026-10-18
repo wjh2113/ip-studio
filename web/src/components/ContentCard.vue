@@ -127,9 +127,9 @@
         <ReviewBox />
         <ToneBox />
         <template v-if="!review.open">
-          <p class="wp-text">错字、通顺、调性与风险；也可扫 AI 味（不花点数）。主入口在工具条「检查」。</p>
+          <p class="wp-text">错字、通顺、调性与风险；也可扫 AI 味（走模型，按文案点数计）。主入口在工具条「检查」。</p>
           <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!ed.text"
-            title="只看说法和结构，不调模型、不花点数" @click="review.scanTone()">扫 AI 味</BusyBtn>
+            title="用模型看说法和节奏像不像 AI，并并上本地硬词规则" @click="review.scanTone()">扫 AI 味</BusyBtn>
         </template>
       </WorkPanel>
       <WorkPanel title="版本对照" icon="clock" :active="s.revOpen || Boolean(ed.reviseCompare)" :badge="s.revOpen || ed.reviseCompare ? '展开中' : ''">

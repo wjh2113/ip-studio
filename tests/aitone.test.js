@@ -1,7 +1,7 @@
-/* AI 味扫描：规则命中、只看最后一段的升华、整体节奏；并进成稿检查时不重复、不抬风险等级 */
+/* AI 味扫描：规则命中、只看最后一段的升华、整体节奏；模型结果清洗与合并；并进成稿检查时不重复、不抬风险等级 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeAiTone, scanAiTone } from '../server/aitone.js';
+import { cleanAiToneFlags, combineAiTone, mergeAiTone, scanAiTone } from '../server/aitone.js';
 import { ASSIST_ACTIONS, ASSIST_SYSTEM, CONTENT_SYSTEM, HUMAN_STYLE } from '../server/prompts.js';
 
 const AI = `在当今快节奏的时代，很多事情都在变。
@@ -38,6 +38,23 @@ test('并进检查结果：模型报过的不重复，风险等级不变', () =>
   assert.equal(out.risk, '中');
   assert.equal(out.flags.filter((f) => f.quote === '在当今快节奏的时代').length, 1);
   assert.equal(out.aiTone, out.flags.length - 1);
+});
+
+test('模型 flags：quote 对不上丢掉；凑数句丢掉；和规则合并去重', () => {
+  const text = '在当今快节奏的时代，备菜至关重要。';
+  const cleaned = cleanAiToneFlags([
+    { level: '中', quote: '至关重要', what: '书面腔大词', suggestion: '换成具体变化' },
+    { level: '中', quote: '原文没有的话', what: '对不上', suggestion: 'x' },
+    { level: '低', quote: '', what: '符合平台规范，但可以更好', suggestion: '凑数' },
+  ], text);
+  assert.equal(cleaned.length, 1);
+  assert.equal(cleaned[0].source, '模型');
+  assert.equal(cleaned[0].quote, '至关重要');
+
+  const mixed = combineAiTone(text, [{ level: '中', quote: '至关重要', what: '模型也看到了', suggestion: '改' }]);
+  assert.ok(mixed.some((f) => f.source === '模型' && f.quote === '至关重要'));
+  assert.ok(mixed.some((f) => f.source === '规则' && f.rule === 'cliche-open'));
+  assert.equal(mixed.filter((f) => f.quote === '至关重要').length, 1);
 });
 
 test('成稿和改写的提示词带上去 AI 味的要求；划词菜单有「去 AI 味」', () => {

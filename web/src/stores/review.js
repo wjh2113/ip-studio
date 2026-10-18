@@ -127,7 +127,7 @@ export const useReviewStore = defineStore('review', () => {
     handled.add(i);
   }
 
-  /* AI 味扫描：只跑规则，不花点数，点了马上出结果。改哪句交给作者：选中它，划词菜单里点「去 AI 味」 */
+  /* AI 味扫描：快档模型 + 本地规则；改哪句交给作者：选中它，划词菜单里点「去 AI 味」 */
   const tone = reactive({ open: false, running: false, flags: null, error: '', version: '' });
   async function scanTone() {
     const s = useStudioStore();
@@ -140,7 +140,9 @@ export const useReviewStore = defineStore('review', () => {
     tone.running = true;
     tone.error = '';
     try {
-      const { flags } = await api(`/drafts/${draft.id}/ai-tone`, { method: 'POST', body: { content: text } });
+      const { flags } = await api(`/drafts/${draft.id}/ai-tone`, {
+        method: 'POST', body: { content: text, version: version || undefined },
+      });
       if (s.draft?.id === draft.id) tone.flags = flags;
     } catch (err) { tone.error = err.message; } finally { tone.running = false; }
   }

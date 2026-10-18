@@ -10,7 +10,7 @@ import { conf, save as saveSetting, status as settingsStatus } from '../settings
 import { hasKey } from '../secrets.js';
 import { mockContent, mockTopics } from '../mock.js';
 import {
-  ADAPT_SYSTEM, ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, CONTENT_SYSTEM, CUES_SCHEMA, CUES_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, ILLUS_SCHEMA, ILLUS_SYSTEM, PLATFORMS, REVIEW_SCHEMA, REVIEW_SYSTEM, SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TITLES_SCHEMA, TITLES_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, contentUser, topicsUser,
+  ADAPT_SYSTEM, AI_TONE_SCHEMA, AI_TONE_SYSTEM, ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS, CONTENT_SYSTEM, CUES_SCHEMA, CUES_SYSTEM, DEFAULT_PLATFORM, DEFAULT_TONE, DIGEST_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, ILLUS_SCHEMA, ILLUS_SYSTEM, PLATFORMS, REVIEW_SCHEMA, REVIEW_SYSTEM, SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM, SUBJECTS_SCHEMA, SUBJECTS_SYSTEM, TITLES_SCHEMA, TITLES_SYSTEM, TOPICS_SCHEMA, TOPICS_SYSTEM, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, contentUser, topicsUser,
 } from '../prompts.js';
 import { json, requireAdmin, sys } from './common.js';
 
@@ -185,6 +185,8 @@ const PROMPT_CATALOG = () => [
     system: sys('voice-edit', VOICE_EDIT_SYSTEM), schema: VOICE_EDIT_SCHEMA },
   { key: 'review', label: '成稿检查', where: '工具栏「检查」（正文未改过则复用上次结果）',
     system: sys('review', REVIEW_SYSTEM), schema: REVIEW_SCHEMA },
+  { key: 'ai-tone', label: 'AI 味扫描', where: '右栏「检查结果」→「扫 AI 味」；快档模型 + 本地规则',
+    system: sys('ai-tone', AI_TONE_SYSTEM), schema: AI_TONE_SCHEMA },
   { key: 'subjects', label: '题材推荐', where: '创作简报里的三条推荐题材',
     system: sys('subjects', SUBJECTS_SYSTEM), schema: SUBJECTS_SCHEMA },
   { key: 'hotspot', label: '热点比对', where: '热点板块：榜单 × 账号定位',

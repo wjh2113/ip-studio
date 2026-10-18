@@ -4,6 +4,7 @@ export * from './learning.js';
 export * from './content.js';
 export * from './assist.js';
 export * from './review.js';
+export * from './aitone.js';
 export * from './speak.js';
 export * from './publish.js';
 export * from './extract.js';

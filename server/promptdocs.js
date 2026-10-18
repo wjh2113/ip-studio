@@ -11,7 +11,7 @@ import {
   ADAPT_SYSTEM, ILLUS_SCHEMA, ILLUS_SYSTEM,
   ARTICLE_SUMMARY_SYSTEM, ASSIST_ACTIONS, ASSIST_SYSTEM, COMPOSE_ACTIONS,
   CONTENT_SYSTEM, CUES_SCHEMA, CUES_SYSTEM, DIGEST_SYSTEM,
-  HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM,
+  AI_TONE_SCHEMA, AI_TONE_SYSTEM, HOTSPOT_SCHEMA, HOTSPOT_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM,
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
@@ -194,6 +194,25 @@ export const PROMPT_DOCS = () => [
       '这两条是提示词反复调都压不住之后才加的——模型在"给点建议"的压力下一定会凑数',
     ],
     system: REVIEW_SYSTEM, schema: REVIEW_SCHEMA,
+  },
+  {
+    key: 'ai-tone', name: 'AI 味扫描', stage: 'polish', mode: '结构化输出',
+    where: '右栏「检查结果」里的「扫 AI 味」；和成稿检查分开点',
+    positioning: '专门抓「像不像人写的」。规则扫抓硬词；模型抓节奏、假共鸣、换词后的空话。',
+    value: [
+      '用户：成稿检查过了仍觉得「像 AI」，这里对准说法本身。',
+      '产品：和划词「去 AI 味」成对——这边标位置，那边就地重写。',
+    ],
+    logic: [
+      '输入：正文 + 账号设定 + 语气样本（有则对照）。',
+      '输出：flags（level / quote / what / suggestion）；服务端再并本地规则扫，去重后最多 12 条。',
+      'quote 对不上原文的丢掉；凑数句丢掉。',
+    ],
+    guards: [
+      '外部正文进 fence，不当指令',
+      '没问题允许空数组——硬凑会让用户关掉这个按钮',
+    ],
+    system: AI_TONE_SYSTEM, schema: AI_TONE_SCHEMA,
   },
   {
     key: 'digest', name: '语气档案', stage: 'polish', mode: '纯文本',

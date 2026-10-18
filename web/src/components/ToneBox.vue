@@ -9,6 +9,11 @@
     <p v-if="r.tone.error" class="form-error">{{ r.tone.error }}</p>
     <div v-for="(f, i) in r.tone.flags || []" :key="i" class="tone-item" :class="[`lv-${f.level}`, { locatable: f.quote }]" :data-tone="f.rule"
       :title="f.quote ? '点一下，在左边原文里定位到这句' : null" @click="f.quote && ed.locate(f.quote, { ver: r.tone.version || '' })">
+      <div class="flag-top">
+        <span class="flag-level">{{ f.level }}</span>
+        <span v-if="f.source === '规则'" class="flag-src" title="本地硬词/结构规则命中">规则</span>
+        <span v-else-if="f.source === '模型'" class="flag-src" title="模型看说法和节奏">模型</span>
+      </div>
       <p class="tone-what">{{ f.what }}</p>
       <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」</p>
       <p class="flag-fix">建议：{{ f.suggestion }}</p>
@@ -28,6 +33,6 @@ const ed = useEditorStore();
 const head = computed(() => {
   if (r.tone.running) return '正在扫…';
   if (!r.tone.flags) return '';
-  return r.tone.flags.length ? `找到 ${r.tone.flags.length} 处像 AI 写的地方（只看说法和结构，不花点数）` : '没找到明显的 AI 腔，挺好';
+  return r.tone.flags.length ? `找到 ${r.tone.flags.length} 处像 AI 写的地方` : '没找到明显的 AI 腔，挺好';
 });
 </script>
