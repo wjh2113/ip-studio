@@ -8,7 +8,8 @@
  *   - 用 ips_id 认文件；「我的笔记」标记以下不改。
  * 素材怎么同步：
  *   - pull：GET /api/export/materials；push：POST /api/export/materials；
- *   - 用 ips_material_id 认文件；只扫设置里的素材文件夹。
+ *   - 用 ips_material_id 认文件；只扫设置里的素材文件夹；
+ *   - 正文里的收件箱图（ips-inbox:）下到配图文件夹并嵌入；推回时还原成「图片：/api/inbox/files/…」。
  *
  * 写成不用编译的 CommonJS（obsidian 模块由 Obsidian 运行时提供）。 */
 'use strict';
@@ -105,8 +106,18 @@ function demote(md, n) {
   }).join('\n');
 }
 
-function linkImages(md, local) {
-  return String(md || '').replace(/!\[[^\]]*\]\(ips-image:([^)\s]+)\)/g, (all, name) => (local[name] ? `![[${local[name]}]]` : ''));
+function linkImages(md, local, scheme = 'ips-image') {
+  const re = new RegExp(`!\\[[^\\]]*\\]\\(${scheme}:([^)\\s]+)\\)`, 'g');
+  return String(md || '').replace(re, (all, name) => (local[name] ? `![[${local[name]}]]` : ''));
+}
+
+/* 推回助手：把本地下载的嵌入和未解析的 ips-inbox 占位还原成「图片：」行，网页素材库才能继续认图 */
+function materialBodyForPush(body) {
+  return String(body || '')
+    .replace(/!\[\[[^\]]*ips-mat-\d+-([\w.-]+)\]\]/g, '图片：/api/inbox/files/$1')
+    .replace(/!\[[^\]]*\]\(ips-inbox:([^)\s]+)\)/g, '图片：/api/inbox/files/$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function renderNote(item, local, { includeVariants }) {
@@ -119,8 +130,8 @@ function renderNote(item, local, { includeVariants }) {
   return `${parts.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-function renderMaterialNote(item) {
-  const body = String(item.markdown != null ? item.markdown : item.body || '').trim();
+function renderMaterialNote(item, local = {}) {
+  const body = linkImages(String(item.markdown != null ? item.markdown : item.body || '').trim(), local, 'ips-inbox');
   return `${materialFrontmatter(item)}\n\n${body}\n`;
 }
 
@@ -367,8 +378,9 @@ class IpStudioSync extends Plugin {
     for (let guard = 0; guard < 1000; guard += 1) {
       const res = await this.request(exportUrl(this.settings, this.state.materialCursor, 'materialsPath', DEFAULTS.materialsPath));
       const data = res.json || JSON.parse(res.text);
+      const base = res.url || baseUrl;
       for (const item of data.items || []) {
-        await this.writeMaterialItem(item, stat);
+        await this.writeMaterialItem(item, base, stat);
         this.state.materialCursor = `${item.updatedAt}|${item.id}`;
       }
       if (data.cursor) this.state.materialCursor = data.cursor;
@@ -397,7 +409,7 @@ class IpStudioSync extends Plugin {
         id: id || undefined,
         kind: parsed.kind,
         title: parsed.title,
-        body: parsed.body,
+        body: materialBodyForPush(parsed.body),
         tags: parsed.tags,
       });
       meta.push({ file: f, hash });
@@ -416,14 +428,16 @@ class IpStudioSync extends Plugin {
     const res = await this.request(url, { method: 'POST', body: { items: batch } });
     const data = res.json || JSON.parse(res.text);
     const results = data.results || [];
+    const base = res.url || url;
     for (let i = 0; i < results.length; i += 1) {
       const r = results[i];
       const m = meta[i];
       if (!r?.ok || !r.material || !m) continue;
       stat.matPushed += 1;
       const mat = r.material;
+      const local = await this.downloadImages(mat, base, stat, 'ips-mat');
       const old = await this.app.vault.read(m.file);
-      const next = mergeNotes(renderMaterialNote(mat), old);
+      const next = mergeNotes(renderMaterialNote(mat, local), old);
       if (next !== old) await this.app.vault.modify(m.file, next);
       this.state.materialFiles[mat.id] = {
         path: m.file.path,
@@ -447,7 +461,7 @@ class IpStudioSync extends Plugin {
     }
   }
 
-  async downloadImages(item, base, stat) {
+  async downloadImages(item, base, stat, filePrefix = 'ips') {
     const local = {};
     const all = [...(item.images || []), ...(this.settings.includeVariants ? (item.variants || []).flatMap((v) => v.images || []) : [])];
     if (!all.length) return local;
@@ -455,7 +469,7 @@ class IpStudioSync extends Plugin {
     await this.ensureFolder(dir);
     for (const img of all) {
       if (local[img.name]) continue;
-      const path = normalizePath(`${dir}/ips-${item.id}-${safeName(img.name, 120)}`);
+      const path = normalizePath(`${dir}/${filePrefix}-${item.id}-${safeName(img.name, 120)}`);
       if (!this.app.vault.getAbstractFileByPath(path)) {
         let res;
         try {
@@ -524,7 +538,7 @@ class IpStudioSync extends Plugin {
     this.state.files[item.id] = path;
   }
 
-  async writeMaterialItem(item, stat) {
+  async writeMaterialItem(item, base, stat) {
     const folder = normalizePath(this.settings.materialFolder || DEFAULTS.materialFolder);
     await this.ensureFolder(folder);
     let path = normalizePath(`${folder}/${materialNoteName(item)}.md`);
@@ -532,7 +546,8 @@ class IpStudioSync extends Plugin {
     const taken = this.app.vault.getAbstractFileByPath(path);
     if (taken && taken !== file) path = normalizePath(`${folder}/${materialNoteName(item)} (${item.id}).md`);
 
-    const fresh = renderMaterialNote(item);
+    const local = await this.downloadImages(item, base, stat, 'ips-mat');
+    const fresh = renderMaterialNote(item, local);
     const prev = this.state.materialFiles[item.id];
 
     if (!file) {
@@ -698,5 +713,5 @@ module.exports = IpStudioSync;
 module.exports.helpers = {
   safeName, frontmatter, materialFrontmatter, demote, linkImages, renderNote, renderMaterialNote,
   mergeNotes, noteFolder, noteName, materialNoteName, exportUrl, parseMaterialNote, bodyAboveNotes,
-  contentHash, conflictLocalPath, NOTES_MARK, NOTES_HEAD, DEFAULTS,
+  materialBodyForPush, contentHash, conflictLocalPath, NOTES_MARK, NOTES_HEAD, DEFAULTS,
 };

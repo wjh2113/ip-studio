@@ -1,7 +1,7 @@
 {
   "id": "ip-studio-sync",
   "name": "自媒体助手同步",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.4.0",
   "description": "把自媒体助手的成稿同步到知识库；素材库与指定文件夹双向同步。",
   "author": "jonny",

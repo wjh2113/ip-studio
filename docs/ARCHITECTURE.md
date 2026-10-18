@@ -127,9 +127,10 @@ flowchart LR
 | GET | `/api/export/materials?cursor=&limit=` | 素材增量导出；每条 `id / kind / title / body / markdown / tags[] / createdAt / updatedAt` |
 | POST | `/api/export/materials` | `{ items: [{ id?, kind, title, body, tags }] }`：有 id 则更新，无 id 则新建；回 `{ results: [{ ok, action, material }] }` |
 | GET | `/api/export/images/:name` | 同步密钥或登录态，只给本人 `data/images/<用户>/` 下的图 |
+| GET | `/api/export/inbox/:name` | 同步密钥或登录态，只给本人 `data/inbox/` 下、文件名带 `u<本人>-` 的收件箱图 |
 | GET | `/api/export/plugin/:file` | 公开：插件的 `main.js` / `manifest.json` / `styles.css`，网页「同步」里直接下载 |
 
-成稿 `markdown`：插图按 `shared/place.js` 放回原位，写成 `![说明](ips-image:文件名)`。素材用 frontmatter `ips_material_id`；冲突时插件拆「本机副本」并在下次推送新建。
+成稿 `markdown`：插图按 `shared/place.js` 放回原位，写成 `![说明](ips-image:文件名)`。素材把「图片：/api/inbox/files/…」写成 `![图片](ips-inbox:文件名)` 并附 `images[]`；冲突时插件拆「本机副本」并在下次推送新建。
 
 ## 手机 App（mobile/）
 

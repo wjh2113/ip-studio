@@ -302,11 +302,11 @@ test('设置页能画出来；网页能下载插件文件', async () => {
   }
   const manifest = await (await fetch(`${BASE}/api/export/plugin/manifest.json`)).json();
   assert.equal(manifest.id, 'ip-studio-sync');
-  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.version, '0.2.1');
   assert.equal((await fetch(`${BASE}/api/export/plugin/..%2Fpackage.json`)).status, 404);
 });
 
-test('素材：导出接口 + 插件 pull/push；冲突拆本机副本', async () => {
+test('素材：导出接口 + 插件 pull/push；冲突拆本机副本；收件箱图下载嵌入', async () => {
   assert.equal(H.conflictLocalPath('素材库/甲.md'), '素材库/甲 (本机副本).md');
   const parsed = H.parseMaterialNote('---\nips_material_id: 9\nkind: "文章"\ntitle: "标题"\ntags:\n  - "案例"\nsource: 自媒体助手·素材\n---\n\n正文一段\n\n## 我的笔记\n' + H.NOTES_MARK + '\n\n笔记');
   assert.equal(parsed.id, 9);
@@ -314,11 +314,35 @@ test('素材：导出接口 + 插件 pull/push；冲突拆本机副本', async (
   assert.equal(parsed.title, '标题');
   assert.deepEqual(parsed.tags, ['案例']);
   assert.equal(parsed.body, '正文一段');
+  assert.equal(
+    H.materialBodyForPush('见下\n\n![[自媒体助手/附件/ips-mat-9-u1-0123456789abcdef.png]]\n'),
+    '见下\n\n图片：/api/inbox/files/u1-0123456789abcdef.png',
+  );
 
-  const mat = await D.Materials.create(uid, { kind: '文章', title: '大理攻略素材', body: '洱海边别去太早', tags: '旅行，案例' });
+  const inboxName = `u${uid}-${'ab'.repeat(12)}.png`;
+  await mkdir(join(process.env.DATA_DIR, 'inbox'), { recursive: true });
+  await writeFile(join(process.env.DATA_DIR, 'inbox', inboxName), Buffer.from(PNG, 'base64'));
+  const mat = await D.Materials.create(uid, {
+    kind: '图片', title: '大理攻略素材',
+    body: `洱海边别去太早\n图片：/api/inbox/files/${inboxName}`,
+    tags: '旅行，案例',
+  });
   const listed = await api('/api/export/materials?limit=50', { token: key });
   assert.equal(listed.status, 200, JSON.stringify(listed.data));
-  assert.ok(listed.data.items.some((x) => x.id === mat.id && x.title === '大理攻略素材'));
+  const exported = listed.data.items.find((x) => x.id === mat.id);
+  assert.ok(exported, JSON.stringify(listed.data));
+  assert.equal(exported.title, '大理攻略素材');
+  assert.deepEqual(exported.images, [{ name: inboxName, alt: '图片', url: `/api/export/inbox/${inboxName}` }]);
+  assert.match(exported.markdown, new RegExp(`!\\[图片\\]\\(ips-inbox:${inboxName}\\)`));
+  assert.ok(!exported.markdown.includes('图片：/api/'), exported.markdown);
+
+  const imgFetch = await fetch(`${BASE}/api/export/inbox/${inboxName}`, { headers: { Authorization: `Bearer ${key}` } });
+  assert.equal(imgFetch.status, 200);
+  assert.equal(Buffer.from(await imgFetch.arrayBuffer()).toString('base64'), PNG);
+
+  // 别人的用户号前缀 → 403；坏文件名 → 400
+  assert.equal((await fetch(`${BASE}/api/export/inbox/u999999-${'cd'.repeat(12)}.png`, { headers: { Authorization: `Bearer ${key}` } })).status, 403);
+  assert.equal((await api('/api/export/inbox/not-a-valid-name.png', { token: key })).status, 400);
 
   const created = await api('/api/export/materials', {
     method: 'POST', token: key,
@@ -335,15 +359,24 @@ test('素材：导出接口 + 插件 pull/push；冲突拆本机副本', async (
   const stat = await p.syncNow();
   assert.ok(stat, p.state.lastResult);
   assert.ok(stat.matCreated >= 1 || stat.matPushed >= 0, JSON.stringify(stat));
+  assert.ok(stat.images >= 1, JSON.stringify(stat));
   const note = app.vault.getMarkdownFiles().find((f) => f.path.startsWith('素材库/') && f.content.includes('ips_material_id: ' + mat.id));
   assert.ok(note, [...app.vault.files.keys()].join('\n'));
   assert.match(note.content, /洱海边别去太早/);
+  const attach = `自媒体助手/附件/ips-mat-${mat.id}-${inboxName}`;
+  assert.ok(app.vault.files.has(attach), [...app.vault.files.keys()].join('\n'));
+  assert.ok(note.content.includes(`![[${attach}]]`), note.content);
+  assert.ok(!note.content.includes('ips-inbox:'), note.content);
 
   // 两边都改 → 冲突拆副本
   note.content = note.content.replace('洱海边别去太早', '本机改过的正文');
   p.state.materialFiles[mat.id].hash = H.contentHash(H.bodyAboveNotes(note.content.replace('本机改过的正文', '洱海边别去太早')));
   p.state.materialFiles[mat.id].syncedUpdatedAt = '2000-01-01T00:00:00.000Z';
-  await D.Materials.update(mat.id, uid, { kind: '文章', title: '大理攻略素材', body: '助手这边又改了', tags: '旅行，案例' });
+  await D.Materials.update(mat.id, uid, {
+    kind: '图片', title: '大理攻略素材',
+    body: `助手这边又改了\n图片：/api/inbox/files/${inboxName}`,
+    tags: '旅行，案例',
+  });
   p.state.materialCursor = '';
   await p.save();
   const again = await p.syncNow();

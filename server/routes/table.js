@@ -163,5 +163,6 @@ export const ROUTES = [
   ['GET', /^\/api\/export\/materials$/, R.handleExportMaterials],
   ['POST', /^\/api\/export\/materials$/, R.handleImportMaterials],
   ['GET', /^\/api\/export\/images\/(?<name>[^/]+)$/, R.handleExportImage],
+  ['GET', /^\/api\/export\/inbox\/(?<name>[^/]+)$/, R.handleExportInbox],
   ['GET', /^\/api\/export\/plugin\/(?<file>[\w.-]+)$/, R.handlePluginFile],
 ];

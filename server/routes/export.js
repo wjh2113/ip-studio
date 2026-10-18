@@ -22,6 +22,7 @@ const KEY_PREFIX = 'ips_';
 const KEY_MAX = 5;
 const PAGE_MAX = 100;
 const FILE_RE = /^[\w.-]+\.(png|jpe?g|webp|svg)$/i;   // svg 是演示模式的占位图
+const INBOX_NAME_RE = /^u(\d+)-[a-f0-9]{16,64}\.(jpg|png)$/i;  // 素材收件箱图
 const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml' };
 
 export const hashKey = (key) => createHash('sha256').update(String(key)).digest('hex');
@@ -168,18 +169,49 @@ async function dropMissingImages(userId, items) {
 
 const splitTags = (tags) => String(tags || '').split(/[,，、\s]+/).map((t) => t.trim()).filter(Boolean);
 
+/* 正文里的「图片：/api/inbox/files/…」→ Obsidian 占位 + 待下载列表（与成稿 ips-image 同思路） */
 export function exportMaterialItem(row) {
   const body = String(row.body || '');
+  const images = [];
+  const markdown = body
+    .replace(/(^|\n)图片：\s*(?:https?:\/\/[^\s/]+)?(\/api\/inbox\/files\/([\w.-]+))/g, (all, lead, _path, name) => {
+      if (!INBOX_NAME_RE.test(name)) return all;
+      if (!images.some((x) => x.name === name)) {
+        images.push({ name, alt: '图片', url: `/api/export/inbox/${encodeURIComponent(name)}` });
+      }
+      return `${lead}\n![图片](ips-inbox:${name})\n`;
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return {
     id: row.id,
     kind: row.kind,
     title: String(row.title || '').trim() || `素材 ${row.id}`,
     body,
-    markdown: body,
+    markdown,
+    images,
     tags: splitTags(row.tags),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/* 服务器上已经没有的收件箱图：从 images 里拿掉，插件就不会去下（占位符会在嵌入时被去掉） */
+async function filterMaterialImages(items) {
+  const seen = new Map();
+  const exists = async (name) => {
+    if (seen.has(name)) return seen.get(name);
+    try {
+      await access(join(DATA_DIR, 'inbox', name));
+      seen.set(name, true);
+    } catch {
+      seen.set(name, false);
+    }
+    return seen.get(name);
+  };
+  for (const it of items) {
+    it.images = (await Promise.all((it.images || []).map(async (img) => ((await exists(img.name)) ? img : null)))).filter(Boolean);
+  }
 }
 
 /* GET /api/export/materials —— 素材增量导出 */
@@ -189,10 +221,12 @@ export async function handleExportMaterials(req, res, body, params, url) {
   const limit = Math.min(PAGE_MAX, Math.max(1, Number(url?.searchParams.get('limit')) || 50));
   const rows = await exportMaterials(user.id, { afterAt, afterId, limit: limit + 1 });
   const page = rows.slice(0, limit);
+  const items = page.map(exportMaterialItem);
+  await filterMaterialImages(items);
   const last = page[page.length - 1];
   json(res, 200, {
     user: user.username,
-    items: page.map(exportMaterialItem),
+    items,
     cursor: last ? `${last.updated_at}|${last.id}` : (afterAt ? `${afterAt}|${afterId}` : ''),
     more: rows.length > limit,
   });
@@ -228,7 +262,7 @@ export async function handleImportMaterials(req, res, body) {
   json(res, 200, { results });
 }
 
-/* 插图：只给密钥主人自己的图 */
+/* 成稿插图：只给密钥主人自己的图 */
 export async function handleExportImage(req, res, body, params) {
   const user = await requireExportUser(req);
   const name = decodeURIComponent(params.name || '');
@@ -241,6 +275,28 @@ export async function handleExportImage(req, res, body, params) {
   }
   res.writeHead(200, {
     'Content-Type': IMAGE_TYPES[name.split('.').pop().toLowerCase()] || 'application/octet-stream',
+    'Content-Length': data.length,
+    'Cache-Control': 'private, max-age=86400',
+  });
+  res.end(data);
+}
+
+/* 素材收件箱图：同步密钥可读，文件名必须是本人的 u<用户号>-… */
+export async function handleExportInbox(req, res, body, params) {
+  const user = await requireExportUser(req);
+  const name = decodeURIComponent(params.name || '');
+  const m = name.match(INBOX_NAME_RE);
+  if (!m) throw new HttpError(400, '文件名不对');
+  if (Number(m[1]) !== user.id) throw new HttpError(403, '不能看别人的图片');
+  let data;
+  try {
+    data = await readFile(join(DATA_DIR, 'inbox', name));
+  } catch {
+    throw new HttpError(404, '图片不存在');
+  }
+  const ext = name.split('.').pop().toLowerCase();
+  res.writeHead(200, {
+    'Content-Type': IMAGE_TYPES[ext] || 'application/octet-stream',
     'Content-Length': data.length,
     'Cache-Control': 'private, max-age=86400',
   });
