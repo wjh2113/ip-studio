@@ -15,7 +15,7 @@ import { json, requireUser } from './common.js';
  * 素材归用户、不挂账号；写作召回看该用户全部素材。
  * ================================================================== */
 
-const BODY_MAX = 15000;
+export const BODY_MAX = 15000;
 
 /* 按题材召回素材。
  *
@@ -58,12 +58,17 @@ export async function handleMaterialList(req, res, body, params) {
   json(res, 200, { materials: await Materials.list(user.id), kinds: MATERIAL_KINDS });
 }
 
-const cleanMaterial = (b) => ({
-  kind: MATERIAL_KINDS.includes(b?.kind) ? b.kind : MATERIAL_KINDS[0],
-  title: String(b?.title || '').trim().slice(0, 80),
-  body: String(b?.body || '').trim().slice(0, BODY_MAX),
-  tags: String(b?.tags || '').trim().slice(0, 200),
-});
+export const cleanMaterial = (b) => {
+  const tagsRaw = Array.isArray(b?.tags)
+    ? b.tags.map((t) => String(t || '').trim()).filter(Boolean).join('，')
+    : String(b?.tags || '');
+  return {
+    kind: MATERIAL_KINDS.includes(b?.kind) ? b.kind : MATERIAL_KINDS[0],
+    title: String(b?.title || '').trim().slice(0, 80),
+    body: String(b?.body || '').trim().slice(0, BODY_MAX),
+    tags: tagsRaw.trim().slice(0, 200),
+  };
+};
 
 /* POST /api/materials —— 不挂账号 */
 export async function handleMaterialCreateUser(req, res, body) {

@@ -376,3 +376,11 @@ export async function exportDrafts(userId, { afterAt = '', afterId = 0, limit = 
   }
   return list;
 }
+
+/* 导出：素材库，按 (updated_at, id) 增量翻页（给 Obsidian 双向同步） */
+export async function exportMaterials(userId, { afterAt = '', afterId = 0, limit = 50 } = {}) {
+  return orm().select().from(materials).where(and(
+    eq(materials.user_id, userId),
+    sql`(${materials.updated_at}, ${materials.id}) > (${afterAt}, ${afterId})`,
+  )).orderBy(asc(materials.updated_at), asc(materials.id)).limit(limit);
+}

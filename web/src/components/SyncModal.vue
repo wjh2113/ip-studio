@@ -1,11 +1,11 @@
 <template>
-  <Modal id="syncModal" :open="sync.show" title="同步到 Obsidian" sub="成稿定期写进你的 Obsidian 知识库，配图一起下载" close-id="syncClose"
+  <Modal id="syncModal" :open="sync.show" title="同步到 Obsidian" sub="成稿写入知识库；素材库与插件里自选的文件夹双向同步" close-id="syncClose"
     @update:open="(v) => !v && sync.close()">
     <div class="sync-body">
       <ol class="sync-steps">
         <li>
           <b>装插件</b>：下载下面三个文件，放进知识库的 <code>.obsidian/plugins/ip-studio-sync/</code> 文件夹，
-          再到 Obsidian「设置 → 第三方插件」里打开「自媒体助手同步」。
+          再到 Obsidian「设置 → 第三方插件」里打开「自媒体助手同步」。已装过的请覆盖更新到 0.2。
           <div class="sync-files">
             <a v-for="f in FILES" :key="f" class="btn ghost small" :href="`/api/export/plugin/${f}`" :download="f"><Icon name="download" :size="14" />{{ f }}</a>
           </div>
@@ -16,7 +16,10 @@
             <button type="button" class="mini" @click="copy(origin, '已复制服务器地址')"><Icon name="copy" :size="13" />复制</button></span>
         </li>
         <li>
-          <b>填同步密钥</b>：在下面生成一把，复制到插件设置里。密钥只能读成稿，不能改内容、不扣额度，随时可以作废。
+          <b>填同步密钥</b>：在下面生成一把，复制到插件设置里。密钥可读写素材同步、只读成稿；不能登录、不扣额度，随时可作废。
+        </li>
+        <li>
+          <b>素材文件夹</b>：在插件设置里填写（默认 <code>素材库</code>），只同步该目录下的 <code>.md</code>。两边都改过同一条时会拆成「本机副本」+ 助手版，不互相覆盖。
         </li>
       </ol>
 

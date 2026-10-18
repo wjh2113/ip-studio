@@ -1,21 +1,21 @@
-/* 路由 · export：同步密钥与成稿导出（给 Obsidian 插件这类只读客户端）。
+/* 路由 · export：同步密钥与成稿 / 素材导出（给 Obsidian 插件）。
  *
  * 为什么不直接用登录令牌：App 的 Bearer 令牌 14 天过期，挂在电脑上定时同步的插件过两周就断。
  * 同步密钥长期有效、随时可作废，**只能调 /api/export/***（currentUser 不认它），
- * 所以密钥泄露了也只能读到成稿，改不了东西、扣不了额度。服务端只存 sha256。
+ * 不能登录网页、不能扣额度。成稿接口只读；素材接口可读可写（双向同步）。服务端只存 sha256。
  *
  * 导出按 (updated_at, id) 增量翻页：客户端记住上一页最后一条的 cursor，下次只拿之后改过的。
- * 正文直接给 Obsidian 能用的 Markdown：插图放回原位，写成 ![说明](ips-image:文件名)，
- * 客户端把图下载到自己的附件目录后替换成本地路径。 */
+ * 成稿正文给 Obsidian Markdown：插图放回原位，写成 ![说明](ips-image:文件名)。 */
 import { createHash, randomBytes } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DATA_DIR, Personas, SyncKeys, exportDrafts } from '../db.js';
+import { DATA_DIR, Materials, Personas, SyncKeys, exportDrafts, exportMaterials } from '../db.js';
 import { fromRoot } from '../paths.js';
 import { HttpError, currentUser } from '../auth.js';
 import { PLATFORMS } from '../prompts.js';
 import { placeCuts } from '../../shared/place.js';
 import { extractTags } from './mobile.js';
+import { cleanMaterial } from './materials.js';
 import { json, requireUser } from './common.js';
 
 const KEY_PREFIX = 'ips_';
@@ -164,6 +164,68 @@ async function dropMissingImages(userId, items) {
     it.images = await keep(it.images);
     for (const v of it.variants) v.images = await keep(v.images);
   }
+}
+
+const splitTags = (tags) => String(tags || '').split(/[,，、\s]+/).map((t) => t.trim()).filter(Boolean);
+
+export function exportMaterialItem(row) {
+  const body = String(row.body || '');
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: String(row.title || '').trim() || `素材 ${row.id}`,
+    body,
+    markdown: body,
+    tags: splitTags(row.tags),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/* GET /api/export/materials —— 素材增量导出 */
+export async function handleExportMaterials(req, res, body, params, url) {
+  const user = await requireExportUser(req);
+  const { afterAt, afterId } = parseCursor(url);
+  const limit = Math.min(PAGE_MAX, Math.max(1, Number(url?.searchParams.get('limit')) || 50));
+  const rows = await exportMaterials(user.id, { afterAt, afterId, limit: limit + 1 });
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  json(res, 200, {
+    user: user.username,
+    items: page.map(exportMaterialItem),
+    cursor: last ? `${last.updated_at}|${last.id}` : (afterAt ? `${afterAt}|${afterId}` : ''),
+    more: rows.length > limit,
+  });
+}
+
+/* POST /api/export/materials —— 插件把 Obsidian 里的素材推回来（新建或按 id 更新） */
+export async function handleImportMaterials(req, res, body) {
+  const user = await requireExportUser(req);
+  const list = Array.isArray(body?.items) ? body.items : null;
+  if (!list?.length) throw new HttpError(400, '没有要同步的素材');
+  if (list.length > PAGE_MAX) throw new HttpError(400, `一次最多 ${PAGE_MAX} 条`);
+
+  const results = [];
+  for (const raw of list) {
+    const m = cleanMaterial(raw);
+    if (!m.title || !m.body) {
+      results.push({ ok: false, error: '标题和内容都不能为空', id: raw?.id || null });
+      continue;
+    }
+    const id = Number(raw?.id);
+    if (Number.isInteger(id) && id > 0) {
+      const out = await Materials.update(id, user.id, m);
+      if (!out) {
+        results.push({ ok: false, error: '素材不存在', id });
+        continue;
+      }
+      results.push({ ok: true, action: 'updated', material: exportMaterialItem(out) });
+    } else {
+      const created = await Materials.create(user.id, m);
+      results.push({ ok: true, action: 'created', material: exportMaterialItem(created) });
+    }
+  }
+  json(res, 200, { results });
 }
 
 /* 插图：只给密钥主人自己的图 */

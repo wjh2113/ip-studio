@@ -464,6 +464,7 @@ test('同步密钥：只回一次明文、列表不带密钥、最多 5 把、�
   assert.equal((await k.call('GET', '/api/today')).status, 401);
   assert.equal((await k.call('GET', '/api/sync-keys')).status, 401);
   assert.equal((await k.call('GET', '/api/export/drafts')).status, 200);
+  assert.equal((await k.call('GET', '/api/export/materials')).status, 200);
   assert.equal((await client({ token: 'ips_' + '0'.repeat(40) }).call('GET', '/api/export/drafts')).status, 401);
   assert.equal((await client().call('GET', '/api/export/drafts')).status, 401);
 

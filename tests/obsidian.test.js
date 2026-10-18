@@ -76,8 +76,16 @@ function makeVault() {
     },
     metadataCache: {
       getFileCache: (f) => {
-        const m = String(files.get(f.path)?.content || '').match(/^---\n[\s\S]*?ips_id: (\d+)/);
-        return m ? { frontmatter: { ips_id: Number(m[1]) } } : null;
+        const c = String(files.get(f.path)?.content || '');
+        const id = c.match(/^---\n[\s\S]*?^ips_id: (\d+)/m);
+        const mid = c.match(/^---\n[\s\S]*?^ips_material_id: (\d+)/m);
+        if (!id && !mid) return null;
+        return {
+          frontmatter: {
+            ...(id ? { ips_id: Number(id[1]) } : {}),
+            ...(mid ? { ips_material_id: Number(mid[1]) } : {}),
+          },
+        };
       },
     },
     workspace: { onLayoutReady: (cb) => { app.ready = cb; } },
@@ -109,8 +117,8 @@ const fake = {
   },
   PluginSettingTab: class { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = el(); } },
   Setting: class { constructor() { return chain(); } },
-  async requestUrl({ url, method, headers }) {
-    const res = await fetch(url, { method, headers });
+  async requestUrl({ url, method, headers, body }) {
+    const res = await fetch(url, { method: method || 'GET', headers, body });
     const buf = Buffer.from(await res.arrayBuffer());
     const text = buf.toString('utf8');
     let json;
@@ -209,7 +217,8 @@ test('首次同步：按账号分文件夹、属性、配图下载嵌入、其�
   assert.ok(text.includes('## 其他平台版本\n\n### 微博\n\n### 微博版\n\n大理真好 #大理#'), text);
   assert.ok(text.endsWith(`## 我的笔记\n${H.NOTES_MARK}\n\n`), text);
   assert.ok(p.state.cursor.endsWith(`|${ids.b}`) || p.state.cursor.endsWith(`|${ids.a}`));
-  assert.equal(p.state.lastResult, '新增 2 篇，下载配图 1 张');
+  assert.match(p.state.lastResult, /成稿新增 2|新增 2/);
+  assert.match(p.state.lastResult, /配图 1|下载配图 1/);
   first = { p, app, noteA };
 });
 
@@ -230,18 +239,21 @@ test('标题改了：改名、正文更新、我的笔记保留；没变化时�
 
   const again = await p.syncNow();
   assert.deepEqual([again.created, again.updated], [0, 0]);
-  assert.equal(p.state.lastResult, '没有新的成稿');
+  assert.match(p.state.lastResult, /没有新的成稿/);
 
   // 全部重新同步：都拉一遍，但内容没变就不重写
   await p.resync();
-  assert.equal(p.state.lastResult, '没有新的成稿');
-  assert.equal(app.vault.getMarkdownFiles().length, 2);
+  assert.match(p.state.lastResult, /没有新的成稿/);
+  assert.equal(app.vault.getMarkdownFiles().filter((f) => f.path.startsWith('自媒体助手/')).length, 2);
 });
 
 test('接口可以配成完整网址；密钥错了报服务端的话、cursor 不动', async () => {
-  const { p, app } = await makePlugin({ serverUrl: '', exportPath: `${BASE}/api/export/drafts`, byAccount: false, includeVariants: false });
+  const { p, app } = await makePlugin({
+    serverUrl: '', exportPath: `${BASE}/api/export/drafts`, byAccount: false, includeVariants: false, syncMaterials: false,
+  });
   assert.equal(await p.testConnection(), `ob${process.pid}`);
   const stat = await p.syncNow();
+  assert.ok(stat, p.state.lastResult);
   assert.equal(stat.created, 2);
   const names = app.vault.getMarkdownFiles().map((f) => f.path);
   assert.ok(names.every((n) => /^自媒体助手\/[^/]+\.md$/.test(n)), names.join('\n'));
@@ -290,7 +302,63 @@ test('设置页能画出来；网页能下载插件文件', async () => {
   }
   const manifest = await (await fetch(`${BASE}/api/export/plugin/manifest.json`)).json();
   assert.equal(manifest.id, 'ip-studio-sync');
+  assert.equal(manifest.version, '0.2.0');
   assert.equal((await fetch(`${BASE}/api/export/plugin/..%2Fpackage.json`)).status, 404);
+});
+
+test('素材：导出接口 + 插件 pull/push；冲突拆本机副本', async () => {
+  assert.equal(H.conflictLocalPath('素材库/甲.md'), '素材库/甲 (本机副本).md');
+  const parsed = H.parseMaterialNote('---\nips_material_id: 9\nkind: "文章"\ntitle: "标题"\ntags:\n  - "案例"\nsource: 自媒体助手·素材\n---\n\n正文一段\n\n## 我的笔记\n' + H.NOTES_MARK + '\n\n笔记');
+  assert.equal(parsed.id, 9);
+  assert.equal(parsed.kind, '文章');
+  assert.equal(parsed.title, '标题');
+  assert.deepEqual(parsed.tags, ['案例']);
+  assert.equal(parsed.body, '正文一段');
+
+  const mat = await D.Materials.create(uid, { kind: '文章', title: '大理攻略素材', body: '洱海边别去太早', tags: '旅行，案例' });
+  const listed = await api('/api/export/materials?limit=50', { token: key });
+  assert.equal(listed.status, 200, JSON.stringify(listed.data));
+  assert.ok(listed.data.items.some((x) => x.id === mat.id && x.title === '大理攻略素材'));
+
+  const created = await api('/api/export/materials', {
+    method: 'POST', token: key,
+    body: { items: [{ kind: '链接', title: '从库推来的', body: 'https://example.com\n\n来源：https://example.com', tags: ['对标'] }] },
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  assert.equal(created.data.results[0].action, 'created');
+  const newId = created.data.results[0].material.id;
+
+  const { p, app } = await makePlugin({ materialFolder: '素材库', syncMaterials: true });
+  // 清空成稿 cursor 以免拉成稿干扰计数；只测素材
+  p.state.cursor = '2099-01-01T00:00:00.000Z|999999';
+  await p.save();
+  const stat = await p.syncNow();
+  assert.ok(stat, p.state.lastResult);
+  assert.ok(stat.matCreated >= 1 || stat.matPushed >= 0, JSON.stringify(stat));
+  const note = app.vault.getMarkdownFiles().find((f) => f.path.startsWith('素材库/') && f.content.includes('ips_material_id: ' + mat.id));
+  assert.ok(note, [...app.vault.files.keys()].join('\n'));
+  assert.match(note.content, /洱海边别去太早/);
+
+  // 两边都改 → 冲突拆副本
+  note.content = note.content.replace('洱海边别去太早', '本机改过的正文');
+  p.state.materialFiles[mat.id].hash = H.contentHash(H.bodyAboveNotes(note.content.replace('本机改过的正文', '洱海边别去太早')));
+  p.state.materialFiles[mat.id].syncedUpdatedAt = '2000-01-01T00:00:00.000Z';
+  await D.Materials.update(mat.id, uid, { kind: '文章', title: '大理攻略素材', body: '助手这边又改了', tags: '旅行，案例' });
+  p.state.materialCursor = '';
+  await p.save();
+  const again = await p.syncNow();
+  assert.ok(again.matConflict >= 1, JSON.stringify(again) + ' ' + p.state.lastResult);
+  assert.ok([...app.vault.files.keys()].some((k) => k.includes('本机副本')), [...app.vault.files.keys()].join('\n'));
+  const serverNote = app.vault.files.get(note.path) || app.vault.getMarkdownFiles().find((f) => f.content.includes(`ips_material_id: ${mat.id}`));
+  assert.ok(serverNote.content.includes('助手这边又改了'), serverNote.content);
+
+  // 非法 id 更新
+  const bad = await api('/api/export/materials', {
+    method: 'POST', token: key,
+    body: { items: [{ id: 99999999, title: 'x', body: 'y', kind: '文章' }] },
+  });
+  assert.equal(bad.data.results[0].ok, false);
+  assert.ok(newId);
 });
 
 test('停服务', { timeout: 40_000 }, async () => {

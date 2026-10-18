@@ -160,6 +160,8 @@ export const ROUTES = [
   ['POST', /^\/api\/sync-keys$/, R.handleSyncKeyCreate],
   ['DELETE', /^\/api\/sync-keys\/(?<kid>\d+)$/, R.handleSyncKeyDelete],
   ['GET', /^\/api\/export\/drafts$/, R.handleExportDrafts],
+  ['GET', /^\/api\/export\/materials$/, R.handleExportMaterials],
+  ['POST', /^\/api\/export\/materials$/, R.handleImportMaterials],
   ['GET', /^\/api\/export\/images\/(?<name>[^/]+)$/, R.handleExportImage],
   ['GET', /^\/api\/export\/plugin\/(?<file>[\w.-]+)$/, R.handlePluginFile],
 ];
