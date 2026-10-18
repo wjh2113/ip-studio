@@ -134,7 +134,7 @@ const rows = computed(() => {
   return sp.history.filter((x) => (x.title || '').toLowerCase().includes(needle));
 });
 
-watch(() => [s.view, s.personaId], ([view]) => { if (view === 'speak') sp.loadPage(); });
+watch(() => [s.view, s.personaId], ([view]) => { if (view === 'speak') sp.loadPage(); }, { immediate: true });
 
 const tone = (x) => (x.score == null ? '' : x.score >= 80 ? 'good' : x.score >= 60 ? 'mid' : 'low');
 const scoreLabel = (x) => {

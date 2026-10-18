@@ -152,7 +152,7 @@ watch(() => s.view, async (view) => {
   listError.value = '';
   platform.value = brief.form.platform || '';
   try { await fw.loadAll(); } catch (err) { listError.value = err.message; }
-});
+}, { immediate: true });
 
 const visible = computed(() => {
   const p = platform.value;

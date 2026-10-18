@@ -1,5 +1,6 @@
 /* HTTP 服务：Fastify 接请求。业务处理函数仍直接写 Node 的响应（流式成稿、支付原文、上传都靠这个）。 */
 import Fastify from 'fastify';
+import { sendMedia } from './media.js';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { loadEnv } from './env.js';
@@ -308,17 +309,8 @@ async function serveOwned(path, prefix, dir, req, res) {
     return;
   }
 
-  try {
-    const data = await readFile(join(DATA_DIR, dir, String(user.id), name));
-    res.writeHead(200, {
-      'Content-Type': MEDIA_TYPES[name.split('.').pop()] || 'application/octet-stream',
-      'Content-Length': data.length,
-      'Cache-Control': 'private, max-age=3600',
-    });
-    res.end(data);
-  } catch {
-    res.writeHead(404).end('Not Found');
-  }
+  await sendMedia(join(DATA_DIR, dir, String(user.id), name),
+    MEDIA_TYPES[name.split('.').pop()] || 'application/octet-stream', req, res);
 }
 
 /* 页面都是 Vite 构建出来的（npm run build:web → dist/），各页面一个 HTML：

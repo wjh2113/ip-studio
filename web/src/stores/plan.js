@@ -16,11 +16,21 @@ export const usePlanStore = defineStore('plan', () => {
   const show = ref(false);
   const focus = ref(false);        // 撞到额度上限弹出来时，滚到套餐那里
 
-  async function load() {
-    try {
-      data.value = await api('/plan');
-      quota.value = data.value.quota;
-    } catch { /* 拿不到就不显示，不影响别的 */ }
+  let loading = null;
+  let refreshAgain = false;
+  function load() {
+    if (loading) { refreshAgain = true; return loading; }
+    loading = (async () => {
+      do {
+        refreshAgain = false;
+        try {
+          const next = await api('/plan');
+          data.value = next;
+          quota.value = next.quota;
+        } catch { /* 拿不到就不显示，不影响别的 */ }
+      } while (refreshAgain);
+    })().finally(() => { loading = null; });
+    return loading;
   }
 
   async function open(toPlans = false) {
@@ -35,29 +45,32 @@ export const usePlanStore = defineStore('plan', () => {
   const payInfo = ref(null);       // /api/pay：{ live, channels }
   const channel = ref('wechat');
   let timer = 0;
+  let payVersion = 0;
 
   function closePay() {
-    clearInterval(timer);
+    clearTimeout(timer);
+    payVersion += 1;
     timer = 0;
     pay.value = null;
   }
 
   /* 点套餐 = 下单。开通是「订单支付成功」的副作用，不在这里直接改状态 */
   async function startPay(kind, sku, label) {
-    if (!payInfo.value) {
-      try { payInfo.value = (await api('/pay')).pay; } catch { toast('支付未就绪'); return; }
-    }
     closePay();
+    const version = payVersion;
+    const selectedChannel = channel.value;
     pay.value = { title: `购买 ${label}`, kind, sku, label, order: null, error: '', waiting: true, timeout: false };
     try {
+      if (!payInfo.value) payInfo.value = (await api('/pay')).pay;
+      if (version !== payVersion) return;
       const o = await api('/pay/order', {
-        method: 'POST', body: { [kind === 'pack' ? 'pack' : 'plan']: sku, channel: channel.value },
+        method: 'POST', body: { [kind === 'pack' ? 'pack' : 'plan']: sku, channel: selectedChannel },
       });
-      if (!pay.value || pay.value.sku !== sku) return;
+      if (version !== payVersion) return;
       pay.value.order = o;
-      watchOrder(o.no);
+      watchOrder(o.no, version);
     } catch (err) {
-      if (pay.value) { pay.value.error = err.message; pay.value.waiting = false; }
+      if (version === payVersion && pay.value) { pay.value.error = err.message; pay.value.waiting = false; }
     }
   }
 
@@ -76,26 +89,27 @@ export const usePlanStore = defineStore('plan', () => {
   }
 
   /* 轮询：3 秒一次，5 分钟不成就停——一直转下去只会白耗请求 */
-  function watchOrder(no) {
-    let n = 0;
-    timer = setInterval(async () => {
-      n += 1;
-      if (n > 100) {
-        clearInterval(timer);
+  function watchOrder(no, version) {
+    const deadline = Date.now() + 5 * 60_000;
+    async function poll() {
+      if (version !== payVersion) return;
+      if (Date.now() >= deadline) {
         if (pay.value) { pay.value.waiting = false; pay.value.timeout = true; }
         return;
       }
       try {
         const { order, quota: q } = await api(`/pay/order/${no}`);
+        if (version !== payVersion) return;
         if (order.status === 'granted' || order.status === 'paid') {
-          clearInterval(timer);
           quota.value = q;
-          closePay();
           await open();
           toast('支付成功，已开通');
+          return;
         }
       } catch { /* 网络抖一下不算失败，下次再问 */ }
-    }, 3000);
+      if (version === payVersion) timer = setTimeout(poll, 3000);
+    }
+    timer = setTimeout(poll, 3000);
   }
 
   /* 关上面板时订单还在盯：付完了会自动开通、重新打开面板告诉他 */
@@ -104,7 +118,11 @@ export const usePlanStore = defineStore('plan', () => {
   }
 
   // 花过点数就刷新余额；撞到 402 把面板顶出来——这一刻正是最愿意付费的时候，得把选项摆在面前
-  on('spent', () => { if (useStudioStore().user) load(); });
+  let refreshTimer = 0;
+  on('spent', () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { if (useStudioStore().user) void load(); }, 250);
+  });
   on('quota', (d) => {
     toast(d?.message || '额度不够了');
     open(true);

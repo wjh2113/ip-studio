@@ -210,7 +210,7 @@ function shortPlat(label = '') {
 }
 
 // 进热点板块、或者在热点板块里换了账号：把这个号上次的结果和榜单摆出来
-watch(() => [s.view, s.personaId], ([view]) => { if (view === 'hot') h.open(); });
+watch(() => [s.view, s.personaId], ([view]) => { if (view === 'hot') h.open(); }, { immediate: true });
 
 function runManual() {
   const text = manual.value.trim();

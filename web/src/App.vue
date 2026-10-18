@@ -14,10 +14,10 @@
       <!-- 宽度按步骤走，见 .main[data-step] -->
       <main class="main" id="main" :data-step="s.view === 'write' ? s.step : undefined" :data-view="s.view">
         <WriteView />
-        <HotView />
-        <SpeakView />
-        <MaterialsView />
-        <FrameworksView />
+        <HotView v-if="visited.has('hot')" />
+        <SpeakView v-if="visited.has('speak')" />
+        <MaterialsView v-if="visited.has('library')" />
+        <FrameworksView v-if="visited.has('frameworks')" />
       </main>
     </div>
   </div>
@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useStudioStore } from './stores/studio.js';
 import { useLayoutStore } from './stores/layout.js';
 import Icon from './components/common/Icon.vue';
@@ -51,10 +51,10 @@ import AuthScreen from './components/AuthScreen.vue';
 import TopBar from './components/TopBar.vue';
 import Sidebar from './components/Sidebar.vue';
 import WriteView from './components/WriteView.vue';
-import HotView from './components/HotView.vue';
-import SpeakView from './components/SpeakView.vue';
-import MaterialsView from './components/MaterialsView.vue';
-import FrameworksView from './components/FrameworksView.vue';
+const HotView = defineAsyncComponent(() => import('./components/HotView.vue'));
+const SpeakView = defineAsyncComponent(() => import('./components/SpeakView.vue'));
+const MaterialsView = defineAsyncComponent(() => import('./components/MaterialsView.vue'));
+const FrameworksView = defineAsyncComponent(() => import('./components/FrameworksView.vue'));
 import SelMenu from './components/SelMenu.vue';
 import SlashMenu from './components/SlashMenu.vue';
 import AssistPop from './components/AssistPop.vue';
@@ -74,6 +74,8 @@ import Toast from './components/common/Toast.vue';
 import AskDialog from './components/common/AskDialog.vue';
 
 const s = useStudioStore();
+const visited = ref(new Set());
+watch(() => s.view, (view) => { visited.value.add(view); }, { immediate: true });
 const layout = useLayoutStore();
 // 左栏只在创作页收起；热点、口播、素材库照常显示
 const sideFolded = computed(() => layout.side && s.view === 'write');

@@ -352,7 +352,7 @@ const pageList = computed(() => {
 
 watch(() => s.view, (view) => {
   if (view === 'library') lib.open();
-});
+}, { immediate: true });
 watch(() => lib.selectedId, () => { tagAdding.value = false; });
 
 /* ⌘K / Ctrl+K 聚焦搜索；点空白处关掉下拉 */
