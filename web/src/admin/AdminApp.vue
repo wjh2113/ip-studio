@@ -129,7 +129,7 @@
           <div class="table-wrap"><table v-if="d" class="admin-table" id="usersTable">
             <thead><tr>
               <th>用户</th><th>注册</th><th class="num">账号</th><th class="num">栏目</th>
-              <th class="num">创作</th><th class="num">已完成</th><th class="num">语气样本</th>
+              <th class="num">创作</th><th class="num">已成稿</th><th class="num">语气样本</th>
               <th class="num">调用</th><th class="num">Tokens</th><th>最近活动</th>
             </tr></thead>
             <tbody>
@@ -243,7 +243,7 @@ const stats = computed(() => {
   const fail = t.calls - t.okCalls;
   return [
     ['用户数', fmt(x.users.length), `${x.users.filter((u) => u.drafts > 0).length} 人有创作`],
-    ['创作总数', fmt(x.users.reduce((n, u) => n + u.drafts, 0)), `${fmt(x.users.reduce((n, u) => n + u.done_drafts, 0))} 篇已完成`],
+    ['创作总数', fmt(x.users.reduce((n, u) => n + u.drafts, 0)), `${fmt(x.users.reduce((n, u) => n + u.done_drafts, 0))} 篇已成稿`],
     ['模型调用', fmt(t.calls), fail ? `${fail} 次失败` : '全部成功'],
     ['Token 合计', fmtTokens(t.inputTokens + t.outputTokens), `入 ${fmtTokens(t.inputTokens)} / 出 ${fmtTokens(t.outputTokens)}`],
     ['平均耗时', `${(t.avgMs / 1000).toFixed(1)}s`, `近 ${x.days} 天`],

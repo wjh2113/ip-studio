@@ -181,7 +181,7 @@ test('按意见改：选中一段写自己的意见；整篇按意见重写（�
   assert.equal(r.status, 200, r.text);
 });
 
-test('贴已有稿：不调模型直接建成一篇已完成的稿子；标题取 # 行；之后能按意见重写', async () => {
+test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {
   let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
   assert.equal(r.status, 400);
   const usedBefore = (await api.call('GET', '/api/plan')).data;

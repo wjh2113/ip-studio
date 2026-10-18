@@ -95,7 +95,7 @@
       </div>
 
       <div class="history-foot" id="historyFoot" :class="{ hidden: s.historyMode === 'speaks' || s.showArchived || !h.counts.activeDone }">
-        <BusyBtn class="btn ghost small" id="archiveDoneBtn" :busy="h.archivingDone" @click="h.archiveDone()">把 {{ h.counts.activeDone }} 篇已完成的收起来</BusyBtn>
+        <BusyBtn class="btn ghost small" id="archiveDoneBtn" :busy="h.archivingDone" @click="h.archiveDone()">把 {{ h.counts.activeDone }} 篇已成稿的收起来</BusyBtn>
       </div>
       </div>
     </aside>

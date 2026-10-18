@@ -1,4 +1,4 @@
-// 左侧创作记录由 Vue 渲染：列表、计数、切换筛选、归档、删除、「把已完成的收起来」、口播记录分开放
+// 左侧创作记录由 Vue 渲染：列表、计数、切换筛选、归档、删除、「把已成稿的收起来」、口播记录分开放
 import { chromium } from 'playwright';
 const B = process.argv[2];
 const browser = await chromium.launch();
@@ -43,7 +43,7 @@ await step('点一篇 → 高亮', async () => {
   await page.waitForSelector('#history .history-item.active');
   return await page.textContent('#history .history-item.active h4');
 });
-await step('「把已完成的收起来」→ 2 篇进归档', async () => {
+await step('「把已成稿的收起来」→ 2 篇进归档', async () => {
   await page.waitForSelector('#historyFoot:not(.hidden)');
   const label = (await page.textContent('#archiveDoneBtn')).trim();
   await page.click('#archiveDoneBtn');

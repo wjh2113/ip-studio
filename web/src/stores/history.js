@@ -1,4 +1,4 @@
-/* 左侧的创作记录：进行中 / 已归档 / 口播三个筛选，归档、恢复、删除、「把已完成的收起来」。
+/* 左侧的创作记录：进行中 / 已归档 / 口播三个筛选，归档、恢复、删除、「把已成稿的收起来」。
  * 列表按当前账号过滤；「全部创作」时不过滤，并在每条上标出属于哪个号。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
@@ -9,7 +9,7 @@ import { useBriefStore } from './brief.js';
 import { useSpeakStore } from './speak.js';
 import { useFrameworksStore } from './frameworks.js';
 
-export const DRAFT_STATUS = { topics: '待选方向', writing: '生成中', done: '已完成' };
+export const DRAFT_STATUS = { topics: '待选方向', writing: '生成中', done: '已成稿' };
 
 export const useHistoryStore = defineStore('history', () => {
   const list = ref([]);
@@ -77,7 +77,7 @@ export const useHistoryStore = defineStore('history', () => {
   async function archiveDone() {
     const n = counts.activeDone;
     if (!n || archivingDone.value) return;
-    if (!await ask.confirm({ title: `把 ${n} 篇已完成的创作收进归档？`, body: '随时可以在「已归档」里恢复。', ok: '归档' })) return;
+    if (!await ask.confirm({ title: `把 ${n} 篇已成稿的创作收进归档？`, body: '随时可以在「已归档」里恢复。', ok: '归档' })) return;
     archivingDone.value = true;
     try {
       const s = useStudioStore();

@@ -280,7 +280,7 @@ export async function restoreAfterFailure(draftId, userId, before, index) {
 }
 
 /* ---------------- 贴已有稿：别处写好（或写了一半）的稿子直接进成稿页 ----------------
- * 不调模型、不花点数：建一篇状态是「已完成」的稿子，之后划词改、按意见重写、检查、多平台、口播都能用。
+ * 不调模型、不花点数：建一篇状态是「已成稿」的稿子，之后划词改、按意见重写、检查、多平台、口播都能用。
  * 标题不填时取正文第一行的 # 标题，再不行取第一句。没有选方向，所以 topics 为空、context 记 imported。 */
 export async function handleImport(req, res, body) {
   const user = await requireUser(req);
@@ -464,7 +464,7 @@ export async function handleArchive(req, res, body, params) {
   json(res, 200, { draft: await Drafts.byId(Number(params.id), user.id) });
 }
 
-/* 把当前范围内所有「已完成」的一次性收起来 */
+/* 把当前范围内所有「已成稿」的一次性收起来 */
 export async function handleArchiveDone(req, res, body) {
   const user = await requireUser(req);
   const raw = body?.persona_id;
