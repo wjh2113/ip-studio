@@ -9,6 +9,7 @@
 - 改完跑 `npm test`，不通过不提交。界面改动再跑 `npm run test:ui`（要先 `npm run build:web`，并装好 Playwright，见 `tests/ui/run.mjs`）。测试要本机 PostgreSQL 和 Redis（`DATABASE_URL`、`REDIS_URL`），每个测试进程用独立 schema、演示模式，不读 `.env`。
 - `npm test` 先跑 `scripts/check.js`：语法、ESM、`debugger`，以及 `scripts/check-async.js` 的「异步调用漏了 await」检查。数据层全是 async：调用一律 `await`，对结果 `.map` 要写成 `(await X()).map`；不要把不含 await 的函数写成 `async`。确实要不等的，写 `void f().catch(...)` 或在行尾加 `// no-await-ok`。
 - 接口改动要在 `tests/routes.test.js` 里补一条：它真的起服务、走 HTTP，单测覆盖不到的漏 await、返回结构不对都靠它拦。
+- **改功能必查使用手册**：用户可见行为变了（新能力、改流程、改限制、改文案含义），要核对并更新 `docs/USER-GUIDE.md`（`/guide` 直接读这份）。插件说明、网页「同步」弹窗等对外文案一并看一眼。没改到手册就不要声称功能已交付。
 - 不要读取、打印或提交 `.env` 和 `data/`。
 
 ## 后端
