@@ -61,12 +61,26 @@
       <span class="fmt-sep" />
       <button type="button" class="fmt-btn" id="rtImage" title="插入图片" @mousedown.prevent @click="run('image')"><Icon name="image" :size="16" /></button>
       <button type="button" class="fmt-btn" id="rtMark" title="插入「此处放图片」" @mousedown.prevent @click="run('mark')"><Icon name="layers" :size="16" /></button>
+      <span class="fmt-drop fmt-width" id="rtWidth">
+        <button type="button" class="fmt-btn fmt-caret fmt-width-btn" title="正文宽度（阅读和编辑共用）" @mousedown.prevent @click="toggle('width')">
+          {{ widthShort }}<Icon name="chev-down" :size="10" />
+        </button>
+        <div v-if="open === 'width'" class="fmt-pop" @mousedown.prevent>
+          <button
+            v-for="w in CONTENT_WIDTHS" :key="w.px" type="button"
+            :class="{ on: layout.contentWidth === w.px }"
+            :data-w="w.px"
+            @click="pickWidth(w.px)"
+          >{{ w.label }}</button>
+        </div>
+      </span>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, reactive, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue';
 import Icon from './common/Icon.vue';
+import { CONTENT_WIDTHS, useLayoutStore } from '../stores/layout.js';
 import { useEditorStore } from '../stores/editor.js';
 
 const THEME = ['#FFFFFF', '#1F2329', '#F4EFE6', '#1C2B4A', '#5C7A99', '#C4564A', '#6E7D45', '#7D6B86', '#2E6E6A', '#C56A2F'];
@@ -85,6 +99,7 @@ const SHADES = [0.82, 0.64, 0.46, 0.28, 0.12].flatMap((t) => THEME.map((c) => (
 )));
 
 const ed = useEditorStore();
+const layout = useLayoutStore();
 const color = ref('#333333');
 const open = ref('');
 const active = reactive({
@@ -92,6 +107,12 @@ const active = reactive({
   h1: false, h2: false, h3: false, h4: false,
   list: false, ol: false, quote: false, brush: false,
 });
+const widthShort = computed(() => (layout.contentWidth > 0 ? String(layout.contentWidth) : '满'));
+
+function pickWidth(px) {
+  layout.setContentWidth(px);
+  closeMenus();
+}
 
 function api() {
   return document.getElementById('editor')?._rich;

@@ -116,6 +116,21 @@ await step('工具条「放图标记」', async () => {
   return `${n} 处`;
 });
 
+await step('工具条：正文宽度可选', async () => {
+  await page.waitForSelector('#rtWidth');
+  const def = await page.$eval('#workMain', (el) => getComputedStyle(el).getPropertyValue('--content-w').trim());
+  if (def !== '760px') throw new Error(`默认宽度不是 760：${def}`);
+  await page.click('#rtWidth .fmt-width-btn');
+  await page.click('#rtWidth .fmt-pop [data-w="900"]');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#workMain')).getPropertyValue('--content-w').trim() === '900px');
+  const bodyMax = await page.$eval('.rich-body', (el) => getComputedStyle(el).maxWidth);
+  if (bodyMax !== '900px') throw new Error(`编辑区没跟着变宽：${bodyMax}`);
+  await page.click('#rtWidth .fmt-width-btn');
+  await page.click('#rtWidth .fmt-pop [data-w="760"]');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#workMain')).getPropertyValue('--content-w').trim() === '760px');
+  return '760→900→760';
+});
+
 await step('全屏编辑 / 退出', async () => {
   const next = await page.$eval('#modeNow', (el) => el.nextElementSibling?.id);
   if (next !== 'rtFullscreen') throw new Error('全屏按钮应在当前模式后面');
