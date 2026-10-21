@@ -122,6 +122,7 @@ export async function handleChatMark(req, res, body, params) {
   json(res, 200, { message: chatView({ ...m, ...data }) });
 }
 
+/* 兼容旧入口：改对话保存天数请走 PUT /api/settings */
 export async function handleChatKeep(req, res, body) {
   const user = await requireUser(req);
   const days = Number(body?.days);

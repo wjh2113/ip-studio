@@ -50,9 +50,34 @@ export const FEATURE_TIER = {
   文章要点: 'fast',
   改稿偏好: 'fast',
 };
-// 表里没有的功能：按调用方式给默认档；meta.channel === 'quality' 仍可单次指定
-const tierOf = (meta, fallback) => (meta.channel === 'quality' ? 'quality'
-  : FEATURE_TIER[String(meta.feature || '').replace(/^eval·/, '')] || fallback);
+/* 个人设置里的模型能力：auto = 仍按 FEATURE_TIER / channel；quality / fast = 全部强制该档。
+ * 改设置后 invalidateLlmPref，下次调用重新读库。 */
+const prefCache = new Map();
+export function invalidateLlmPref(userId) {
+  if (userId != null) prefCache.delete(Number(userId));
+}
+async function llmPrefOf(userId) {
+  if (!userId) return 'auto';
+  const id = Number(userId);
+  const hit = prefCache.get(id);
+  if (hit && Date.now() - hit.at < 30_000) return hit.pref;
+  try {
+    const { Users } = await import('./db.js');
+    const s = await Users.settings(id);
+    prefCache.set(id, { pref: s.llmPref, at: Date.now() });
+    return s.llmPref;
+  } catch {
+    return 'auto';
+  }
+}
+
+// 表里没有的功能：按调用方式给默认档；meta.channel === 'quality' 仍可单次指定（仅 auto 时）
+const tierOf = (meta, fallback) => {
+  if (meta.llmPref === 'quality' || meta.llmPref === 'fast') return meta.llmPref;
+  if (meta.channel === 'quality') return 'quality';
+  if (meta.channel === 'fast') return 'fast';
+  return FEATURE_TIER[String(meta.feature || '').replace(/^eval·/, '')] || fallback;
+};
 const modelFor = (tier) => (PROVIDER === 'anthropic' ? (tier === 'fast' ? ANTHROPIC_MODEL_FAST : ANTHROPIC_MODEL)
   : PROVIDER === 'openai' ? (tier === 'fast' ? OPENAI_MODEL_FAST : OPENAI_MODEL)
   : PROVIDER === 'gateway' ? (tier === 'fast' ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY)
@@ -175,8 +200,9 @@ async function tracked(meta, run) {
  * 结构化生成：返回符合 schema 的对象
  * ------------------------------------------------------------------ */
 export async function generateJSON({ system, user, schema, mock, meta = {} }) {
-  const tier = tierOf(meta, 'fast');
-  return tracked({ feature: 'unknown', ...meta, tier }, async () => {
+  const llmPref = meta.llmPref || await llmPrefOf(meta.userId);
+  const tier = tierOf({ ...meta, llmPref }, 'fast');
+  return tracked({ feature: 'unknown', ...meta, llmPref, tier }, async () => {
     if (PROVIDER === 'mock') return { value: mock(), usage: null };
 
     if (PROVIDER === 'anthropic') {
@@ -212,8 +238,9 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
  * 一次性文本生成（不流式）：用于语气档案这类短输出
  * ------------------------------------------------------------------ */
 export async function generateText({ system, user, mock, meta = {} }) {
-  const tier = tierOf(meta, 'quality');
-  return tracked({ feature: 'unknown', ...meta, tier }, async () => {
+  const llmPref = meta.llmPref || await llmPrefOf(meta.userId);
+  const tier = tierOf({ ...meta, llmPref }, 'quality');
+  return tracked({ feature: 'unknown', ...meta, llmPref, tier }, async () => {
     if (PROVIDER === 'mock') return { value: mock(), usage: null };
 
     if (PROVIDER === 'anthropic') {
@@ -242,8 +269,9 @@ export async function streamText({ system, user, onDelta, mock, signal, meta = {
   let sent = 0;
   const count = (text) => { sent += text.length; onDelta(text); };
   const inputChars = String(system || '').length + String(user || '').length;
-  const tier = tierOf(meta, 'quality');
-  return tracked({ feature: 'unknown', ...meta, inputChars, tier }, async () => {
+  const llmPref = meta.llmPref || await llmPrefOf(meta.userId);
+  const tier = tierOf({ ...meta, llmPref }, 'quality');
+  return tracked({ feature: 'unknown', ...meta, llmPref, inputChars, tier }, async () => {
     try {
       return await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId, tier });
     } catch (err) {

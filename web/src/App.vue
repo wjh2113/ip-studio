@@ -31,6 +31,7 @@
   <TitleModal />
   <PersonaPage />
   <ProfilePage />
+  <SettingsPage />
   <PlanModal />
   <MetricsModal />
   <InsightsModal />
@@ -64,6 +65,7 @@ import JobsModal from './components/JobsModal.vue';
 import TitleModal from './components/TitleModal.vue';
 import PersonaPage from './components/PersonaPage.vue';
 import ProfilePage from './components/ProfilePage.vue';
+import SettingsPage from './components/SettingsPage.vue';
 import PlanModal from './components/PlanModal.vue';
 import MetricsModal from './components/MetricsModal.vue';
 import InsightsModal from './components/InsightsModal.vue';

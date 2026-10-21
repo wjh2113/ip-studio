@@ -125,11 +125,15 @@ await step('检查结果「交给 AI 改」：切到工具 → 检查 → 点一
   if (!/检查提示/.test(said)) throw new Error(`发出去的话不对：${said}`);
   return said.slice(0, 24);
 });
-await step('话筒在输入框旁（不真开麦）；保存天数可改', async () => {
+await step('话筒在输入框旁（不真开麦）；个人设置可改保存天数', async () => {
   await page.waitForSelector('#chatMicBtn', { state: 'visible' });
-  await page.selectOption('#chatKeepSel', '365');
+  await page.click('#chatKeepLink');
+  await page.waitForSelector('#settingsPage:not(.hidden)');
+  await page.selectOption('#settingsKeepSel', '365');
   await page.waitForFunction(() => /对话记录保存 1 年/.test(document.querySelector('#toast')?.textContent || ''));
-  return '话筒在｜改成 1 年';
+  await page.click('#settingsCloseBtn');
+  await page.waitForSelector('#settingsPage.hidden');
+  return '话筒在｜个人设置改成 1 年';
 });
 await step('刷新后对话记录还在，应用过的显示「已应用」，保存天数也记住了', async () => {
   // 先应用一条局部改动，看刷新后状态在不在
@@ -143,7 +147,10 @@ await step('刷新后对话记录还在，应用过的显示「已应用」，�
   await page.waitForSelector('#chatPane', { state: 'visible' });
   await page.waitForFunction((k) => document.querySelectorAll('#chatLog .chat-msg').length === k, count);
   const done = await page.$$eval('#chatLog .chat-done', (els) => els.length);
-  const keep = await page.inputValue('#chatKeepSel');
+  await page.click('#chatKeepLink');
+  await page.waitForSelector('#settingsPage:not(.hidden)');
+  const keep = await page.inputValue('#settingsKeepSel');
+  await page.click('#settingsCloseBtn');
   if (keep !== '365') throw new Error(`保存天数没记住：${keep}`);
   if (applyBtn && !done) throw new Error('应用状态没记住');
   return `${count} 条｜已应用/已重写 ${done} 条`;

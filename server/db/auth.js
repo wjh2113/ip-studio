@@ -50,6 +50,9 @@ export const AdminSessions = {
   },
 };
 
+/* 个人设置 · 模型能力：auto = 按功能分档（默认）；quality = 尽量高质量；fast = 尽量快速省点 */
+export const LLM_PREF_CHOICES = ['auto', 'quality', 'fast'];
+
 export const Users = {
   async create(username, passHash) {
     return one(orm().insert(users).values({ username, pass_hash: passHash, created_at: now() }).returning());
@@ -67,6 +70,24 @@ export const Users = {
   async setPassword(id, passHash) {
     await orm().update(users).set({ pass_hash: passHash }).where(eq(users.id, id));
     return this.byId(id);
+  },
+  /* 个人设置：模型能力 + 对话保存天数 */
+  async settings(id) {
+    const row = await one(orm().select({
+      llm_pref: users.llm_pref,
+      chat_keep_days: users.chat_keep_days,
+    }).from(users).where(eq(users.id, id)));
+    return {
+      llmPref: LLM_PREF_CHOICES.includes(row?.llm_pref) ? row.llm_pref : 'auto',
+      chatKeepDays: row ? Number(row.chat_keep_days) : 100,
+    };
+  },
+  async setSettings(id, { llmPref, chatKeepDays }) {
+    const patch = {};
+    if (llmPref != null) patch.llm_pref = llmPref;
+    if (chatKeepDays != null) patch.chat_keep_days = chatKeepDays;
+    if (Object.keys(patch).length) await orm().update(users).set(patch).where(eq(users.id, id));
+    return this.settings(id);
   },
   async overview() {
     const list = await read(sql`

@@ -82,11 +82,7 @@
         <BusyBtn type="submit" class="btn primary small" id="chatSendBtn" :busy="c.busy" :disabled="!c.input.trim() || !canSend">发送</BusyBtn>
       </div>
       <div class="chat-meta">
-        <label class="chat-keep" title="超过这个天数的对话自动删掉；对你所有稿子的对话都生效">记录保存
-          <select id="chatKeepSel" :value="c.keepDays" @change="c.setKeep($event.target.value)">
-            <option v-for="k in KEEP_CHOICES" :key="k.days" :value="k.days">{{ k.label }}</option>
-          </select>
-        </label>
+        <button type="button" class="link-btn" id="chatKeepLink" title="在个人设置里改对话保存天数和模型能力" @click="settings.show()">个人设置</button>
         <span class="grow"></span>
         <button v-if="c.messages.length" type="button" class="link-btn" id="chatClearBtn" :disabled="c.busy" @click="clearAll">清空这篇的对话</button>
       </div>
@@ -98,10 +94,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
-import { CHAT_SUGGESTS, KEEP_CHOICES, useChatStore } from '../stores/chat.js';
+import { CHAT_SUGGESTS, useChatStore } from '../stores/chat.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useEditorStore } from '../stores/editor.js';
 import { useVersionsStore } from '../stores/versions.js';
+import { useSettingsStore } from '../stores/settings.js';
 import { ask } from '../lib/feedback.js';
 import { markdown } from '../lib/text.js';
 
@@ -109,6 +106,7 @@ const c = useChatStore();
 const s = useStudioStore();
 const ed = useEditorStore();
 const v = useVersionsStore();
+const settings = useSettingsStore();
 const log = ref(null);
 const input = ref(null);
 

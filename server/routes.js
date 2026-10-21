@@ -24,6 +24,7 @@
  * index.js 和测试仍然从这里 import，不用关心函数具体在哪个文件。 */
 export * from './routes/common.js';
 export * from './routes/auth.js';
+export * from './routes/settings.js';
 export * from './routes/prompts.js';
 export * from './routes/guide.js';
 export * from './routes/admin.js';

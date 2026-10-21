@@ -12,7 +12,18 @@
       <button class="top-btn jobs-btn" id="jobsBtn" type="button" :class="{ busy: jobs.activeCount > 0 }"
         title="出图、口播转写与评测这类要等的活，关掉页面也会接着做" @click="jobs.open()"><Icon name="bolt" />任务<span class="jobs-badge" :class="{ hidden: !jobs.activeCount }">{{ jobs.activeCount || '' }}</span></button>
       <button class="credit-chip" id="creditChip" :class="{ hidden: !quota, low }" :title="creditTitle" @click="plan.open()"><Icon name="crown" /><template v-if="quota">{{ quota.label }} · 剩 <b>{{ quota.left.toLocaleString() }}</b></template></button>
-      <button type="button" class="user-chip" id="profileBtn" title="个人档案：你的工作经历、项目经历、数据成果和观点，所有账号共用" @click="learning.openProfile()"><span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span><span class="user-name" id="userName">{{ s.user?.username }}</span><span class="user-sub">个人档案</span></button>
+      <div class="user-menu" id="userMenu">
+        <button type="button" class="user-chip" id="profileBtn" :aria-expanded="menuOpen"
+          title="个人档案与个人设置" @click="menuOpen = !menuOpen">
+          <span class="user-avatar" aria-hidden="true">{{ (s.user?.username || '·')[0].toUpperCase() }}</span>
+          <span class="user-name" id="userName">{{ s.user?.username }}</span>
+          <span class="user-sub">我的</span>
+        </button>
+        <div v-if="menuOpen" class="user-pop" id="userPop" role="menu">
+          <button type="button" role="menuitem" id="profileMenuBtn" @click="goProfile"><Icon name="user" :size="14" />个人档案</button>
+          <button type="button" role="menuitem" id="settingsMenuBtn" @click="goSettings"><Icon name="gear" :size="14" />个人设置</button>
+        </div>
+      </div>
       <button v-if="s.user?.admin" class="top-link" id="inviteBtn" type="button" title="生成邀请码：发给对方，凭码注册自己的账号" @click="invites.open()"><Icon name="key" />邀请</button>
       <button class="top-link icon-only" id="syncBtn" type="button" title="同步到 Obsidian：把成稿定期写进知识库" aria-label="同步到 Obsidian" @click="sync.open()"><Icon name="refresh" /></button>
       <a class="top-link" href="/guide" target="_blank" rel="noopener" id="guideLink"
@@ -25,7 +36,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './common/Icon.vue';
 import { useStudioStore } from '../stores/studio.js';
 import { usePlanStore } from '../stores/plan.js';
@@ -33,6 +44,7 @@ import { useJobsStore } from '../stores/jobs.js';
 import { useSessionStore } from '../stores/session.js';
 import { useSyncStore } from '../stores/sync.js';
 import { useLearningStore } from '../stores/learning.js';
+import { useSettingsStore } from '../stores/settings.js';
 import { useInvitesStore } from '../stores/invites.js';
 
 const s = useStudioStore();
@@ -41,14 +53,24 @@ const jobs = useJobsStore();
 const session = useSessionStore();
 const sync = useSyncStore();
 const learning = useLearningStore();
+const settings = useSettingsStore();
 const invites = useInvitesStore();
 const quota = computed(() => plan.quota);
+const menuOpen = ref(false);
 
-// 低于 15% 变红——这时候提醒还来得及，撞到 402 才说就晚了
 const low = computed(() => {
   const q = quota.value;
   return Boolean(q && (q.total ? q.left / q.total : 0) < 0.15);
 });
-
 const creditTitle = computed(() => (low.value ? '额度快用完了，点开看看' : '点开看用量与套餐'));
+
+function goProfile() { menuOpen.value = false; learning.openProfile(); }
+function goSettings() { menuOpen.value = false; settings.show(); }
+
+function onDocClick(ev) {
+  if (!menuOpen.value) return;
+  if (!ev.target.closest?.('#userMenu')) menuOpen.value = false;
+}
+onMounted(() => document.addEventListener('click', onDocClick));
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
 </script>

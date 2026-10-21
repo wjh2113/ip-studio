@@ -1285,3 +1285,23 @@
 .refs-count { font-size: 12px; color: var(--muted); margin-left: 4px; }
 .refs-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
 .used-off { color: var(--muted); }
+
+/* ---------- 个人设置 ---------- */
+.settings-main { display: grid; gap: 18px; align-content: start; padding: 24px 28px; max-width: 720px; }
+.settings-opts { display: grid; gap: 10px; }
+.settings-opt {
+  display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel); cursor: pointer;
+}
+.settings-opt:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.settings-opt.on { border-color: transparent; background: var(--accent-soft); }
+.settings-opt input { margin-top: 3px; flex: none; }
+.settings-opt span { display: grid; gap: 4px; min-width: 0; }
+.settings-opt b { font-size: 14.5px; font-weight: 600; }
+.settings-opt small { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.settings-opt.on b { color: var(--accent-ink); }
+.settings-keep { display: grid; gap: 6px; max-width: 280px; }
+.settings-keep select {
+  height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); color: var(--text); font: inherit; font-size: 14px;
+}

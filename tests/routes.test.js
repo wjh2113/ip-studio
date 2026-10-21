@@ -248,9 +248,23 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.reply.edits[0].find, '只有这一句还没存。');
 
-  // 保存天数：只认几个档；过期的被定时清掉
-  r = await api.call('PUT', '/api/chat-keep', { days: 7 });
+  // 个人设置：模型能力默认 auto；保存天数只认几个档；过期的被定时清掉
+  r = await api.call('GET', '/api/settings');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.llmPref, 'auto');
+  assert.equal(r.data.chatKeepDays, 100);
+  r = await api.call('PUT', '/api/settings', { llmPref: 'nope' });
   assert.equal(r.status, 400);
+  r = await api.call('PUT', '/api/settings', { llmPref: 'fast' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.llmPref, 'fast');
+  r = await api.call('PUT', '/api/settings', { chatKeepDays: 7 });
+  assert.equal(r.status, 400);
+  r = await api.call('PUT', '/api/settings', { chatKeepDays: 30 });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.chatKeepDays, 30);
+  assert.equal(r.data.llmPref, 'fast');
+  // 旧入口仍可用
   r = await api.call('PUT', '/api/chat-keep', { days: 30 });
   assert.equal(r.status, 200, r.text);
   const { Chats } = await import('../server/db.js');
@@ -261,6 +275,7 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.data.keepDays, 30);
   assert.ok(!r.data.messages.some((m) => m.id === old.id), '过期的没删');
   assert.equal(r.data.messages.length, 7);
+  await api.call('PUT', '/api/settings', { llmPref: 'auto', chatKeepDays: 100 });
 
   // 坏请求：空话 / 没正文 / 没有的版本 / 别人的稿子、别人的消息
   r = await chatCall({ message: '  ' });
@@ -278,7 +293,6 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   r = await api.call('DELETE', `/api/drafts/${draftId}/chat`);
   assert.equal(r.status, 200, r.text);
   assert.deepEqual((await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages, []);
-  await api.call('PUT', '/api/chat-keep', { days: 100 });
 });
 
 test('对话回复拆分：标记被拆在两段里也不漏给网页；没标记就是只回答；JSON 坏了当没改', async () => {

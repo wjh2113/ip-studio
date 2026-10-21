@@ -230,6 +230,9 @@ export const MIGRATIONS = [
       ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_keep_days integer NOT NULL DEFAULT 100;
     `);
   } },
+  { version: 14, name: '个人设置：模型能力偏好（auto / quality / fast）', up: async (db) => {
+    await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_pref text NOT NULL DEFAULT 'auto'");
+  } },
 ];
 
 /* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */
