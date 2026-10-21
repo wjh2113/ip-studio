@@ -21,12 +21,14 @@
           <span class="flag-dim">{{ f.dimension }}</span>
           <span class="flag-level">{{ f.level }}</span>
           <span v-if="f.source === '词库'" class="flag-src" title="本地违禁词库命中：一定出现过，是否违规看语境">词库</span>
-          <span v-if="f.source === '规则'" class="flag-src" title="AI 味规则命中：只是说法像 AI，改不改你定；选中这句用划词菜单「去 AI 味」重写">规则</span>
-          <span v-if="f.source === '模型'" class="flag-src" title="AI 味模型命中：说法和节奏；选中这句用划词菜单「去 AI 味」重写">模型</span>
+          <span v-if="f.source === '规则'" class="flag-src" title="AI 味规则命中：只是说法像 AI，改不改你定；选中这句用划词菜单「去 AI 味」重写，或点「交给 AI 改」">规则</span>
+          <span v-if="f.source === '模型'" class="flag-src" title="AI 味模型命中：说法和节奏；选中这句用划词菜单「去 AI 味」重写，或点「交给 AI 改」">模型</span>
         </div>
         <p class="flag-what">{{ f.what }}</p>
         <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」<em v-if="!f.locatable">（原文里没精确匹配到，位置仅供参考）</em></p>
         <p class="flag-fix">建议：{{ f.suggestion }}</p>
+        <button type="button" class="link-btn ask-ai" data-askai="flag" title="带着这句和这条意见去右栏 AI 对话，让它改"
+          @click.stop="chat.askAbout({ quote: f.quote, what: `${f.dimension}：${f.what}`, suggestion: f.suggestion, ver: res?.version || '' })">交给 AI 改</button>
       </div>
     </div>
     <div class="review-list" id="reviewList">
@@ -45,6 +47,8 @@
         <div class="issue-actions">
           <button class="btn primary small" :data-apply="i" :disabled="r.handled.has(i) || !r.fits(i)" @click.stop="r.apply(i)">{{ r.handled.has(i) ? '已处理' : '采纳' }}</button>
           <button v-if="!r.handled.has(i)" class="btn ghost small" :data-skip="i" @click.stop="r.skip(i)">忽略</button>
+          <button v-if="!r.handled.has(i)" class="btn ghost small" data-askai="issue" title="不想照建议改：带着这句去右栏 AI 对话，换个改法"
+            @click.stop="chat.askAbout({ quote: it.quote, what: `${it.type}：${it.why}`, suggestion: it.fix ? `改成「${it.fix}」` : '', ver: res?.version || '' })">交给 AI 改</button>
         </div>
       </div>
     </div>
@@ -56,8 +60,10 @@ import { computed } from 'vue';
 import { VERDICT_LABEL, useReviewStore } from '../stores/review.js';
 import { useEditorStore } from '../stores/editor.js';
 import { useStudioStore } from '../stores/studio.js';
+import { useChatStore } from '../stores/chat.js';
 
 const r = useReviewStore();
+const chat = useChatStore();
 const ed = useEditorStore();
 const s = useStudioStore();
 /* 点一条：还没改的定位到原句；采纳过的定位到改后的那句 */

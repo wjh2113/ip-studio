@@ -1,6 +1,6 @@
 /* 版面：创作时左边的账号与创作记录、右边的工具栏都能收起来，给正文腾地方。
  * 收没收起来记在浏览器本地（只是这台电脑上的习惯，读不了就当没收）。
- * 正文阅读宽度也记在本地，默认 760。 */
+ * 正文阅读宽度也记在本地，默认 760。右栏显示「工具」还是「AI 对话」也记着。 */
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 
@@ -35,10 +35,11 @@ export const useLayoutStore = defineStore('layout', () => {
   const saved = read();
   const side = ref(Boolean(saved.side));     // 左侧：账号设定、创作记录
   const work = ref(Boolean(saved.work));     // 右侧：版本对照、检查、多平台、配图、口播
+  const pane = ref(saved.pane === 'chat' ? 'chat' : 'tools');   // 右栏：工具面板 / AI 对话
   const contentWidth = ref(readWidth());
 
-  watch([side, work], ([s, w]) => {
-    try { localStorage.setItem(KEY, JSON.stringify({ side: s, work: w })); } catch { /* 隐私模式 */ }
+  watch([side, work, pane], ([s, w, p]) => {
+    try { localStorage.setItem(KEY, JSON.stringify({ side: s, work: w, pane: p })); } catch { /* 隐私模式 */ }
   });
   watch(contentWidth, (n) => {
     try { localStorage.setItem(WIDTH_KEY, String(n)); } catch { /* 隐私模式 */ }
@@ -62,7 +63,7 @@ export const useLayoutStore = defineStore('layout', () => {
   const toggleSide = () => { side.value = !side.value; };
   const toggleWork = () => { work.value = !work.value; };
   return {
-    side, work, mtab, toggleSide, toggleWork,
+    side, work, pane, mtab, toggleSide, toggleWork,
     contentWidth, contentWidthCss, contentWidthLabel, setContentWidth,
   };
 });

@@ -212,6 +212,24 @@ export const MIGRATIONS = [
     await db.exec("ALTER TABLE personas ADD COLUMN IF NOT EXISTS refs_json text NOT NULL DEFAULT '{}'");
   } },
   { version: 12, name: '平台版本拆表：每版一行，避免整块 JSON 互相覆盖', up: migrateDraftVariants },
+  { version: 13, name: '成稿右栏 AI 对话：对话记录按稿子和版本存，每人自己定保存天数', up: async (db) => {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id          integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        draft_id    integer NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+        user_id     integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        version     text NOT NULL DEFAULT '',
+        role        text NOT NULL,
+        content     text NOT NULL DEFAULT '',
+        quote       text NOT NULL DEFAULT '',
+        data_json   text NOT NULL DEFAULT '{}',
+        created_at  text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_thread ON chat_messages(draft_id, version, id);
+      CREATE INDEX IF NOT EXISTS idx_chat_user_time ON chat_messages(user_id, created_at);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_keep_days integer NOT NULL DEFAULT 100;
+    `);
+  } },
 ];
 
 /* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */

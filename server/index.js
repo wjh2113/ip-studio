@@ -29,6 +29,11 @@ await startQueue();
 // 语气档案每月定期梳理（每 6 小时看一次哪些号到期了）
 const { startMonthlyRefresh } = await import('./learning.js');
 startMonthlyRefresh();
+// 右栏对话记录：超过各自保存天数的删掉。启动时一次，之后每 6 小时一次
+const { Chats } = await import('./db.js');
+const sweepChats = () => { void Chats.sweep().catch((err) => console.warn('[chat-sweep]', err.message)); };
+sweepChats();
+setInterval(sweepChats, 6 * 3600_000).unref();
 
 // 每次模型调用落一条用量记录，供管理后台统计
 setUsageSink((e) => {

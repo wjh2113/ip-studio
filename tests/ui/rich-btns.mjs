@@ -163,7 +163,8 @@ await step('划词菜单：只有改写，没有格式条', async () => {
     if (!(await page.$(`#selMenu [data-action="${key}"]`))) throw new Error(`缺 ${key}`);
   }
   if (await page.$('#selMenu [data-fmt]')) throw new Error('改写菜单不该带格式按钮');
-  if (!(await page.$('#selCustomBtn'))) throw new Error('缺按意见改');
+  if (!(await page.$('#selAskBtn'))) throw new Error('缺「问 AI」');
+  if (await page.$('#selCustomBtn')) throw new Error('意见输入框应已并进右栏对话');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(50);
   return '只有改写';
@@ -200,14 +201,12 @@ await step('返回阅读 → 再修改', async () => {
   return `恢复 ${doc.length} 字`;
 });
 
-await step('按意见重写按钮能打开表单', async () => {
-  await page.click('#reviseBtn');
-  await page.waitForSelector('.ask [data-k="notes"]');
-  await page.click('.ask [data-no], .ask .ask-cancel, .ask button:has-text("取消")').catch(async () => {
-    await page.keyboard.press('Escape');
-  });
-  await page.waitForTimeout(200);
-  return '表单可开';
+await step('「按意见重写」已并进对话：工具条没有这个按钮，「问 AI」打开右栏对话', async () => {
+  if (await page.$('#reviseBtn')) throw new Error('工具条还有「按意见重写」');
+  await page.click('#chatBtn');
+  await page.waitForSelector('#chatPane', { state: 'visible' });
+  await page.click('#sideTabTools');
+  return '对话可开';
 });
 
 await step('检查按钮', async () => {
@@ -227,9 +226,9 @@ await step('导出菜单各格式入口', async () => {
     const edit = ids('[data-group="edit"]');
     const craft = ids('[data-group="craft"]');
     return at(edit, 'exportBtn') < at(edit, 'metricsBtn') && at(edit, 'metricsBtn') < at(edit, 'archiveBtn')
-      && at(craft, 'rewriteBtn') < at(craft, 'reviseBtn') && at(craft, 'reviseBtn') < at(craft, 'reviewBtn');
+      && at(craft, 'rewriteBtn') < at(craft, 'reviewBtn') && at(craft, 'reviewBtn') < at(craft, 'chatBtn');
   });
-  if (!placed) throw new Error('导出应在改稿行；按意见重写和检查应在改写后面');
+  if (!placed) throw new Error('导出应在改稿行；检查和问 AI 应在改写后面');
   if (await page.$('[data-group="wrap"]')) throw new Error('不该再有单独的收尾行');
   await page.click('#exportBtn');
   await page.waitForSelector('#exportMenu');
@@ -249,12 +248,14 @@ await step('多平台 / 配图 / 口播 / 起标题 按钮可点', async () => {
   return '加工组按钮在';
 });
 
-await step('语音改稿按钮在（不真开麦）', async () => {
+await step('语音改稿并进对话：编辑底栏没有麦克风，对话输入框有（不真开麦）', async () => {
   await page.click('#editBtn');
-  await page.waitForSelector('#voiceBtn', { state: 'visible' });
-  const label = (await page.textContent('#voiceBtn')).trim();
-  if (!/语音改稿|说完了|识别中/.test(label)) throw new Error(label);
-  return label;
+  await page.waitForSelector('#editorBar', { state: 'visible' });
+  if (await page.$('#voiceBtn')) throw new Error('编辑底栏还有语音改稿');
+  await page.click('#chatBtn');
+  await page.waitForSelector('#chatMicBtn', { state: 'visible' });
+  await page.click('#sideTabTools');
+  return '话筒在对话框';
 });
 
 await step('版本切换后编辑框跟着换', async () => {

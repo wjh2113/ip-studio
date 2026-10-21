@@ -14,6 +14,7 @@ export const users = pgTable('users', {
   period: text('period').notNull().default(''),
   used: integer('used').notNull().default(0),
   avatar_credits: integer('avatar_credits').notNull().default(0),
+  chat_keep_days: integer('chat_keep_days').notNull().default(100),   // 右栏对话记录保存几天，0 = 一直留
 });
 
 export const sessions = pgTable('sessions', {
@@ -467,3 +468,20 @@ export const invites = pgTable('invites', {
   used_at: text('used_at').notNull().default(''),
   revoked_at: text('revoked_at').notNull().default(''),
 });
+
+/* 成稿右栏 AI 对话：每条一行。data_json：AI 那条的改动（edits）、整篇重写意见（rewrite）、对不上的（skipped）、
+   哪几处已应用（done）、整篇重写开没开始（started） */
+export const chatMessages = pgTable('chat_messages', {
+  id: id(),
+  draft_id: integer('draft_id').notNull().references(() => drafts.id, { onDelete: 'cascade' }),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  version: text('version').notNull().default(''),
+  role: text('role').notNull(),
+  content: text('content').notNull().default(''),
+  quote: text('quote').notNull().default(''),
+  data_json: text('data_json').notNull().default('{}'),
+  created_at: text('created_at').notNull(),
+}, (t) => [
+  index('idx_chat_thread').on(t.draft_id, t.version, t.id),
+  index('idx_chat_user_time').on(t.user_id, t.created_at),
+]);

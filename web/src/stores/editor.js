@@ -5,12 +5,12 @@
  *   保存：改完 1.2 秒自动存，离开编辑或手动保存时一定留一版历史   markDirty / flushSave
  *   划词改写、/ 续写的 AI 浮层     runAssist / applyAssist
  *   正文历史：保存前留下的每一版，和现在这篇逐行对照   toggleRevs / openRev
- *   语音改稿：说改哪里、怎么改    toggleVoice
+ *   按意见整篇重写（右栏对话确认后调用），写完列逐段对照   revise
  *   归档、导出（复制 / Markdown / 图文 / Word / PDF）
  * 多平台版本和配图在 versions.js，口播在 speak.js，成稿检查在 review.js。 */
 import { defineStore } from 'pinia';
 import { computed, nextTick, reactive, ref } from 'vue';
-import { api, saveBlob, stream, streamUpload } from '../lib/api.js';
+import { api, saveBlob, stream } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { esc, markdown, safeName } from '../lib/text.js';
 import { caretRect } from '../lib/caret.js';
@@ -113,7 +113,7 @@ export const useEditorStore = defineStore('editor', () => {
     const topic = draft?.topics?.[index];
     if (!topic || st.streaming) return;
     // 从编辑模式直接选方向：先把没存的改动存完，再开始生成——不然保存可能落在「生成中」之后，把状态搅乱
-    if (st.mode === 'edit') { stopVoice(); await flushSave(true); st.mode = 'read'; }
+    if (st.mode === 'edit') { await flushSave(true); st.mode = 'read'; }
     closeAssist();
     st.streaming = true;
     useBriefStore().goStep(3);
@@ -165,15 +165,16 @@ export const useEditorStore = defineStore('editor', () => {
   const reviseCompare = ref(null);   // { version, before, after } | null
   const progressLabel = ref('');     // 慢操作当前步骤文案
 
-  /* 按意见重写：写几条修改意见，整篇在原稿上重写（版本栏开着哪一版就改哪一版）。
+  /* 按意见重写：整篇在原稿上重写（版本栏开着哪一版就改哪一版）。入口在右栏对话：AI 判断要整篇改、作者点「开始重写」。
+     mode = 'full' 直接整篇重写（对话已经判断过）；不传由服务端按意见里的关键词决定。
      流式显示；写完服务端才落盘，原稿留一版历史，这里再记一步撤销，Ctrl+Z 能退回。失败原稿不动 */
-  async function revise(notes) {
+  async function revise(notes, { mode = '' } = {}) {
     const st = s();
     const draft = st.draft;
     const ver = editVer.value;
     const before = textOf(ver);
     if (!draft || !before.trim() || st.streaming) return false;
-    if (st.mode === 'edit') { stopVoice(); await flushSave(true); st.mode = 'read'; }
+    if (st.mode === 'edit') { await flushSave(true); st.mode = 'read'; }
     else await flushSave();
     closeAssist();
     reviseCompare.value = null;
@@ -185,7 +186,7 @@ export const useEditorStore = defineStore('editor', () => {
     let ok = false;
     let after = '';
     try {
-      await stream(`/drafts/${draft.id}/revise`, { notes, version: ver }, (event, data) => {
+      await stream(`/drafts/${draft.id}/revise`, { notes, version: ver, ...(mode ? { mode } : {}) }, (event, data) => {
         if (event === 'progress') progressLabel.value = data.label || progressLabel.value;
         else if (event === 'delta') live.text += data.text;
         else if (event === 'done') {
@@ -257,7 +258,6 @@ export const useEditorStore = defineStore('editor', () => {
     const st = s();
     if (st.streaming) return;
     if (st.mode === 'edit' && mode !== 'edit') {
-      stopVoice();
       flushSave(true);      // 离开编辑就落盘，并留一版历史
     }
     st.mode = mode;
@@ -418,7 +418,6 @@ export const useEditorStore = defineStore('editor', () => {
     const after = from.pop();
     to.push(before);
     typingAt = 0;
-    voiceNote.value = null;
     setText(ver, after);
     markDirty(ver);
     return { before, after };
@@ -426,12 +425,11 @@ export const useEditorStore = defineStore('editor', () => {
   const undo = () => step(hist.undo, hist.redo);
   const redo = () => step(hist.redo, hist.undo);
 
-  /* 编辑框里改了字。typing = 键盘输入（连续的合成一步撤销）；其余（插标记、删斜杠、语音改稿）各算一步 */
-  function onInput(value, { voice = false, typing = false } = {}) {
+  /* 编辑框里改了字。typing = 键盘输入（连续的合成一步撤销）；其余（插标记、删斜杠）各算一步 */
+  function onInput(value, { typing = false } = {}) {
     const st = s();
     const ver = editVer.value;
     if (!st.draft || value === textOf(ver)) return;
-    if (!voice) voiceNote.value = null;          // 手动改过了，语音改稿的「撤销」就不作数了
     record(textOf(ver), typing);
     setText(ver, value);
     markDirty(ver);
@@ -536,99 +534,6 @@ export const useEditorStore = defineStore('editor', () => {
     st.revId = id;
     const { revision } = await api(`/drafts/${st.draft.id}/revisions/${id}`);
     if (st.revId === id) st.revText = revision.content;
-  }
-
-  /* ---------- 语音改稿 ---------- */
-  const voice = reactive({ recording: false, recognizing: false });
-  const voiceNote = ref(null);       // { heard, understood, changed, why, undo }
-  let rec = null;
-  let chunks = [];
-  let voiceTimer = 0;
-
-  function stopVoice() {
-    clearTimeout(voiceTimer);
-    if (rec && rec.state !== 'inactive') rec.stop();
-  }
-
-  async function toggleVoice() {
-    const st = s();
-    if (!st.draft?.content?.trim()) { toast('还没有正文'); return; }
-    if (rec && rec.state === 'recording') { rec.stop(); return; }
-    let mediaStream;
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      toast('没有拿到麦克风');
-      return;
-    }
-    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
-      : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
-    const r = new MediaRecorder(mediaStream, mime ? { mimeType: mime } : undefined);
-    chunks = [];
-    r.ondataavailable = (ev) => { if (ev.data?.size) chunks.push(ev.data); };
-    r.onstop = () => {
-      mediaStream.getTracks().forEach((t) => t.stop());
-      rec = null;
-      clearTimeout(voiceTimer);
-      voice.recording = false;
-      const blob = new Blob(chunks, { type: r.mimeType || 'audio/webm' });
-      chunks = [];
-      if (s().mode === 'edit' && blob.size > 0) submitVoice(blob);
-    };
-    rec = r;
-    r.start();
-    voice.recording = true;
-    voiceTimer = setTimeout(() => { if (rec) rec.stop(); }, 90000);      // 一次最多说一分半
-  }
-
-  async function submitVoice(blob) {
-    const st = s();
-    if (!st.draft) return;
-    const id = st.draft.id;
-    const ver = editVer.value;      // 改的是编辑框正开着的那一版
-    voice.recognizing = true;
-    progressLabel.value = '转写中…';
-    try {
-      const data = await streamUpload(
-        `/drafts/${id}/voice-edit${ver ? `?version=${encodeURIComponent(ver)}` : ''}`,
-        blob,
-        'voice.webm',
-        (event, payload) => {
-          if (event === 'progress') progressLabel.value = payload.label || progressLabel.value;
-          else if (event === 'error') throw new Error(payload.message || '语音改稿失败');
-        },
-      );
-      if (!data) throw new Error('语音改稿失败');
-      // 识别期间换了稿子或离开了编辑：结果对不上了，不能写到现在这篇上
-      if (st.draft?.id !== id || st.mode !== 'edit' || editVer.value !== ver) { toast('已经换了稿子或版本，这次语音改稿没有应用'); return; }
-      const note = {
-        heard: data.transcript ? `听到：${data.transcript}` : '',
-        understood: data.note ? `理解成：${data.note}` : '',
-        changed: 0, why: '', undo: null,
-      };
-      if (data.changed && data.content && data.content !== textOf(ver)) {
-        note.undo = textOf(ver);
-        note.ver = ver;
-        note.changed = (data.applied || []).reduce((n, x) => n + (x.count || 1), 0);
-        onInput(data.content, { voice: true });
-      } else {
-        note.why = (data.skipped || []).filter(Boolean).join('；');
-      }
-      voiceNote.value = note;
-    } catch (err) {
-      toast(err.message);
-    } finally {
-      voice.recognizing = false;
-      progressLabel.value = '';
-    }
-  }
-
-  function undoVoice() {
-    const n = voiceNote.value;
-    if (n?.undo == null) return;
-    replaceContent(n.undo, n.ver || '');
-    voiceNote.value = null;
-    toast('已撤销这次语音改稿');
   }
 
   /* ---------- 归档 ---------- */
@@ -796,8 +701,6 @@ export const useEditorStore = defineStore('editor', () => {
   function reset() {
     const st = s();
     clearTimeout(saveTimer);
-    stopVoice();
-    voiceNote.value = null;
     reviseCompare.value = null;
     progressLabel.value = '';
     closeAssist();
@@ -819,7 +722,6 @@ export const useEditorStore = defineStore('editor', () => {
     save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
     menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
     toggleRevs, loadRevs, openRev,
-    voice, voiceNote, toggleVoice, undoVoice, stopVoice,
     archiveCurrent, toolHint, exporting, printing, copy, download, downloadDocx, exportPdf,
     reset,
   };

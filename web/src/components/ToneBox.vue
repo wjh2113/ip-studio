@@ -17,8 +17,10 @@
       <p class="tone-what">{{ f.what }}</p>
       <p v-if="f.quote" class="flag-quote">「{{ f.quote }}」</p>
       <p class="flag-fix">建议：{{ f.suggestion }}</p>
+      <button type="button" class="link-btn ask-ai" data-askai="tone" title="带着这句去右栏 AI 对话，让它按你的语气改"
+        @click.stop="chat.askAbout({ quote: f.quote, what: `像 AI 写的：${f.what}`, suggestion: f.suggestion, ver: r.tone.version || '' })">交给 AI 改</button>
     </div>
-    <p v-if="r.tone.flags?.length" class="hint tone-tip">点一条会在左边原文里定位到那句。改法：进入「修改」，选中那一句，在弹出的菜单里点「去 AI 味」，会按你的语气重写这一段，事实不变。</p>
+    <p v-if="r.tone.flags?.length" class="hint tone-tip">点一条会在左边原文里定位到那句。改法：点那条的「交给 AI 改」，或选中那一句，在改写菜单里点「去 AI 味」，都会按你的语气重写，事实不变。</p>
   </div>
 </template>
 
@@ -27,9 +29,11 @@
 import { computed } from 'vue';
 import { useReviewStore } from '../stores/review.js';
 import { useEditorStore } from '../stores/editor.js';
+import { useChatStore } from '../stores/chat.js';
 
 const r = useReviewStore();
 const ed = useEditorStore();
+const chat = useChatStore();
 const head = computed(() => {
   if (r.tone.running) return '正在扫…';
   if (!r.tone.flags) return '';

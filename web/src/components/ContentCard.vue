@@ -1,5 +1,5 @@
 <template>
-  <section class="work" id="contentCard" :class="{ 'work-folded': layout.work }">
+  <section class="work" id="contentCard" :class="{ 'work-folded': layout.work, 'chat-wide': chatOn }">
     <!-- 第三步：成稿工作台。左边是正文（标题行 + 工具条吸顶），右边是一列可收起的面板：版本、检查、多平台、配图、口播。
          正文是主角，工具都在边上，不抢阅读 -->
     <div class="card work-main" id="workMain" :class="{ 'edit-fs': ed.editFs }" :style="{ '--content-w': layout.contentWidthCss }">
@@ -56,8 +56,8 @@
             <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
             <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
             <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
-            <button class="btn ghost small" id="reviseBtn" :disabled="s.streaming || !ed.text" title="写几条修改意见：小改只换句子，动结构才整篇重写" @click="reviseWithNotes"><Icon name="sparkles" :size="14" />按意见重写</button>
             <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
+            <button class="btn ghost small" id="chatBtn" :class="{ on: chatOn }" title="在右栏和 AI 聊这篇稿子，或说要怎么改（局部改、整篇重写、用嘴说都在这里）" @click="chatOn ? layout.pane = 'tools' : chat.open()"><Icon name="sparkles" :size="14" />问 AI</button>
           </div>
           <span class="grow"></span>
           <span class="hint" id="toolHint">{{ ed.progressLabel || ed.toolHint }}</span>
@@ -93,35 +93,34 @@
 
       <CuesPane v-if="s.mode === 'cue' && cueOk" />
 
-      <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」、语音改稿 -->
+      <!-- 编辑态底栏吸底：AI 改写提示、拖进正文的「此处放图片」。用一句话改稿（打字或用嘴说）都在右栏 AI 对话 -->
       <div v-if="s.mode === 'edit' && !ed.printing" class="editor-bar" id="editorBar">
-        <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字，点「改写」　·　输入 <kbd>/</kbd> → 续写</span>
+        <span class="hint eb-tip"><Icon name="sparkles" :size="14" />选中文字，点「改写」　·　输入 <kbd>/</kbd> → 续写　·　想怎么改，跟右栏 AI 说</span>
         <span class="grow"></span>
         <div class="mark-dock" id="markDock">
           <span class="mark-chip" id="markBtn" draggable="true" role="button" tabindex="0" title="先把光标点在要插图的地方，再把这个标签拖进去；或点一下插到光标处"
             @dragstart="markDragStart" @dragend="markDragEnd" @click="markClick" @keydown.enter.prevent="insertMark()" @keydown.space.prevent="insertMark()"><Icon name="image" :size="14" />此处放图片</span>
-          <button type="button" class="btn ghost small" id="voiceBtn" :class="{ recording: ed.voice.recording }" :disabled="ed.voice.recognizing"
-            title="说改哪里、怎么改" @click="ed.toggleVoice()"><Icon name="mic" :size="14" />{{ ed.voice.recognizing ? '识别中…' : ed.voice.recording ? '说完了' : '语音改稿' }}</button>
         </div>
-        <p v-if="ed.voiceNote" class="voice-note" id="voiceNote">
-          <template v-if="ed.voiceNote.heard">{{ ed.voiceNote.heard }}<br></template>
-          <template v-if="ed.voiceNote.understood">{{ ed.voiceNote.understood }}<br></template>
-          <template v-if="ed.voiceNote.undo != null">改了 {{ ed.voiceNote.changed }} 处。<button type="button" class="mini" id="voiceUndoBtn" @click="ed.undoVoice()">撤销</button></template>
-          <template v-else>正文没有改。{{ ed.voiceNote.why }}</template>
-        </p>
       </div>
     </div>
 
     <!-- 右侧工具收起后留一条窄边：展开，或者直接点图标展开到那一块 -->
     <div v-if="layout.work" class="work-rail" id="workRail">
       <button type="button" class="rail-btn" id="workExpandBtn" title="展开右侧工具" aria-label="展开右栏" @click="layout.toggleWork()"><Icon name="chev-left" :size="16" /></button>
-      <button v-for="t in RAIL" :key="t.icon" type="button" class="rail-btn" :title="t.title" @click="layout.toggleWork()"><Icon :name="t.icon" :size="16" /></button>
+      <button type="button" class="rail-btn" id="workChatRail" title="AI 对话" @click="chat.open()"><Icon name="sparkles" :size="16" /></button>
+      <button v-for="t in RAIL" :key="t.icon" type="button" class="rail-btn" :title="t.title" @click="layout.pane = 'tools'; layout.toggleWork()"><Icon :name="t.icon" :size="16" /></button>
     </div>
-    <aside v-show="!layout.work" class="work-side" id="workSide">
+    <aside v-show="!layout.work" class="work-side" id="workSide" :class="{ 'chat-on': chatOn }">
       <div class="work-side-head">
-        <span>工具</span>
-        <button type="button" class="rail-btn" id="workFoldBtn" title="收起右侧工具，给正文腾地方" aria-label="收起右栏" @click="layout.toggleWork()"><Icon name="chev-right" :size="16" /></button>
+        <!-- 右栏两个页签：工具面板 / AI 对话（选哪个记在本地） -->
+        <div class="side-tabs" role="tablist">
+          <button type="button" role="tab" id="sideTabTools" :aria-selected="String(!chatOn)" :class="{ on: !chatOn }" @click="layout.pane = 'tools'">工具</button>
+          <button type="button" role="tab" id="sideTabChat" :aria-selected="String(chatOn)" :class="{ on: chatOn }" @click="chat.open()"><Icon name="sparkles" :size="13" />AI 对话</button>
+        </div>
+        <button type="button" class="rail-btn" id="workFoldBtn" title="收起右栏，给正文腾地方" aria-label="收起右栏" @click="layout.toggleWork()"><Icon name="chev-right" :size="16" /></button>
       </div>
+      <ChatPane v-if="chatOn" />
+      <div v-show="!chatOn" class="side-tools" id="sideTools">
       <!-- 右栏顺序与工具条一致：改稿 → 加工 → 收尾细节 -->
       <WorkPanel title="检查结果" icon="shield" :active="review.open" :badge="reviewBadge">
         <ReviewBox />
@@ -162,6 +161,7 @@
           <button class="btn ghost small" type="button" data-side="learn" :disabled="actDisabled('learn')" @click="confirmAct('learn')">喂给账号学习</button>
         </div>
       </WorkPanel>
+      </div>
     </aside>
   </section>
 </template>
@@ -180,6 +180,7 @@ import ReviewBox from './ReviewBox.vue';
 import ToneBox from './ToneBox.vue';
 import VersionBars from './VersionBars.vue';
 import CuesPane from './CuesPane.vue';
+import ChatPane from './ChatPane.vue';
 import { IMAGE_MARK } from '../../../shared/place.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useLayoutStore } from '../stores/layout.js';
@@ -193,11 +194,14 @@ import { useTitlesStore } from '../stores/titles.js';
 import { useInsightsStore } from '../stores/insights.js';
 import { usePrompterStore } from '../stores/prompter.js';
 import { useRefsStore } from '../stores/refs.js';
-import { ask, toast } from '../lib/feedback.js';
+import { useChatStore } from '../stores/chat.js';
+import { toast } from '../lib/feedback.js';
 import { countChars, esc, markdown } from '../lib/text.js';
 import { anyLayerOpen } from '../lib/escape.js';
 
 const layout = useLayoutStore();
+const chat = useChatStore();
+const chatOn = computed(() => layout.pane === 'chat');
 /* 口播面板：原文一版，视频号 / 抖音 / B 站版本各一版；标出几版已经有提示 */
 const cueBadge = computed(() => {
   const done = sp.tracks.filter((t) => t.cues);
@@ -342,20 +346,6 @@ async function confirmAct(act) {
   if (act === 'metrics') { useInsightsStore().openMetrics(); return; }
   if (act === 'titles') { useTitlesStore().open(); return; }
   if (act === 'archive') await ed.archiveCurrent();
-}
-
-/* 按意见重写：写几条意见 → 整篇在原稿上重写（版本栏开着哪一版就改哪一版） */
-async function reviseWithNotes() {
-  if (!ed.text.trim() || s.streaming) return;
-  const which = v.current ? `「${v.label}」版本` : '这篇';
-  const got = await ask.form({
-    title: `按意见重写${which}`,
-    body: '一条一行，写清哪里要怎么改。没提到的地方会尽量保持原样；原稿留在「版本」里，Ctrl+Z 也能退回。',
-    fields: [{ key: 'notes', label: '修改意见', multiline: true, rows: 5, required: true,
-      placeholder: '比如：\n开头太慢，直接从客户案例讲起\n第三部分太虚，换成具体步骤\n结尾别喊口号' }],
-    ok: '开始重写',
-  });
-  if (got?.notes?.trim()) await ed.revise(got.notes.trim());
 }
 
 const copyHint = computed(() => `${v.current ? `${v.label}版` : '正文'}${v.imageCount ? '；连图一起（富文本）' : ''}`);

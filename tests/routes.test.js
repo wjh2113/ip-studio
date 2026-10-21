@@ -181,6 +181,92 @@ test('按意见改：选中一段写自己的意见；整篇按意见重写（�
   assert.equal(r.status, 200, r.text);
 });
 
+test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不落盘；整篇改只回意见；记录存下来、可标记、可清空、按天数过期', async () => {
+  const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  let r = await api.call('GET', `/api/drafts/${draftId}/chat`);
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.messages, []);
+  assert.equal(r.data.keepDays, 100);
+
+  // 问：只回话，不给改动
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '这篇主线清楚吗？' });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.data.reply.content);
+  assert.deepEqual(r.data.reply.edits, []);
+  assert.equal(r.data.reply.rewrite, '');
+
+  // 局部改：带引用的片段，回 find / replace，find 能在正文里原样找到；服务端不改正文
+  const quote = before.split(/\n{2,}/).find((p) => p.trim() && before.split(p).length === 2);
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '这段压短一点', quote });
+  assert.equal(r.status, 200, r.text);
+  const edit = r.data.reply;
+  assert.equal(edit.edits.length, 1);
+  assert.equal(edit.edits[0].find, quote);
+  assert.equal(r.data.user.quote, quote);
+  assert.equal((await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content, before);
+
+  // 整篇改：只回整理好的意见，不出新全文；之后走 /revise mode=full（哪怕意见里没有结构关键词）
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '整篇换个说法' });
+  assert.equal(r.status, 200, r.text);
+  const rw = r.data.reply;
+  assert.ok(rw.rewrite);
+  assert.deepEqual(rw.edits, []);
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '开头直接上案例', mode: 'full' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /"mode":"full"/);
+  r = await api.call('PUT', `/api/drafts/${draftId}/content`, { content: before });
+  assert.equal(r.status, 200, r.text);
+
+  // 记下应用了哪几处、整篇重写开没开始；越界的下标不认
+  r = await api.call('PUT', `/api/chat/${edit.id}`, { done: { 0: true, 5: true } });
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.message.done, { 0: true });
+  r = await api.call('PUT', `/api/chat/${rw.id}`, { started: true });
+  assert.equal(r.data.message.started, true);
+  r = await api.call('GET', `/api/drafts/${draftId}/chat`);
+  assert.equal(r.data.messages.length, 6);
+  assert.deepEqual(r.data.messages.map((m) => m.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
+  assert.deepEqual(r.data.messages[3].done, { 0: true });
+  assert.equal(r.data.messages[5].started, true);
+
+  // 网页上还没存完的正文以传上来的为准
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '改一下', text: '只有这一句还没存。' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.reply.edits[0].find, '只有这一句还没存。');
+
+  // 保存天数：只认几个档；过期的被定时清掉
+  r = await api.call('PUT', '/api/chat-keep', { days: 7 });
+  assert.equal(r.status, 400);
+  r = await api.call('PUT', '/api/chat-keep', { days: 30 });
+  assert.equal(r.status, 200, r.text);
+  const { Chats } = await import('../server/db.js');
+  const old = (await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages[0];
+  await Chats.backdate(old.id, new Date(Date.now() - 31 * 86400_000).toISOString());
+  await Chats.sweep();
+  r = await api.call('GET', `/api/drafts/${draftId}/chat`);
+  assert.equal(r.data.keepDays, 30);
+  assert.ok(!r.data.messages.some((m) => m.id === old.id), '过期的没删');
+  assert.equal(r.data.messages.length, 7);
+
+  // 坏请求：空话 / 没正文 / 没有的版本 / 别人的稿子、别人的消息
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '  ' });
+  assert.equal(r.status, 400);
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: 'x', text: '  ' });
+  assert.equal(r.status, 400);
+  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: 'x', version: 'weibo' });
+  assert.equal(r.status, 404);
+  r = await api.call('GET', '/api/drafts/999999/chat');
+  assert.equal(r.status, 404);
+  r = await api.call('PUT', '/api/chat/999999', { done: {} });
+  assert.equal(r.status, 404);
+
+  // 清空：只清这篇这一版
+  r = await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual((await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages, []);
+  await api.call('PUT', '/api/chat-keep', { days: 100 });
+});
+
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {
   let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
   assert.equal(r.status, 400);

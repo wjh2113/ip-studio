@@ -4,5 +4,6 @@ export * from './auth.js';
 export * from './billing.js';
 export * from './personas.js';
 export * from './drafts.js';
+export * from './chat.js';
 export * from './content.js';
 export * from './admin.js';

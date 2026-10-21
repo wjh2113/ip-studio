@@ -69,7 +69,7 @@ flowchart LR
 | `drafts.js` | 三个方向、流式成稿、保存与历史、列表、归档、删除 |
 | `review.js` | 成稿检查（`cleanReview` 是纯函数，有单测） |
 | `speak.js` | 口播提示、口播录音与评测 |
-| `editor.js` | 划词改写、`/` 续写、语音改稿 |
+| `editor.js` | 划词改写、`/` 续写、语音改稿（手机端）、右栏 AI 对话（记录在 `chat_messages`，按每人的保存天数定时删） |
 | `publish.js` | 多平台版本、配图、Word 导出 |
 | `materials.js` | 素材库（`recallMaterials` 召回）与选题池 |
 | `insights.js` | 发布数据回填与复盘 |
@@ -158,7 +158,7 @@ uni-app（Vue 3 + Pinia）的 Vite 命令行工程，一套代码出 H5、安卓
 - `src/components/`：界面。`App.vue` 拼骨架；`TopBar`、`Sidebar`、`WriteView`（步骤条 + `BriefCard` / `TopicsCard` / `ContentCard`）、`HotView`；各个浮层（`*Modal.vue`）；`common/` 是通用件（`Modal` 浮层壳、`AskDialog` 应用内确认框、`Toast`、`BusyBtn`）。
 - `src/stores/`：数据和动作，一个业务一个 store。`studio` 是各块共用的（登录用户、站点信息、当前账号、当前稿子、第几步、模式）；其余按业务拆：
   `session` 登录与启动 · `account` 账号设定（含语气样本、快速建号）· `learning` 个人档案页与「AI 眼中的我」· `brief` 简报与方向（含推荐题材、选题池）· `history` 创作记录 ·
-  `sections` 栏目 · `frameworks` 写法框架 · `hot` 热点 · `editor` 成稿区（流式成稿、保存、改写、正文历史、语音改稿、导出）·
+  `sections` 栏目 · `frameworks` 写法框架 · `hot` 热点 · `editor` 成稿区（流式成稿、保存、改写、正文历史、整篇重写、导出）· `chat` 右栏 AI 对话（局部改、整篇重写确认、语音输入、记录）·
   `versions` 多平台与配图 · `review` 成稿检查 · `speak` 口播 · `prompter` 提词器 · `plan` 用量与支付 · `jobs` 后台任务 · `titles` 标题 · `insights` 回填与复盘。
 - `src/lib/`：不依赖界面的小工具。`api.js`（请求、流式、上传、下载）、`bus.js`（模块间通知）、`feedback.js`（`toast`、`ask`）、`busy.js`（提交中的锁）、`text.js`（Markdown、转义、日期）、`caret.js`（编辑框光标坐标）、`escape.js`（Esc 只关最上层）、`reveal.js`（营销页渐入）。
 - `src/styles/`：`base.css`（设计令牌 + 通用控件，各页面都先引它）、`shell.css`（登录页、顶栏、侧栏）、`create.css`（创作前两步）、`workbench.css`（成稿工作台）、`views.css`（热点、账号设定、提词器、各弹窗）、`admin.css`，以及落地页、营销页、说明书各自的样式。设计依据是 `docs/LOVART-PROMPTS-WEB.md` 和 `export/` 里的设计图。图标是 `components/common/Icon.vue` 里自己画的线性图标，不引图标库。`web/public/` 里的图标原样拷到 `dist/` 根目录。

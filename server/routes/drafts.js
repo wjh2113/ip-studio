@@ -325,8 +325,8 @@ export async function handleRevise(req, res, body, params) {
     return { version, draft: await Drafts.byId(draft.id, user.id), before: text };
   };
 
-  /* 局部：像语音改稿一样只回替换列表，代码负责改正文 */
-  if (!isStructuralRevise(notes)) {
+  /* 局部：像语音改稿一样只回替换列表，代码负责改正文。mode=full（右栏对话已经判断过要整篇改）直接整篇重写 */
+  if (body?.mode !== 'full' && !isStructuralRevise(notes)) {
     const ps = openProgressStream(res);       // ps.aborted 是 getter：别解构，解构只拿到开流那一刻的 false
     const { send, end } = ps;
     try {

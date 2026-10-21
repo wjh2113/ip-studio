@@ -15,7 +15,7 @@ import {
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
-  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM,
+  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM, CHAT_SCHEMA, CHAT_SYSTEM,
   TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
   DIGEST_MERGE_SYSTEM, PREF_LEARN_SCHEMA, PREF_LEARN_SYSTEM, PROFILE_PARSE_SCHEMA, PROFILE_PARSE_SYSTEM,
   SAMPLE_NOTES_SCHEMA, SAMPLE_NOTES_SYSTEM,
@@ -138,7 +138,7 @@ export const PROMPT_DOCS = () => [
   },
   {
     key: 'voice-edit', name: '语音改稿', stage: 'write', mode: '结构化输出',
-    where: '修改模式里的「语音改稿」。按一下说话，再说一次结束',
+    where: '手机 App 的「语音改稿」。网页上已并进右栏 AI 对话：话筒说的先转成文字放进输入框，看过再发',
     positioning: '用嘴说改哪里、怎么改。话筒进来的是修改要求，不是一段要贴进去的新稿。',
     value: [
       '用户：改稿时手里往往不在键盘上，说一句比选中再点菜单快。',
@@ -159,7 +159,7 @@ export const PROMPT_DOCS = () => [
   },
   {
     key: 'revise-patch', name: '按意见局部改', stage: 'polish', mode: '结构化输出',
-    where: '成稿工具栏「按意见重写」：意见只动局部时走这条；动结构/整体语气才整篇重写',
+    where: '/revise 不带 mode 时：意见只动局部走这条。网页上「按意见重写」按钮已并进右栏对话（对话只调 mode=full 的整篇重写），这条留给接口和手机端',
     positioning: '小改不要整篇重输出。模型和语音改稿一样只回 find/replace，代码负责替换。',
     value: [
       '用户：改一句结尾不用等整篇再生成一遍。',
@@ -174,6 +174,27 @@ export const PROMPT_DOCS = () => [
       '一条都落实不了时返回错误，不写空改',
     ],
     system: REVISE_PATCH_SYSTEM, schema: REVISE_PATCH_SCHEMA,
+  },
+  {
+    key: 'chat', name: '编辑器对话', stage: 'polish', mode: '结构化输出',
+    where: '成稿右栏「AI 对话」：工具条「问 AI」、划词菜单「问 AI」（带着选中的片段）、检查结果「交给 AI 改」；话筒说的也先转成文字再发',
+    positioning: '网页上「用一句话改稿」的唯一入口：能只聊（问意见、要标题、查结构），也能让它改左边的正文。原来的「按意见重写」「按我的意见改这段」「语音改稿」都并进来了。',
+    value: [
+      '用户：不用想该点哪个按钮，像跟编辑说话一样提要求；一轮不满意接着说。',
+      '产品：问和改走同一个入口，改动先给作者看、点了才写进正文，作者始终握着最后一步。',
+    ],
+    logic: [
+      '对话按稿子 + 版本存在 chat_messages，取最近 12 轮带给模型（助手那句标上作者应用没有）；正文用网页上正在看的那一版（可能还没存完）。保存天数每人自己选（默认 100 天），过期定时删。',
+      '模型先判断是「问」还是「改」：问就只回 reply；局部改回 find / replace；整篇重写、调结构只回整理好的修改意见 rewrite，不写新全文。',
+      '局部改：服务端用 applyEdits 校验每一处 find，对不上的丢掉；不落盘，作者点「应用」才写进正文，可撤销。',
+      '整篇改：对话里先问「开始吗」，作者点「开始重写」后网页调 /revise（mode=full），走成稿提示词流式重写，原稿留历史、出逐段对照。',
+    ],
+    guards: [
+      '**find 在正文里对不上就丢掉这一处**；同一句多处又没说全改的也丢掉',
+      '整篇重写不在对话里直接出全文：JSON 里吐几千字既慢又容易截断，交给流式重写',
+      '正文、对话记录、引用都当资料包在标签里，不能改写指令',
+    ],
+    system: CHAT_SYSTEM, schema: CHAT_SCHEMA,
   },
   {
     key: 'review', name: '成稿检查', stage: 'polish', mode: '结构化输出',

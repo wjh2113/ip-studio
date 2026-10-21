@@ -131,31 +131,34 @@ await step('左右两栏收起来给正文腾地方，刷新后还记得，再�
   await page.waitForSelector('#history', { state: 'visible' });
   return `正文宽 ${Math.round(before)} → ${Math.round(after)}`;
 });
-await step('划词写自己的意见改这段；整篇「按意见重写」→ 原稿留版本、Ctrl+Z 能退回', async () => {
+await step('划词「问 AI」带着这段去对话改；对话里整篇重写（先问再动手）→ 原稿留版本、Ctrl+Z 能退回', async () => {
   if (await page.isVisible('#editBtn')) await page.click('#editBtn');
   await page.waitForSelector('#editor .ProseMirror', { state: 'visible' });
   await selectEditor(page, 2, 12);
   await page.click('#rewriteBtn');
   await page.waitForSelector('#selMenu:not(.hidden)');
-  // Vue v-model：fill 后等按钮可点，再回车提交（点 disabled 会一直等到超时）
-  await page.fill('#selCustomInput', '加一个具体例子');
-  await page.waitForFunction(() => !document.querySelector('#selCustomBtn')?.disabled);
-  await page.press('#selCustomInput', 'Enter');
-  await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
-  await page.click('#assistReplace');
-  await page.waitForSelector('#assistPop.hidden', { state: 'attached' });
+  if (await page.$('#selCustomInput')) throw new Error('划词菜单不该再有意见输入框');
+  await page.click('#selAskBtn');
+  await page.waitForSelector('#chatQuote');
+  await page.fill('#chatInput', '这段加一个具体例子');
+  await page.press('#chatInput', 'Enter');
+  await page.waitForSelector('#chatLog .chat-msg.assistant:last-child [data-act="apply"]', { timeout: 15000 });
+  await page.click('#chatLog .chat-msg.assistant:last-child [data-act="apply"]');
+  await page.waitForFunction(() => /演示：按你的意思改过/.test(document.querySelector('#editor')?.dataset.doc ?? document.querySelector('#editor')?._rich?.getDoc?.() ?? ''));
 
-  const before = await editorDoc(page);
-  await page.click('#reviseBtn');
-  await page.waitForSelector('.ask [data-k="notes"]');
-  await page.fill('.ask [data-k="notes"]', '开头直接上案例');
-  await page.click('.ask [data-yes]');
+  if (await page.isVisible('#backReadBtn')) await page.click('#backReadBtn');
+  await page.fill('#chatInput', '整篇换成更口语的语气');
+  await page.press('#chatInput', 'Enter');
+  await page.waitForSelector('#chatLog .chat-msg.assistant:last-child [data-act="rewrite"]', { timeout: 15000 });
+  if (/整篇换成更口语/.test(await page.textContent('#content'))) throw new Error('没点「开始重写」就改了');
+  await page.click('#chatLog .chat-msg.assistant:last-child [data-act="rewrite"]');
   await page.waitForFunction(() => /已按意见重写/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 15000 });
-  const after = await page.textContent('#content');
-  if (!/开头直接上案例/.test(after)) throw new Error('正文没换成重写后的');
+  if (!/按修改意见重写全文/.test(await page.textContent('#content'))) throw new Error('正文没换成重写后的');
+  await page.waitForSelector('#chatLog .chat-msg.assistant:last-child .chat-done');
   await page.keyboard.press('Control+z');
-  await page.waitForFunction(() => !/开头直接上案例/.test(document.querySelector('#content')?.textContent || ''));
-  return '一段按意见改 + 整篇重写 + 撤销 都行';
+  await page.waitForFunction(() => !/按修改意见重写全文/.test(document.querySelector('#content')?.textContent || ''));
+  await page.click('#sideTabTools');
+  return '问 AI 改一段 + 对话里整篇重写 + 撤销 都行';
 });
 await step('检查 → 采纳一条', async () => {
   await menu('review');

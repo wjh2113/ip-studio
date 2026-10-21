@@ -29,6 +29,7 @@ export const FEATURE_TIER = {
   '按意见重写·局部': 'fast',       // 小改：find/replace 补丁
   划词改写: 'quality',
   编辑器续写: 'quality',
+  编辑器对话: 'quality',          // 右栏对话：要理解意图、定位原文、按语气改
   多平台适配: 'fast',             // 短平台默认快档；公众号/知乎/B 站用 channel: quality
   语气档案: 'quality',
   原文概要: 'fast',
