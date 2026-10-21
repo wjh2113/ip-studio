@@ -181,6 +181,17 @@ test('按意见改：选中一段写自己的意见；整篇按意见重写（�
   assert.equal(r.status, 200, r.text);
 });
 
+/* 对话接口是 SSE：回话按 delta 推，done 里是存好的两条。这里收齐、拼回话，返回 { status, data, said, text } */
+async function chatCall(body) {
+  const r = await api.call('POST', `/api/drafts/${draftId}/chat`, body);
+  if (r.status !== 200) return r;
+  const events = [...r.text.matchAll(/event: (\w+)\ndata: (.*)\n/g)].map((m) => [m[1], JSON.parse(m[2])]);
+  const said = events.filter(([e]) => e === 'delta').map(([, d]) => d.text).join('');
+  const done = events.find(([e]) => e === 'done')?.[1];
+  const error = events.find(([e]) => e === 'error')?.[1];
+  return { status: r.status, data: done, said, error, text: r.text };
+}
+
 test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不落盘；整篇改只回意见；记录存下来、可标记、可清空、按天数过期', async () => {
   const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
   let r = await api.call('GET', `/api/drafts/${draftId}/chat`);
@@ -189,24 +200,27 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.data.keepDays, 100);
 
   // 问：只回话，不给改动
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '这篇主线清楚吗？' });
+  r = await chatCall({ message: '这篇主线清楚吗？' });
   assert.equal(r.status, 200, r.text);
   assert.ok(r.data.reply.content);
+  // 回话是流式推的，推出去的和存下的一样；改动标记和 JSON 不会推给网页
+  assert.equal(r.said.trim(), r.data.reply.content);
   assert.deepEqual(r.data.reply.edits, []);
   assert.equal(r.data.reply.rewrite, '');
 
   // 局部改：带引用的片段，回 find / replace，find 能在正文里原样找到；服务端不改正文
   const quote = before.split(/\n{2,}/).find((p) => p.trim() && before.split(p).length === 2);
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '这段压短一点', quote });
+  r = await chatCall({ message: '这段压短一点', quote });
   assert.equal(r.status, 200, r.text);
   const edit = r.data.reply;
   assert.equal(edit.edits.length, 1);
   assert.equal(edit.edits[0].find, quote);
   assert.equal(r.data.user.quote, quote);
+  assert.ok(!r.said.includes('@@改动@@') && !r.said.includes('"edits"'), `改动漏进回话：${r.said}`);
   assert.equal((await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content, before);
 
   // 整篇改：只回整理好的意见，不出新全文；之后走 /revise mode=full（哪怕意见里没有结构关键词）
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '整篇换个说法' });
+  r = await chatCall({ message: '整篇换个说法' });
   assert.equal(r.status, 200, r.text);
   const rw = r.data.reply;
   assert.ok(rw.rewrite);
@@ -230,7 +244,7 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.data.messages[5].started, true);
 
   // 网页上还没存完的正文以传上来的为准
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '改一下', text: '只有这一句还没存。' });
+  r = await chatCall({ message: '改一下', text: '只有这一句还没存。' });
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.reply.edits[0].find, '只有这一句还没存。');
 
@@ -249,11 +263,11 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.data.messages.length, 7);
 
   // 坏请求：空话 / 没正文 / 没有的版本 / 别人的稿子、别人的消息
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: '  ' });
+  r = await chatCall({ message: '  ' });
   assert.equal(r.status, 400);
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: 'x', text: '  ' });
+  r = await chatCall({ message: 'x', text: '  ' });
   assert.equal(r.status, 400);
-  r = await api.call('POST', `/api/drafts/${draftId}/chat`, { message: 'x', version: 'weibo' });
+  r = await chatCall({ message: 'x', version: 'weibo' });
   assert.equal(r.status, 404);
   r = await api.call('GET', '/api/drafts/999999/chat');
   assert.equal(r.status, 404);
@@ -265,6 +279,21 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.status, 200, r.text);
   assert.deepEqual((await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages, []);
   await api.call('PUT', '/api/chat-keep', { days: 100 });
+});
+
+test('对话回复拆分：标记被拆在两段里也不漏给网页；没标记就是只回答；JSON 坏了当没改', async () => {
+  const { replyCutter, splitChatReply } = await import('../server/routes/editor.js');
+  const raw = '先说结论。\n@@改动@@\n{"edits":[{"find":"a","replace":"b","all":false}],"rewrite":""}';
+  for (const size of [1, 2, 3, 5, 7, 100]) {
+    let out = '';
+    const cut = replyCutter((t) => { out += t; });
+    for (let i = 0; i < raw.length; i += size) cut.push(raw.slice(i, i + size));
+    cut.flush();
+    assert.equal(out, '先说结论。\n', `每段 ${size} 字时推出去的不对：${out}`);
+  }
+  assert.deepEqual(splitChatReply(raw).changes.edits, [{ find: 'a', replace: 'b', all: false }]);
+  assert.deepEqual(splitChatReply('只是回答，没有改动。'), { reply: '只是回答，没有改动。', changes: { edits: [], rewrite: '' }, broken: false });
+  assert.equal(splitChatReply('改了。\n@@改动@@\n{坏的').broken, true);
 });
 
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {

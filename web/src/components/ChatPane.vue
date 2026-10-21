@@ -18,11 +18,12 @@
           <div class="chat-bubble">{{ m.content }}</div>
         </template>
         <template v-else>
-          <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>正在看稿子…</div>
+          <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>正在想…</div>
           <div v-else-if="m.error" class="chat-err">{{ m.error }} <button type="button" class="mini" @click="c.retry(m)">重试</button></div>
           <template v-else>
             <!-- 回话是 Markdown，走 lib/text.js 的 markdown()（先转义再加标签） -->
-            <div class="chat-reply" v-html="markdown(m.content)"></div>
+            <div class="chat-reply" :class="{ typing: m.streaming }" v-html="markdown(m.content)"></div>
+            <div v-if="m.streaming" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span></div>
 
             <!-- 整篇重写：先确认再动手 -->
             <div v-if="m.rewrite" class="chat-changes chat-rewrite" data-kind="rewrite">
@@ -138,7 +139,7 @@ async function clearAll() {
 
 /* 有新消息或回话到了：滚到底 */
 const scrollEnd = () => nextTick(() => { if (log.value) log.value.scrollTop = log.value.scrollHeight; });
-watch(() => [c.messages.length, c.messages[c.messages.length - 1]?.pending], scrollEnd);
+watch(() => [c.messages.length, c.messages[c.messages.length - 1]?.pending, c.messages[c.messages.length - 1]?.content?.length], scrollEnd);
 watch(() => c.focusTick, () => nextTick(() => input.value?.focus()));
 /* 换了稿子或版本：取那一串的记录；引用的那段属于上一篇，不带过去 */
 watch(() => s.draft?.id, () => { c.quote = ''; });

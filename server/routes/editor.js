@@ -1,11 +1,11 @@
 /* 路由 · editor：编辑器：划词改写、/ 续写、语音改稿、右栏 AI 对话。 */
 import { CHAT_KEEP_CHOICES, Chats, Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON } from '../llm.js';
+import { generateJSON, parseJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
-import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_SCHEMA, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
-import { json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_MARK, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
+import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { openProgressStream, runTextStream } from './stream.js';
 
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
@@ -168,46 +168,93 @@ export async function handleChat(req, res, body, params) {
   const me = await writerMe(user.id, persona, hint, 'assist');
   const target = { ...draft, platform: version || draft.platform };
 
-  const data = await withRetry(async () => {
-    const out = await generateJSON({
+  // 校验都在开流之前：坏请求照常回 4xx JSON。之后走 SSE：delta 只推回话，done 带存好的两条
+  const ps = openProgressStream(res);       // ps.aborted 是 getter：别解构
+  const { send, end } = ps;
+  try {
+    send('start', { version });
+    const cut = replyCutter((t) => send('delta', { text: t }));
+    const raw = await streamText({
       meta: { feature: '编辑器对话', userId: user.id },
       system: sys('chat', CHAT_SYSTEM),
       user: chatUser(target, persona, samples, me, { text, messages, quote }),
-      schema: CHAT_SCHEMA,
       mock: () => mockChat(text, message, quote),
+      onDelta: cut.push,
+      signal: ps.signal,
     });
-    if (!out || typeof out.reply !== 'string' || !Array.isArray(out.edits)) throw new HttpError(502, '没有拿到回复');
-    return out;
-  }, 'AI 对话失败，请再试一次');
+    if (ps.aborted) return;
+    cut.flush();
+    const { reply: said, changes, broken } = splitChatReply(raw);
 
-  // 只留能在正文里原样找到的改动
-  const { applied, skipped } = applyVoiceEdits(text, data.edits);
-  const kept = new Set(applied.map((a) => a.find));
-  const rewrite = String(data.rewrite || '').trim().slice(0, 1000);
-  const edits = rewrite ? [] : data.edits
-    .map((e) => ({ find: String(e?.find || ''), replace: String(e?.replace ?? ''), all: Boolean(e?.all) }))
-    .filter((e) => kept.has(e.find.slice(0, 80)) && e.find !== e.replace);
-  const reply = String(data.reply || '').trim()
-    || (rewrite ? '这要整篇重写，开始吗？' : edits.length ? '改好了，看看下面的改动。' : '我没太明白，换个说法试试？');
+    // 只留能在正文里原样找到的改动
+    const { applied, skipped } = applyVoiceEdits(text, changes.edits);
+    const kept = new Set(applied.map((x) => x.find));
+    const rewrite = String(changes.rewrite || '').trim().slice(0, 1000);
+    const edits = rewrite ? [] : (Array.isArray(changes.edits) ? changes.edits : [])
+      .map((e) => ({ find: String(e?.find || ''), replace: String(e?.replace ?? ''), all: Boolean(e?.all) }))
+      .filter((e) => kept.has(e.find.slice(0, 80)) && e.find !== e.replace);
+    if (broken) skipped.push('改动清单没解析出来');
+    const reply = said || (rewrite ? '这要整篇重写，开始吗？' : edits.length ? '改好了，看看下面的改动。' : '');
+    if (!reply) throw new HttpError(502, '没有拿到回复，请再试一次');
 
-  // 模型回来了才一起存：失败时这一问不留在记录里，网页上点「重试」再发
-  const userMsg = await Chats.add(draft.id, user.id, version, { role: 'user', content: message, quote });
-  const aiMsg = await Chats.add(draft.id, user.id, version, {
-    role: 'assistant', content: reply, data: { edits, rewrite, skipped: rewrite ? [] : skipped },
-  });
-  json(res, 200, { user: chatView(userMsg), reply: chatView(aiMsg), version });
+    // 模型回来了才一起存：失败或中途关掉时这一问不留在记录里，网页上点「重试」再发
+    const userMsg = await Chats.add(draft.id, user.id, version, { role: 'user', content: message, quote });
+    const aiMsg = await Chats.add(draft.id, user.id, version, {
+      role: 'assistant', content: reply, data: { edits, rewrite, skipped: rewrite ? [] : skipped },
+    });
+    send('done', { user: chatView(userMsg), reply: chatView(aiMsg), version });
+  } catch (err) {
+    if (!ps.aborted) send('error', { message: describe(err) });
+  } finally {
+    end();
+  }
 }
 
-/* 演示模式：问号结尾当提问；说到「整篇 / 全文」当整篇重写；否则在引用的片段（没有就第一段）后面加一句 */
-function mockChat(text, last, quote) {
-  if (/[？?]\s*$/.test(last)) return { reply: `（演示模式）这里会回答你的问题：「${last.slice(0, 30)}」。配置模型密钥后生效。`, edits: [], rewrite: '' };
-  if (/整篇|全文|通篇/.test(last)) return { reply: '（演示模式）这要整篇重写：按你的要求从头改一遍。开始吗？', edits: [], rewrite: last };
-  const para = (quote && text.includes(quote) ? quote : text.split(/\n{2,}/).find((p) => p.trim() && text.split(p).length === 2)) || text;
+/* 流式时只把标记之前的回话推出去。标记可能被拆在两段 delta 里：末尾留够标记长度的字先不推 */
+export function replyCutter(emit) {
+  let buf = '';
+  let sent = 0;
+  let stopped = false;
+  const hold = CHAT_MARK.length - 1;
   return {
-    reply: `（演示模式）按「${last.slice(0, 20)}」改了一处，配置模型密钥后会真的按你的意思改。`,
-    edits: [{ find: para, replace: `${para}（演示：按你的意思改过）`, all: false }],
-    rewrite: '',
+    push(t) {
+      if (stopped) return;
+      buf += t;
+      const at = buf.indexOf(CHAT_MARK);
+      const upto = at >= 0 ? at : Math.max(sent, buf.length - hold);
+      if (upto > sent) { emit(buf.slice(sent, upto)); sent = upto; }
+      if (at >= 0) stopped = true;
+    },
+    flush() {
+      if (stopped) return;
+      if (buf.length > sent) emit(buf.slice(sent));
+      sent = buf.length;
+    },
   };
+}
+
+/* 拆成回话和改动：标记前是回话，后面是 JSON。没有标记 = 只是回答；JSON 坏了就当没改，标一下 */
+export function splitChatReply(raw) {
+  const textAll = String(raw || '');
+  const at = textAll.indexOf(CHAT_MARK);
+  if (at < 0) return { reply: textAll.trim(), changes: { edits: [], rewrite: '' }, broken: false };
+  const reply = textAll.slice(0, at).trim();
+  try {
+    const obj = parseJSON(textAll.slice(at + CHAT_MARK.length));
+    return { reply, changes: { edits: Array.isArray(obj?.edits) ? obj.edits : [], rewrite: String(obj?.rewrite || '') }, broken: false };
+  } catch {
+    return { reply, changes: { edits: [], rewrite: '' }, broken: true };
+  }
+}
+
+/* 演示模式：问号结尾当提问；说到「整篇 / 全文」当整篇重写；否则在引用的片段（没有就第一段）后面加一句。
+   返回的是和真模型一样格式的文本：回话 + 标记 + 改动 JSON */
+function mockChat(text, last, quote) {
+  if (/[？?]\s*$/.test(last)) return `（演示模式）这里会回答你的问题：「${last.slice(0, 30)}」。配置模型密钥后生效。`;
+  const tail = (changes) => `\n${CHAT_MARK}\n${JSON.stringify(changes)}`;
+  if (/整篇|全文|通篇/.test(last)) return `（演示模式）这要整篇重写：按你的要求从头改一遍。开始吗？${tail({ edits: [], rewrite: last })}`;
+  const para = (quote && text.includes(quote) ? quote : text.split(/\n{2,}/).find((p) => p.trim() && text.split(p).length === 2)) || text;
+  return `（演示模式）按「${last.slice(0, 20)}」改了一处，配置模型密钥后会真的按你的意思改。${tail({ edits: [{ find: para, replace: `${para}（演示：按你的意思改过）`, all: false }], rewrite: '' })}`;
 }
 
 /* 语音改稿：转写是修改要求。只套用能在正文里对上的 find，对不上的丢掉。 */

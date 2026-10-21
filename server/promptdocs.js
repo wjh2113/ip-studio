@@ -176,7 +176,7 @@ export const PROMPT_DOCS = () => [
     system: REVISE_PATCH_SYSTEM, schema: REVISE_PATCH_SCHEMA,
   },
   {
-    key: 'chat', name: '编辑器对话', stage: 'polish', mode: '结构化输出',
+    key: 'chat', name: '编辑器对话', stage: 'polish', mode: '流式文本 + 改动 JSON',
     where: '成稿右栏「AI 对话」：工具条「问 AI」、划词菜单「问 AI」（带着选中的片段）、检查结果「交给 AI 改」；话筒说的也先转成文字再发',
     positioning: '网页上「用一句话改稿」的唯一入口：能只聊（问意见、要标题、查结构），也能让它改左边的正文。原来的「按意见重写」「按我的意见改这段」「语音改稿」都并进来了。',
     value: [
@@ -185,7 +185,8 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '对话按稿子 + 版本存在 chat_messages，取最近 12 轮带给模型（助手那句标上作者应用没有）；正文用网页上正在看的那一版（可能还没存完）。保存天数每人自己选（默认 100 天），过期定时删。',
-      '模型先判断是「问」还是「改」：问就只回 reply；局部改回 find / replace；整篇重写、调结构只回整理好的修改意见 rewrite，不写新全文。',
+      '回复是流式的：模型先写回话（网页边写边显示），只是问就到此为止；要改稿再另起一行写标记 @@改动@@ 和改动 JSON。服务端只把标记之前的推给网页。',
+      '局部改回 edits（find / replace）；整篇重写、调结构只回整理好的修改意见 rewrite，不写新全文。',
       '局部改：服务端用 applyEdits 校验每一处 find，对不上的丢掉；不落盘，作者点「应用」才写进正文，可撤销。',
       '整篇改：对话里先问「开始吗」，作者点「开始重写」后网页调 /revise（mode=full），走成稿提示词流式重写，原稿留历史、出逐段对照。',
     ],

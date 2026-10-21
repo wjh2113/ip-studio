@@ -1,7 +1,7 @@
 /* 右栏 AI 对话：写稿时和 AI 聊这篇稿子，或者让它改左边的正文。网页上「用一句话改稿」都走这里。
  *
  *   对话按「稿子 + 版本」各一串，存在服务端（保存天数每人自己定，默认 100 天）   load / clear / setKeep
- *   发一句：带上正在看的那一版正文（可能还没存完）和引用的片段；历史由服务端从记录里取   send
+ *   发一句：带上正在看的那一版正文（可能还没存完）和引用的片段；历史由服务端从记录里取。回话边写边出   send
  *   局部改：AI 回一组 find / replace，先列在对话里，点「应用」才写进正文   apply / undo
  *     应用走 editor.replaceContent：算一步撤销，Ctrl+Z 也能退回，改完自动保存
  *   整篇改：AI 先问「开始吗」，点「开始重写」才调 editor.revise（整篇流式重写，留历史、出逐段对照）   startRewrite
@@ -10,7 +10,7 @@
  * 打开对话栏：右栏页签、工具条「问 AI」、划词菜单「问 AI」（带着选中的那段过来）   open */
 import { defineStore } from 'pinia';
 import { computed, reactive, ref } from 'vue';
-import { api, upload } from '../lib/api.js';
+import { api, stream, upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { applyEdits } from '../../../shared/edits.js';
 import { useStudioStore } from './studio.js';
@@ -95,14 +95,20 @@ export const useChatStore = defineStore('chat', () => {
     quote.value = '';
     busy.value = true;
     try {
-      const data = await api(`/drafts/${id}/chat`, { method: 'POST', body: { message: msg, version: ver, text: ed.text, quote: q } });
-      Object.assign(mine, local(data.user));
-      Object.assign(reply, local(data.reply));
+      // 回话一个字一个字地出；写完回话后服务端才给改动清单，done 里是存好的两条
+      await stream(`/drafts/${id}/chat`, { message: msg, version: ver, text: ed.text, quote: q }, (event, data) => {
+        if (event === 'delta') { reply.pending = false; reply.streaming = true; reply.content += data.text; }
+        else if (event === 'done') { Object.assign(mine, local(data.user)); Object.assign(reply, local(data.reply)); }
+        else if (event === 'error') throw new Error(data.message);
+      });
+      if (!reply.id) throw new Error('回话中断了，再试一次');
     } catch (err) {
       reply.error = err.message;
+      reply.content = '';
       reply.retry = { content: msg, quote: q };
     } finally {
       reply.pending = false;
+      reply.streaming = false;
       busy.value = false;
     }
     return true;
