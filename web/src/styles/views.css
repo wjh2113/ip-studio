@@ -626,9 +626,6 @@
 .library-tabs button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
 .library-tabs .n { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 
-.kind-nav { flex: none; }
-}
-
 .library-kinds-nav {
   border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--panel);
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px;
