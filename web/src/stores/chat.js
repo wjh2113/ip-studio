@@ -178,7 +178,7 @@ export const useChatStore = defineStore('chat', () => {
     const ed = useEditorStore();
     if (!m.rewrite || m.started || busy.value) return;
     m.running = true;
-    const ok = await ed.revise(m.rewrite, { mode: 'full' });
+    const ok = await ed.revise(m.rewrite, { mode: 'full', from: 'chat' });   // from=chat：用对话框左下角选的模型
     m.running = false;
     if (!ok) return;
     m.started = true;

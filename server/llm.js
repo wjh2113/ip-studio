@@ -148,7 +148,7 @@ export const setUsageSink = (fn) => { usageSink = fn; };
    调完按真实用量多退少补。并发上限先占名额再去等数据库，避免两个请求一起挤进来。 */
 async function tracked(meta, run) {
   const started = Date.now();
-  const model = modelFor(meta.tier);
+  const model = meta.model || modelFor(meta.tier);   // 指定了模型就记它；网关回了实际模型再换成实际的
   const metered = meta.userId && !String(meta.feature || '').startsWith('eval');
   let hold = 0;
   if (metered) {
@@ -168,10 +168,10 @@ async function tracked(meta, run) {
     }
   }
   try {
-    const { value, usage } = await run();
+    const { value, usage, served } = await run();
     const tokens = (usage?.input || 0) + (usage?.output || 0);
     usageSink?.({
-      ...meta, provider: PROVIDER, model, ok: true, ms: Date.now() - started,
+      ...meta, provider: PROVIDER, model: served || model, ok: true, ms: Date.now() - started,
       inputTokens: usage?.input || 0, outputTokens: usage?.output || 0,
       units: tokens, unit: 'token',
     });
@@ -265,7 +265,8 @@ export async function generateText({ system, user, mock, meta = {} }) {
 /* ------------------------------------------------------------------ *
  * 流式正文：逐段回调 onDelta，返回完整文本
  * ------------------------------------------------------------------ */
-export async function streamText({ system, user, onDelta, mock, signal, meta = {} }) {
+/* meta.model：指定模型（网关模型列表里的 id），不给 = 按档位自动选路。onServed(实际模型) 在写完后回调一次 */
+export async function streamText({ system, user, onDelta, mock, signal, meta = {}, onServed }) {
   let sent = 0;
   const count = (text) => { sent += text.length; onDelta(text); };
   const inputChars = String(system || '').length + String(user || '').length;
@@ -273,7 +274,9 @@ export async function streamText({ system, user, onDelta, mock, signal, meta = {
   const tier = tierOf({ ...meta, llmPref }, 'quality');
   return tracked({ feature: 'unknown', ...meta, llmPref, inputChars, tier }, async () => {
     try {
-      return await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId, tier });
+      const out = await streamOnce({ system, user, onDelta: count, mock, signal, userId: meta.userId, tier, model: meta.model });
+      onServed?.(out.served || meta.model || '');
+      return out;
     } catch (err) {
       // 带上已收到的字数，tracked() 据此估算扣点
       if (err && typeof err === 'object') err.partialChars = sent;
@@ -282,8 +285,8 @@ export async function streamText({ system, user, onDelta, mock, signal, meta = {
   });
 }
 
-async function streamOnce({ system, user, onDelta, mock, signal, userId, tier = 'quality' }) {
-  if (PROVIDER === 'mock') return { value: await streamMock(mock(), onDelta, signal), usage: null };
+async function streamOnce({ system, user, onDelta, mock, signal, userId, tier = 'quality', model = '' }) {
+  if (PROVIDER === 'mock') return { value: await streamMock(mock(), onDelta, signal), usage: null, served: model };
 
   if (PROVIDER === 'anthropic') {
     const stream = anthropic().messages.stream(
@@ -313,8 +316,8 @@ async function streamOnce({ system, user, onDelta, mock, signal, userId, tier = 
     };
   }
 
-  const res = await chat({ system, user, stream: true, onDelta, signal, userId, capability: tier });
-  return { value: res.text, usage: res.usage };
+  const res = await chat({ system, user, stream: true, onDelta, signal, userId, capability: tier, model });
+  return { value: res.text, usage: res.usage, served: res.served };
 }
 
 /* ------------------------------------------------------------------ *
@@ -325,9 +328,17 @@ async function chat(opts) {
   return openaiChat(opts);
 }
 
+/* 自动：按档位传 capability，允许网关切通道（fallback: true）。
+   指定模型：只传 model、fallback: false——界面上选了哪个就只用哪个，失败也不偷偷换成自动选路 */
 async function gatewayChat({
-  system, user, stream, onDelta, signal, temperature = TEMP_PROSE, json = false, capability, userId,
+  system, user, stream, onDelta, signal, temperature = TEMP_PROSE, json = false, capability, userId, model = '',
 }) {
+  const route = model ? { model, fallback: false } : {
+    capability: capability === 'quality' ? GATEWAY_CAPABILITY
+      : capability === 'fast' ? GATEWAY_CAPABILITY_JSON
+        : (json ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY),
+    fallback: true,
+  };
   const res = await fetch(`${GATEWAY_URL}/api/ai/chat`, {
     method: 'POST',
     signal: withTimeout(signal, stream ? STREAM_TIMEOUT : CALL_TIMEOUT),
@@ -337,12 +348,9 @@ async function gatewayChat({
     },
     body: JSON.stringify({
       tenantId: GATEWAY_TENANT,
-      capability: capability === 'quality' ? GATEWAY_CAPABILITY
-        : capability === 'fast' ? GATEWAY_CAPABILITY_JSON
-          : (json ? GATEWAY_CAPABILITY_JSON : GATEWAY_CAPABILITY),
+      ...route,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       dataClass: 'internal',
-      fallback: true,
       stream: Boolean(stream),
       temperature,
       ...(userId ? { userId: String(userId) } : {}),
@@ -376,7 +384,9 @@ async function openaiChat({
 
 async function readChatResponse(res, stream, onDelta) {
   if (!res.ok) {
-    throw new Error(`上游接口返回 ${res.status}：${(await res.text()).slice(0, 300)}`);
+    const err = new Error(`上游接口返回 ${res.status}：${(await res.text()).slice(0, 300)}`);
+    err.upstream = res.status;
+    throw err;
   }
 
   if (!stream) {
@@ -384,12 +394,14 @@ async function readChatResponse(res, stream, onDelta) {
     return {
       text: data.choices?.[0]?.message?.content || '',
       usage: { input: data.usage?.prompt_tokens, output: data.usage?.completion_tokens },
+      served: data.gateway?.model || '',
     };
   }
 
   let full = '';
   let buf = '';
   let usage = null;
+  let served = '';      // 网关在流末尾的 gateway 元数据里给实际调用的模型
   const decoder = new TextDecoder();
   for await (const chunk of res.body) {
     buf += decoder.decode(chunk, { stream: true });
@@ -405,10 +417,42 @@ async function readChatResponse(res, stream, onDelta) {
         if (delta) { full += delta; onDelta?.(delta); }
         // 开了 include_usage 之后，用量在最后一个 chunk 里
         if (chunk.usage) usage = { input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens };
+        if (chunk.gateway?.model) served = String(chunk.gateway.model);
       } catch { /* 忽略心跳等非 JSON 行 */ }
     }
   }
-  return { text: full, usage };
+  return { text: full, usage, served };
+}
+
+/* ------------------------------------------------------------------ *
+ * 可指定的模型列表：网关 GET /api/ai/models（租户 Key 只在服务端）
+ *   gateway —— 列表按 id 去重，available = 至少一个健康通道；缓存 1 分钟
+ *   mock    —— 演示用的三个（一个不可用），让界面和测试能走通
+ *   其他    —— 没有列表，只能「自动」
+ * ------------------------------------------------------------------ */
+const MOCK_MODELS = [
+  { id: 'demo-quality', name: '演示 · 高质量', available: true },
+  { id: 'demo-fast', name: '演示 · 快速', available: true },
+  { id: 'demo-preview', name: '演示 · 新模型 Preview', available: true },
+  { id: 'demo-down', name: '演示 · 暂不可用', available: false },
+];
+let modelCache = null;
+export async function listModels({ fresh = false } = {}) {
+  if (PROVIDER === 'mock') return MOCK_MODELS;
+  if (PROVIDER !== 'gateway') return [];
+  if (!fresh && modelCache && Date.now() - modelCache.at < 60_000) return modelCache.list;
+  const res = await fetch(`${GATEWAY_URL}/api/ai/models`, {
+    signal: AbortSignal.timeout(10_000),
+    headers: GATEWAY_KEY ? { Authorization: `Bearer ${GATEWAY_KEY}` } : {},
+  });
+  if (!res.ok) throw new Error(`模型列表取不到（网关 ${res.status}）`);
+  const data = await res.json();
+  const seen = new Set();
+  const list = (Array.isArray(data?.data) ? data.data : [])
+    .filter((m) => m && typeof m.id === 'string' && m.id.trim() && !seen.has(m.id) && seen.add(m.id))
+    .map((m) => ({ id: m.id, name: String(m.name || m.id), available: m.available !== false }));
+  modelCache = { at: Date.now(), list };
+  return list;
 }
 
 /* ------------------------------------------------------------------ *

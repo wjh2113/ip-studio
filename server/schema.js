@@ -15,6 +15,7 @@ export const users = pgTable('users', {
   used: integer('used').notNull().default(0),
   avatar_credits: integer('avatar_credits').notNull().default(0),
   chat_keep_days: integer('chat_keep_days').notNull().default(100),   // 右栏对话记录保存几天，0 = 一直留
+  chat_model: text('chat_model').notNull().default(''),   // 右栏 AI 对话指定的模型 ID（网关模型列表里的 id），空 = 自动
   llm_pref: text('llm_pref').notNull().default('auto'),              // 模型能力：auto 按功能分档 / quality 偏质量 / fast 偏快速
 });
 

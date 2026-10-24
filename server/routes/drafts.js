@@ -13,7 +13,7 @@ import {
   DEFAULT_PLATFORM, DEFAULT_TONE, PLATFORMS, platformSpec, TONES, TOPICS_SCHEMA, TOPICS_SYSTEM, performanceBlock, topicsUser,
 } from '../prompts.js';
 import { performanceOf } from '../performance.js';
-import { describe, json, refsOf, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { describe, json, refsOf, requireUser, styleSamples, sys, withRetry, writerMe, chatModelOf } from './common.js';
 import { refCount, weigh } from '../refs.js';
 import { recallMaterials } from './materials.js';
 import { resolveFramework } from './frameworks.js';
@@ -373,11 +373,13 @@ export async function handleRevise(req, res, body, params) {
   const samples = await styleSamples(persona, user.id, hint);
   const target = { ...draft, platform: version || draft.platform };
 
+  // 从右栏对话里点的「开始重写」：用对话框左下角选的模型
+  const pick = body?.from === 'chat' ? await chatModelOf(user.id) : null;
   await runTextStream(res, {
     start: () => ({ version, mode: 'full' }),
     before: (send) => send('progress', { step: 'revising', label: '正在按意见重写全文…' }),
     stream: {
-      meta: { feature: '按意见重写', userId: user.id },
+      meta: { feature: '按意见重写', userId: user.id, ...(pick ? { model: pick.id } : {}) },
       system: sys('content', CONTENT_SYSTEM),
       user: reviseUser(target, persona, samples, me, text, notes),
       mock: () => `${text}\n\n（演示模式：这里会按修改意见重写全文——${notes.slice(0, 40)}）`,

@@ -168,7 +168,7 @@ export const useEditorStore = defineStore('editor', () => {
   /* 按意见重写：整篇在原稿上重写（版本栏开着哪一版就改哪一版）。入口在右栏对话：AI 判断要整篇改、作者点「开始重写」。
      mode = 'full' 直接整篇重写（对话已经判断过）；不传由服务端按意见里的关键词决定。
      流式显示；写完服务端才落盘，原稿留一版历史，这里再记一步撤销，Ctrl+Z 能退回。失败原稿不动 */
-  async function revise(notes, { mode = '' } = {}) {
+  async function revise(notes, { mode = '', from = '' } = {}) {
     const st = s();
     const draft = st.draft;
     const ver = editVer.value;
@@ -186,7 +186,7 @@ export const useEditorStore = defineStore('editor', () => {
     let ok = false;
     let after = '';
     try {
-      await stream(`/drafts/${draft.id}/revise`, { notes, version: ver, ...(mode ? { mode } : {}) }, (event, data) => {
+      await stream(`/drafts/${draft.id}/revise`, { notes, version: ver, ...(mode ? { mode } : {}), ...(from ? { from } : {}) }, (event, data) => {
         if (event === 'progress') progressLabel.value = data.label || progressLabel.value;
         else if (event === 'delta') live.text += data.text;
         else if (event === 'done') {

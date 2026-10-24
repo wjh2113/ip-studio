@@ -31,6 +31,24 @@
             </div>
           </fieldset>
 
+          <fieldset class="subsection" id="settingsChatModel">
+            <legend>AI 对话用的模型<span>成稿右栏「AI 对话」和从对话里点的整篇重写用它；对话框左下角也能直接切</span></legend>
+            <template v-if="st.canPick">
+              <label class="settings-keep">
+                <span class="field-label">模型</span>
+                <select id="settingsModelSel" :value="st.modelsGone ? '__gone__' : st.chatModel" @change="st.setChatModel($event.target.value)">
+                  <option value="">自动（推荐）</option>
+                  <option v-for="m in st.models" :key="m.id" :value="m.id" :disabled="!m.available">{{ m.name }}{{ m.available ? '' : '（暂不可用）' }}</option>
+                  <option v-if="st.modelsGone" value="__gone__" disabled>已停用：{{ st.chatModel }}</option>
+                </select>
+              </label>
+              <p v-if="st.modelsGone" class="form-error">你选的模型已停用，请重新选择。</p>
+              <p class="hint">「自动」按上面的模型能力选档，网关可以在通道之间切换；指定了模型就只用那一个，调不通会直接告诉你，不会偷偷换成别的。写稿、检查等其他功能仍按上面的模型能力走。</p>
+            </template>
+            <p v-else class="hint">当前接入方式只支持自动选模型。</p>
+            <p v-if="st.modelsError" class="form-error">模型列表取不到：{{ st.modelsError }}</p>
+          </fieldset>
+
           <fieldset class="subsection" id="settingsChatKeep">
             <legend>对话记录保存<span>右栏 AI 对话超过这个天数会自动删；对你所有稿子都生效</span></legend>
             <label class="settings-keep">

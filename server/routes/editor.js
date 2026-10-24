@@ -1,11 +1,11 @@
 /* 路由 · editor：编辑器：划词改写、/ 续写、语音改稿、右栏 AI 对话。 */
 import { CHAT_KEEP_CHOICES, Chats, Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON, parseJSON, streamText } from '../llm.js';
+import { generateJSON, listModels, parseJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
 import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_MARK, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
-import { describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { chatModelOf, describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { openProgressStream, runTextStream } from './stream.js';
 
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
@@ -86,7 +86,7 @@ const versionOf = (req, body) => String(body?.version ?? new URL(req.url, 'http:
 const chatView = (m) => ({
   id: m.id, role: m.role, content: m.content, quote: m.quote, created_at: m.created_at,
   edits: m.edits || [], rewrite: m.rewrite || '', skipped: m.skipped || [],
-  done: m.done || {}, started: Boolean(m.started),
+  done: m.done || {}, started: Boolean(m.started), model: m.model || null,
 });
 
 export async function handleChatList(req, res, body, params) {
@@ -168,6 +168,7 @@ export async function handleChat(req, res, body, params) {
   const samples = await styleSamples(persona, user.id, hint);
   const me = await writerMe(user.id, persona, hint, 'assist');
   const target = { ...draft, platform: version || draft.platform };
+  const pick = await chatModelOf(user.id);
 
   // 校验都在开流之前：坏请求照常回 4xx JSON。之后走 SSE：delta 只推回话，done 带存好的两条
   const ps = openProgressStream(res);       // ps.aborted 是 getter：别解构
@@ -175,8 +176,10 @@ export async function handleChat(req, res, body, params) {
   try {
     send('start', { version });
     const cut = replyCutter((t) => send('delta', { text: t }));
+    let served = '';
     const raw = await streamText({
-      meta: { feature: '编辑器对话', userId: user.id },
+      meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
+      onServed: (m) => { served = m; },
       system: sys('chat', CHAT_SYSTEM),
       user: chatUser(target, persona, samples, me, { text, messages, quote }),
       mock: () => mockChat(text, message, quote),
@@ -201,14 +204,30 @@ export async function handleChat(req, res, body, params) {
     // 模型回来了才一起存：失败或中途关掉时这一问不留在记录里，网页上点「重试」再发
     const userMsg = await Chats.add(draft.id, user.id, version, { role: 'user', content: message, quote });
     const aiMsg = await Chats.add(draft.id, user.id, version, {
-      role: 'assistant', content: reply, data: { edits, rewrite, skipped: rewrite ? [] : skipped },
+      role: 'assistant', content: reply,
+      data: { edits, rewrite, skipped: rewrite ? [] : skipped, model: await modelTag(pick, served) },
     });
     send('done', { user: chatView(userMsg), reply: chatView(aiMsg), version });
   } catch (err) {
-    if (!ps.aborted) send('error', { message: describe(err) });
+    // 指定模型调不通就报出来，不偷偷换成自动选路
+    const why = pick && err?.upstream
+      ? `「${pick.name}」这次没调通（网关 ${err.upstream}），换一个模型或选「自动」再试`
+      : describe(err);
+    if (!ps.aborted) send('error', { message: why });
   } finally {
     end();
   }
+}
+
+/* 这条回话是哪个模型写的：网关给了实际模型就用实际的，查不到展示名就显示 id */
+async function modelTag(pick, served) {
+  const id = served || pick?.id || '';
+  if (!id) return { auto: !pick, id: '', name: '' };
+  let name = pick && pick.id.toLowerCase() === id.toLowerCase() ? pick.name : '';
+  if (!name) {
+    try { name = (await listModels()).find((m) => m.id.toLowerCase() === id.toLowerCase())?.name || id; } catch { name = id; }
+  }
+  return { auto: !pick, id, name };
 }
 
 /* 流式时只把标记之前的回话推出去。标记可能被拆在两段 delta 里：末尾留够标记长度的字先不推 */

@@ -9,6 +9,7 @@ export const ROUTES = [
   ['GET', /^\/api\/meta$/, R.handleMeta],
   ['GET', /^\/api\/settings$/, R.handleSettingsGet],
   ['PUT', /^\/api\/settings$/, R.handleSettingsPut],
+  ['GET', /^\/api\/llm\/models$/, R.handleModelsGet],
   ['GET', /^\/api\/personas$/, R.handlePersonaList],
   ['POST', /^\/api\/personas$/, R.handlePersonaCreate],
   ['GET', /^\/api\/personas\/(?<id>\d+)\/refs$/, R.handleRefsGet],

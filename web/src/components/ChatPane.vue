@@ -23,6 +23,7 @@
           <template v-else>
             <!-- 回话是 Markdown，走 lib/text.js 的 markdown()（先转义再加标签） -->
             <div class="chat-reply" :class="{ typing: m.streaming }" v-html="markdown(m.content)"></div>
+            <p v-if="m.model?.name" class="chat-by">{{ m.model.auto ? '自动 · ' : '' }}{{ m.model.name }}</p>
             <div v-if="m.streaming" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span></div>
 
             <!-- 整篇重写：先确认再动手 -->
@@ -76,8 +77,14 @@
           :disabled="!canSend || c.mic.recognizing" :title="c.mic.recording ? '说完了，点一下结束' : '用嘴说：说完转成文字放进输入框，看过再发'"
           :aria-label="c.mic.recording ? '结束录音' : '语音输入'" @click="c.toggleMic()"><Icon name="mic" :size="15" /></button>
       </div>
+      <p v-if="settings.modelsGone" class="chat-model-gone" id="chatModelGone">
+        <Icon name="info" :size="13" />你选的模型已停用，请在左下角重新选择
+      </p>
       <div class="chat-input-foot">
-        <span class="hint">{{ c.mic.recording ? '在听…说完点话筒' : c.mic.recognizing ? '转文字中…' : 'Enter 发送 · Shift+Enter 换行' }}</span>
+        <!-- 左下角选模型（像 Notion）：自动 = 按功能分档自动选路；指定了就只用那一个，调不通会直接说，不偷偷换 -->
+        <ModelPicker v-if="settings.canPick" :disabled="c.busy" />
+        <span v-else class="chat-model static" title="当前接入方式只支持自动选模型"><Icon name="sparkles" :size="12" />自动</span>
+        <span v-if="c.mic.recording || c.mic.recognizing" class="hint">{{ c.mic.recording ? '在听…说完点话筒' : '转文字中…' }}</span>
         <span class="grow"></span>
         <BusyBtn type="submit" class="btn primary small" id="chatSendBtn" :busy="c.busy" :disabled="!c.input.trim() || !canSend">发送</BusyBtn>
       </div>
@@ -94,6 +101,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
+import ModelPicker from './ModelPicker.vue';
 import { CHAT_SUGGESTS, useChatStore } from '../stores/chat.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useEditorStore } from '../stores/editor.js';
@@ -112,11 +120,12 @@ const input = ref(null);
 
 const clip = (t, n) => { const x = String(t || ''); return x.length > n ? `${x.slice(0, n)}…` : x; };
 const notes = (t) => String(t || '').split('\n').map((x) => x.replace(/^\s*(\d+[.、)]|[-*·])\s*/, '').trim()).filter(Boolean);
-const canSend = computed(() => Boolean(s.draft?.id && ed.text.trim() && !s.streaming));
+const canSend = computed(() => Boolean(s.draft?.id && ed.text.trim() && !s.streaming && !settings.modelsGone));
 const verNote = computed(() => (v.current ? `现在对着「${v.label}」版聊，改的也是这一版。` : ''));
 const placeholder = computed(() => {
+  if (settings.modelsGone) return '你选的模型已停用，先在左下角重新选一个';
   if (!canSend.value) return s.streaming ? '正在生成，等写完再聊' : '有了正文才能聊';
-  return '问 AI，或说要怎么改：比如「第二段太啰嗦，压短一点」';
+  return '问 AI，或说要怎么改（Enter 发送，Shift+Enter 换行）';
 });
 
 function submit() {
@@ -144,6 +153,7 @@ watch(() => s.draft?.id, () => { c.quote = ''; });
 watch(() => [s.draft?.id, ed.editVer], () => { void c.load().then(scrollEnd); });
 onMounted(() => {
   void c.load().then(scrollEnd);
+  void settings.loadModels();      // 左下角的模型列表；1 分钟内不重复取
   if (c.focusTick) input.value?.focus();
 });
 onBeforeUnmount(() => c.stopMic());

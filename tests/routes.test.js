@@ -310,6 +310,55 @@ test('对话回复拆分：标记被拆在两段里也不漏给网页；没标�
   assert.equal(splitChatReply('改了。\n@@改动@@\n{坏的').broken, true);
 });
 
+test('对话选模型：列表来自服务端；只能存列表里可用的；指定后回话标出模型；停用了就拦下让人重选，不替他换', async () => {
+  let r = await api.call('GET', '/api/llm/models');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.canPick, true);
+  assert.equal(r.data.chatModel, '');
+  assert.equal(r.data.gone, false);
+  assert.ok(r.data.models.some((m) => m.id === 'demo-quality' && m.available));
+  assert.ok(r.data.models.some((m) => !m.available));
+
+  // 不在列表 / 不可用的不让存；大小写不敏感，存的是列表里的原 id
+  r = await api.call('PUT', '/api/settings', { chatModel: 'deepseek-pro' });
+  assert.equal(r.status, 400);
+  r = await api.call('PUT', '/api/settings', { chatModel: 'demo-down' });
+  assert.equal(r.status, 400);
+  r = await api.call('PUT', '/api/settings', { chatModel: ' DEMO-Quality ' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.chatModel, 'demo-quality');
+  assert.equal((await api.call('GET', '/api/settings')).data.chatModel, 'demo-quality');
+
+  // 指定了模型：回话标出是哪个；从对话里点的整篇重写也认这个设置
+  r = await chatCall({ message: '这篇主线清楚吗？' });
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.reply.model, { auto: false, id: 'demo-quality', name: '演示 · 高质量' });
+  const before = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  r = await api.call('POST', `/api/drafts/${draftId}/revise`, { notes: '整篇换个说法', mode: 'full', from: 'chat' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: done/);
+  await api.call('PUT', `/api/drafts/${draftId}/content`, { content: before });
+
+  // 存着的模型从列表里没了：列表标 gone，对话直接 409，不自动换成别的
+  const { Users } = await import('../server/db.js');
+  const me = await Users.byName(`rt${process.pid}`);
+  await Users.setSettings(me.id, { chatModel: 'retired-model' });
+  r = await api.call('GET', '/api/llm/models');
+  assert.equal(r.data.gone, true);
+  r = await chatCall({ message: '在吗？' });
+  assert.equal(r.status, 409);
+  assert.match(r.data?.error || r.text, /已停用/);
+
+  // 选回自动：回话标 auto
+  r = await api.call('PUT', '/api/settings', { chatModel: '' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.chatModel, '');
+  r = await chatCall({ message: '这篇主线清楚吗？' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.reply.model.auto, true);
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+});
+
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {
   let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
   assert.equal(r.status, 400);

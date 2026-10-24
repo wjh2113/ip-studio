@@ -87,6 +87,49 @@ await step('整篇改：先问「开始吗」，不点不动；点「开始重�
   await page.waitForFunction((b) => document.querySelector('#content').textContent === b, before);
   return `意见：${notes.slice(0, 16)}｜逐段对照=${diff}`;
 });
+await step('左下角选模型（像 Notion）：按钮弹出菜单，自动在最上面，按厂商分组，测试版有标签，不可用的灰掉；键盘可选；指定后回话标出模型；设置页同步', async () => {
+  await page.waitForSelector('#chatModelBtn');
+  if ((await page.textContent('#chatModelBtn')).trim() !== '自动') throw new Error('默认应显示「自动」');
+  await page.click('#chatModelBtn');
+  await page.waitForSelector('#chatModelMenu [data-model="demo-quality"]');
+  const first = await page.$eval('#chatModelMenu .mpick-opt', (el) => el.dataset.model);
+  if (first !== '') throw new Error('第一项应是自动');
+  const checked = await page.$eval('#chatModelMenu [data-model=""]', (el) => el.getAttribute('aria-selected'));
+  const groups = await page.$$eval('#chatModelMenu .mpick-group h4', (els) => els.map((e) => e.textContent.trim()));
+  const tag = await page.isVisible('#chatModelMenu [data-model="demo-preview"] .mpick-tag');
+  const off = await page.$eval('#chatModelMenu [data-model="demo-down"]', (el) => el.disabled);
+  if (checked !== 'true' || !tag || !off) throw new Error(`勾选=${checked} 测试版标签=${tag} 不可用灰=${off}`);
+  if (shot) await page.screenshot({ path: `${shot}/chat-model-menu.png` });
+  // Esc 关；键盘 ↓ 打开、↓ 移到第一个模型、回车选中
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#chatModelMenu', { state: 'detached' });
+  await page.focus('#chatModelBtn');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForSelector('#chatModelMenu');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /AI 对话改用：演示 · 高质量/.test(document.querySelector('#toast')?.textContent || ''));
+  const label = (await page.textContent('#chatModelBtn')).trim();
+  await page.fill('#chatInput', '这篇适合什么人看？');
+  await page.press('#chatInput', 'Enter');
+  await waitReply();
+  const by = (await page.textContent(`${lastReply} .chat-by`)).trim();
+  if (by !== '演示 · 高质量') throw new Error(`回话没标模型：${by}`);
+  await page.click('#chatKeepLink');
+  await page.waitForSelector('#settingsPage:not(.hidden)');
+  await page.waitForFunction(() => document.querySelector('#settingsModelSel')?.value === 'demo-quality');
+  await page.click('#settingsCloseBtn');
+  await page.waitForSelector('#settingsPage.hidden', { state: 'attached' });
+  // 点外面关；再选回自动
+  await page.click('#chatModelBtn');
+  await page.waitForSelector('#chatModelMenu');
+  await page.mouse.click(10, 10);
+  await page.waitForSelector('#chatModelMenu', { state: 'detached' });
+  await page.click('#chatModelBtn');
+  await page.click('#chatModelMenu [data-model=""]');
+  await page.waitForFunction(() => /改回自动/.test(document.querySelector('#toast')?.textContent || ''));
+  return `分组：${groups.join('、')}｜按钮：${label}｜回话标：${by}`;
+});
 await step('划词 →「改写」→「问 AI」：带着这段做引用', async () => {
   await page.evaluate(() => {
     const p = [...document.querySelectorAll('#content p')].find((x) => x.textContent.trim().length > 12);
@@ -132,7 +175,7 @@ await step('话筒在输入框旁（不真开麦）；个人设置可改保存�
   await page.selectOption('#settingsKeepSel', '365');
   await page.waitForFunction(() => /对话记录保存 1 年/.test(document.querySelector('#toast')?.textContent || ''));
   await page.click('#settingsCloseBtn');
-  await page.waitForSelector('#settingsPage.hidden');
+  await page.waitForSelector('#settingsPage.hidden', { state: 'attached' });
   return '话筒在｜个人设置改成 1 年';
 });
 await step('刷新后对话记录还在，应用过的显示「已应用」，保存天数也记住了', async () => {

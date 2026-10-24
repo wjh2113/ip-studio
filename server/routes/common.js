@@ -1,10 +1,10 @@
 /* 路由 · common：各业务路由共用的小工具：JSON 响应、登录校验、错误文案、重试、账号与语气样本解析。从原 routes.js 原样拆出。 */
 import { readdir, rm } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
-import { DATA_DIR, Personas, Prefs, Profile, Samples, bigrams, overlapScore } from '../db.js';
+import { DATA_DIR, Personas, Prefs, Profile, Samples, Users, bigrams, overlapScore } from '../db.js';
 import { normalizeRefs, refCount } from '../refs.js';
 import { currentAdmin, currentUser, HttpError } from '../auth.js';
-import { PROVIDER } from '../llm.js';
+import { listModels, PROVIDER } from '../llm.js';
 import { loadPricing } from '../pricing.js';
 import { liveSystem } from '../promptrev.js';
 import { waitFor } from '../jobs.js';
@@ -140,3 +140,21 @@ export async function awaitJob(job) {
   if (done?.status === 'cancelled') throw new HttpError(409, '任务已取消');
   throw new HttpError(504, '任务还没做完，稍后在任务中心看结果');
 }
+
+/* 右栏 AI 对话用哪个模型（对话和从对话里点的整篇重写都用它）。
+   空 = 自动。已停用或现在不可用的直接拦下，让他自己换，不替他换 */
+export async function chatModelOf(userId) {
+  const { chatModel } = await Users.settings(userId);
+  if (!chatModel) return null;
+  let models;
+  try {
+    models = await listModels();
+  } catch (err) {
+    throw new HttpError(502, String(err?.message || err));
+  }
+  const hit = models.find((m) => m.id.toLowerCase() === chatModel.toLowerCase());
+  if (!hit) throw new HttpError(409, '你选的模型已停用，请在对话框左下角重新选择');
+  if (!hit.available) throw new HttpError(503, `「${hit.name}」现在不可用，换一个或选「自动」`);
+  return hit;
+}
+

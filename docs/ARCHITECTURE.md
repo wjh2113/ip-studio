@@ -70,6 +70,7 @@ flowchart LR
 | `review.js` | 成稿检查（`cleanReview` 是纯函数，有单测） |
 | `speak.js` | 口播提示、口播录音与评测 |
 | `editor.js` | 划词改写、`/` 续写、语音改稿（手机端）、右栏 AI 对话（记录在 `chat_messages`，按每人的保存天数定时删） |
+| `settings.js` | 个人设置（模型能力、对话记录保存天数、AI 对话用的模型）；`GET /api/llm/models` 由服务端带租户 Key 去网关取可指定的模型（`llm.js` 的 `listModels`，缓存 1 分钟） |
 | `publish.js` | 多平台版本、配图、Word 导出 |
 | `materials.js` | 素材库（`recallMaterials` 召回）与选题池 |
 | `insights.js` | 发布数据回填与复盘 |

@@ -233,6 +233,9 @@ export const MIGRATIONS = [
   { version: 14, name: '个人设置：模型能力偏好（auto / quality / fast）', up: async (db) => {
     await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_pref text NOT NULL DEFAULT 'auto'");
   } },
+  { version: 15, name: '右栏 AI 对话可指定模型：空 = 自动选路', up: async (db) => {
+    await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_model text NOT NULL DEFAULT ''");
+  } },
 ];
 
 /* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */

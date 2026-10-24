@@ -76,14 +76,17 @@ export const Users = {
     const row = await one(orm().select({
       llm_pref: users.llm_pref,
       chat_keep_days: users.chat_keep_days,
+      chat_model: users.chat_model,
     }).from(users).where(eq(users.id, id)));
     return {
       llmPref: LLM_PREF_CHOICES.includes(row?.llm_pref) ? row.llm_pref : 'auto',
       chatKeepDays: row ? Number(row.chat_keep_days) : 100,
+      chatModel: String(row?.chat_model || ''),
     };
   },
-  async setSettings(id, { llmPref, chatKeepDays }) {
+  async setSettings(id, { llmPref, chatKeepDays, chatModel }) {
     const patch = {};
+    if (chatModel != null) patch.chat_model = chatModel;
     if (llmPref != null) patch.llm_pref = llmPref;
     if (chatKeepDays != null) patch.chat_keep_days = chatKeepDays;
     if (Object.keys(patch).length) await orm().update(users).set(patch).where(eq(users.id, id));
