@@ -16,6 +16,8 @@ export const ASSIST_ACTIONS = {
   example:      { label: '举个例子',     mode: 'append',  instruction: '为选中这段补一个具体的例子：有场景、有细节、能让人立刻对上号。只输出这个例子本身（一到两段），不要重复原文，不要写「例如」以外的引导语堆砌。不要编造具体数据、机构名或他人引语。' },
   humanize:     { label: '去 AI 味',     mode: 'replace', instruction: '把选中这段改得不像 AI 写的：去掉套话、空泛大词、模板连接词、排比堆叠和升华句；换成作者自己的说话方式（对照语气档案和改稿习惯），有具体的人、事、数字就写具体的；句子长短交错，可以口语。事实、数字、观点一个都不改，不加原文没有的经历和数据。长度和原来差不多。' },
   simplify:     { label: '更好懂',       mode: 'replace', instruction: '把选中这段改写得更容易理解：拆开长句，把抽象说法换成具体的，必要时打一个贴切的比方。信息不能丢，长度可以略增。' },
+  summarize:    { label: '总结要点',     mode: 'append',  instruction: '把选中这段总结成要点：内容少就一两句话，内容多就 3～5 条短的 Markdown 列表。只输出总结本身，不要写「总结：」这类引导语；不加原文没有的信息。这里不受「输出体量跟着选区走」的限制，应当明显短于原文。' },
+  translate:    { label: '译成英文',     mode: 'replace', instruction: '把选中这段翻译成自然、地道的英文（像英文母语作者写的，不是逐字直译）。保留原有的 Markdown 格式、段落和数字；专有名词有通行英文名就用通行的。只输出译文。这里不受「使用简体中文」的限制。' },
 };
 
 export const COMPOSE_ACTIONS = {
@@ -196,7 +198,7 @@ export const CHAT_SYSTEM =
 
 ${HUMAN_STYLE}`;
 
-export const chatUser = (d, persona, samples, me, { text, messages, quote }) => {
+export const chatUser = (d, persona, samples, me, { text, messages, quote, skill = null }) => {
   const turns = messages.slice(0, -1)
     .map((m) => `${m.role === 'assistant' ? '助手' : '作者'}：${m.content}`)
     .join('\n\n');
@@ -205,9 +207,20 @@ export const chatUser = (d, persona, samples, me, { text, messages, quote }) => 
 
 —— 当前正文 ——
 ${fence('正文', text)}
-${turns ? `\n—— 之前的对话 ——\n${fence('对话记录', turns)}\n` : ''}${quote ? `\n—— 作者引用的片段（「这段」指它） ——\n${fence('引用', quote)}\n` : ''}
+${turns ? `\n—— 之前的对话 ——\n${fence('对话记录', turns)}\n` : ''}${quote ? `\n—— 作者引用的片段（「这段」指它） ——\n${fence('引用', quote)}\n` : ''}${skill ? `\n${skillBlock(skill)}\n` : ''}
 —— 作者刚说的 ——
 ${fence('作者', last)}
 
 先判断他是在问还是要改稿，再按输出格式回复：先写回话；要改稿才另起一行写 ${CHAT_MARK} 和改动 JSON，find 必须从上面的正文逐字照抄。`;
+};
+
+/* 作者自己存的技能：正文是作者写的改稿要求（照做），参考资料只用来学写法和口吻（不照抄事实）。
+   划词改写和 AI 对话都用这一块 */
+export const skillBlock = (k) => {
+  if (!k) return '';
+  const head = `—— 作者的技能「${k.name}」 ——\n这是作者本人写的改稿要求，按它执行（仍然遵守不编造事实、不改数字的规矩）。`;
+  const body = fence('技能', `${k.description ? `什么时候用：${k.description}\n\n` : ''}${k.instruction}`);
+  const refs = (k.refs || []).map((r, i) => fence(`参考${i + 1}`, `${r.title}\n${r.text}`)).join('\n');
+  return [head, body, refs ? `技能附带的参考资料（只用来学写法、结构和口吻；不要照抄里面的事实、数字和经历）：\n${refs}` : '']
+    .filter(Boolean).join('\n');
 };

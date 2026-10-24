@@ -4,9 +4,10 @@ import { HttpError } from '../auth.js';
 import { generateJSON, listModels, parseJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
-import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_MARK, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
+import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_MARK, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, skillBlock, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
 import { chatModelOf, describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { openProgressStream, runTextStream } from './stream.js';
+import { loadSkill } from './skills.js';
 
 /* ---------------- 编辑器：划词改写 / 唤起续写 ---------------- */
 
@@ -35,7 +36,11 @@ export async function handleAssist(req, res, body, params) {
     user_prompt = composeUser(draft, persona, samples, { instruction, before, after }, me);
   } else {
     if (!selection.trim()) throw new HttpError(400, '请先选中一段文字');
-    if (body?.action === 'custom') {
+    if (body?.action === 'skill') {
+      // 作者存的技能：整个技能（正文 + 参考资料）作为一块交给模型
+      const k = await loadSkill(body?.skillId, user.id);
+      instruction = `按作者的技能「${k.name}」改写选中这段。只改选中这段；技能没要求的地方保持原样，事实和数字不要动。\n\n${skillBlock(k)}`;
+    } else if (body?.action === 'custom') {
       // 按作者自己写的意见改这一段：意见当数据放进提示词，前后各加一句约束
       const want = clip(body?.instruction, 500).trim();
       if (!want) throw new HttpError(400, '写一下想怎么改');
@@ -86,7 +91,7 @@ const versionOf = (req, body) => String(body?.version ?? new URL(req.url, 'http:
 const chatView = (m) => ({
   id: m.id, role: m.role, content: m.content, quote: m.quote, created_at: m.created_at,
   edits: m.edits || [], rewrite: m.rewrite || '', skipped: m.skipped || [],
-  done: m.done || {}, started: Boolean(m.started), model: m.model || null,
+  done: m.done || {}, started: Boolean(m.started), model: m.model || null, skill: m.skill || null,
 });
 
 export async function handleChatList(req, res, body, params) {
@@ -153,9 +158,12 @@ export async function handleChat(req, res, body, params) {
   if (!text.trim()) throw new HttpError(400, '还没有正文');
   if (text.length > 20000) throw new HttpError(400, '正文太长，对话改稿先控制在 2 万字以内');
 
-  const message = String(body?.message ?? '').slice(0, 2000).trim();
-  if (!message) throw new HttpError(400, '说点什么吧');
   const quote = String(body?.quote || '').slice(0, 2000).trim();
+  // 用技能：整个技能（正文 + 参考资料）交给模型；对话里这一句显示成「用技能「某某」」
+  const skill = body?.skillId ? await loadSkill(body.skillId, user.id) : null;
+  const message = (String(body?.message ?? '').slice(0, 2000).trim()
+    || (skill ? `用技能「${skill.name}」改${quote ? '引用的这段' : '这篇'}` : ''));
+  if (!message) throw new HttpError(400, '说点什么吧');
 
   const past = (await Chats.list(draft.id, user.id, version, CHAT_TURNS)).map((m) => {
     const line = historyLine(m);
@@ -181,7 +189,7 @@ export async function handleChat(req, res, body, params) {
       meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
       onServed: (m) => { served = m; },
       system: sys('chat', CHAT_SYSTEM),
-      user: chatUser(target, persona, samples, me, { text, messages, quote }),
+      user: chatUser(target, persona, samples, me, { text, messages, quote, skill }),
       mock: () => mockChat(text, message, quote),
       onDelta: cut.push,
       signal: ps.signal,
@@ -202,7 +210,9 @@ export async function handleChat(req, res, body, params) {
     if (!reply) throw new HttpError(502, '没有拿到回复，请再试一次');
 
     // 模型回来了才一起存：失败或中途关掉时这一问不留在记录里，网页上点「重试」再发
-    const userMsg = await Chats.add(draft.id, user.id, version, { role: 'user', content: message, quote });
+    const userMsg = await Chats.add(draft.id, user.id, version, {
+      role: 'user', content: message, quote, data: skill ? { skill: { id: skill.id, name: skill.name } } : {},
+    });
     const aiMsg = await Chats.add(draft.id, user.id, version, {
       role: 'assistant', content: reply,
       data: { edits, rewrite, skipped: rewrite ? [] : skipped, model: await modelTag(pick, served) },

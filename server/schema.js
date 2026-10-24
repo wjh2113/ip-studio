@@ -487,3 +487,17 @@ export const chatMessages = pgTable('chat_messages', {
   index('idx_chat_thread').on(t.draft_id, t.version, t.id),
   index('idx_chat_user_time').on(t.user_id, t.created_at),
 ]);
+
+/* 我的技能：用户自己存的改稿要求（名字 + 一段指令），划词菜单里对选中那段用，AI 对话里一键发出 */
+export const skills = pgTable('skills', {
+  id: id(),
+  user_id: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  instruction: text('instruction').notNull(),              // 正文：这个技能怎么改稿（Markdown，可以很长）
+  description: text('description').notNull().default(''),  // 一句话：什么时候用
+  tags_json: text('tags_json').notNull().default('[]'),
+  refs_json: text('refs_json').notNull().default('[]'),    // 参考资料：[{ type:'material', id } | { type:'text', title, text }]
+  sort: integer('sort').notNull().default(0),
+  created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
+}, (t) => [index('idx_skills_user').on(t.user_id, t.sort, t.id)]);

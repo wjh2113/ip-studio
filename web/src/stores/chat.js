@@ -2,7 +2,8 @@
  *
  *   对话按「稿子 + 版本」各一串，存在服务端（保存天数每人自己定，默认 100 天）   load / clear / setKeep
  *   发一句：带上正在看的那一版正文（可能还没存完）和引用的片段；历史由服务端从记录里取。回话边写边出   send
- *   局部改：AI 回一组 find / replace，先列在对话里，点「应用」才写进正文   apply / undo
+ *   局部改：AI 回一组 find / replace，先列在对话里，点「应用」才写进正文；整段的改动也能「插在原文后面」   apply / undo
+ *   不满意这一版：「换个改法」按同样的要求再出一版   redo
  *     应用走 editor.replaceContent：算一步撤销，Ctrl+Z 也能退回，改完自动保存
  *   整篇改：AI 先问「开始吗」，点「开始重写」才调 editor.revise（整篇流式重写，留历史、出逐段对照）   startRewrite
  *   用嘴说：录一段 → 转成文字放进输入框，看过再发（转写不扣点）   toggleMic
@@ -75,11 +76,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function send(text, { quote: q = quote.value } = {}) {
+  /* skill：用技能（{ id, name }），话可以空着——服务端会把整个技能交给模型 */
+  async function send(text, { quote: q = quote.value, skill = null } = {}) {
     const st = useStudioStore();
     const ed = useEditorStore();
     const msg = String(text ?? input.value).trim();
-    if (!msg || busy.value || !st.draft?.id) return false;
+    if ((!msg && !skill) || busy.value || !st.draft?.id) return false;
     if (st.streaming) { toast('正在生成，等写完再聊'); return false; }
     if (!ed.text.trim()) { toast('还没有正文'); return false; }
     const k = key.value;
@@ -87,7 +89,7 @@ export const useChatStore = defineStore('chat', () => {
     const id = st.draft.id;
     if (!threads[k]) threads[k] = [];
     const list = threads[k];
-    list.push(local({ role: 'user', content: msg, quote: q, temp: true }));
+    list.push(local({ role: 'user', content: msg || `用技能「${skill.name}」改${q ? '引用的这段' : '这篇'}`, quote: q, skill, temp: true }));
     list.push(local({ role: 'assistant', content: '', pending: true }));
     const mine = list[list.length - 2];
     const reply = list[list.length - 1];      // 取回响应式代理，后面改它界面才会跟着变
@@ -96,7 +98,7 @@ export const useChatStore = defineStore('chat', () => {
     busy.value = true;
     try {
       // 回话一个字一个字地出；写完回话后服务端才给改动清单，done 里是存好的两条
-      await stream(`/drafts/${id}/chat`, { message: msg, version: ver, text: ed.text, quote: q }, (event, data) => {
+      await stream(`/drafts/${id}/chat`, { message: msg, version: ver, text: ed.text, quote: q, ...(skill ? { skillId: skill.id } : {}) }, (event, data) => {
         if (event === 'delta') { reply.pending = false; reply.streaming = true; reply.content += data.text; }
         else if (event === 'done') { Object.assign(mine, local(data.user)); Object.assign(reply, local(data.reply)); }
         else if (event === 'error') throw new Error(data.message);
@@ -105,7 +107,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (err) {
       reply.error = err.message;
       reply.content = '';
-      reply.retry = { content: msg, quote: q };
+      reply.retry = { content: msg, quote: q, skill };
     } finally {
       reply.pending = false;
       reply.streaming = false;
@@ -120,7 +122,7 @@ export const useChatStore = defineStore('chat', () => {
     const i = list?.indexOf(m) ?? -1;
     if (i < 1 || !m.retry) return;
     list.splice(i - 1, 2);
-    send(m.retry.content, { quote: m.retry.quote || '' });
+    send(m.retry.content, { quote: m.retry.quote || '', skill: m.retry.skill || null });
   }
 
   /* 检查结果里的一条「交给 AI 改」：引用那句，把检查意见说给 AI */
@@ -140,14 +142,32 @@ export const useChatStore = defineStore('chat', () => {
     void api(`/chat/${m.id}`, { method: 'PUT', body }).catch(() => {});
   }
 
-  /* i 不给 = 全部；给了只应用那一处 */
-  function apply(m, i = null) {
+  /* 这处改动能不能「插在原文后面」：原文得是整段（前后都是段落边界），插进去才不会把一句话劈开 */
+  function canInsert(e) {
+    const t = useEditorStore().text;
+    const at = t.indexOf(e.find);
+    if (at < 0 || !e.replace) return false;
+    const end = at + e.find.length;
+    return (at === 0 || t[at - 1] === '\n') && (end === t.length || t[end] === '\n');
+  }
+
+  /* 「换个改法」：按上一句同样的要求（同样的引用）再要一版，和这一版要明显不同 */
+  function redo(m) {
+    const list = threads[key.value] || [];
+    const i = list.indexOf(m);
+    const prev = list.slice(0, i).reverse().find((x) => x.role === 'user');
+    if (!prev || busy.value) return;
+    send('换个改法：还是按我上面的要求，但换一种和上一版明显不同的改法。', { quote: prev.quote || '' });
+  }
+
+  /* i 不给 = 全部；给了只应用那一处。after = 不替换，新内容插在原文那段后面 */
+  function apply(m, i = null, { after = false } = {}) {
     const st = useStudioStore();
     const ed = useEditorStore();
     if (st.streaming || !st.draft) return;
     const before = ed.text;
     const idx = i == null ? m.edits.map((_, j) => j).filter((j) => !m.done[j]) : [i];
-    const r = applyEdits(before, idx.map((j) => m.edits[j]));
+    const r = applyEdits(before, idx.map((j) => (after ? { ...m.edits[j], replace: `${m.edits[j].find}\n\n${m.edits[j].replace}` } : m.edits[j])));
     if (r.content === before) {
       toast(r.skipped[0] ? `没对上正文：${r.skipped[0]}。正文可能已经改过了` : '正文已经是这样了');
       return;
@@ -156,7 +176,7 @@ export const useChatStore = defineStore('chat', () => {
     m.steps.push({ before, after: r.content, idx });
     for (const j of idx) m.done[j] = true;
     mark(m, { done: m.done });
-    toast(`已应用 ${idx.length} 处，可撤销`);
+    toast(after ? '已插在原文后面，可撤销' : `已应用 ${idx.length} 处，可撤销`);
     locate(m, idx[0], { quiet: true });
   }
 
@@ -268,6 +288,6 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     threads, messages, loading, busy, input, quote, focusTick, keepDays, mic,
-    open, load, send, retry, askAbout, apply, undo, startRewrite, locate, allDone, clear, setKeep, toggleMic, stopMic,
+    open, load, send, retry, redo, canInsert, askAbout, apply, undo, startRewrite, locate, allDone, clear, setKeep, toggleMic, stopMic,
   };
 });

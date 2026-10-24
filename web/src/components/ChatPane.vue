@@ -15,7 +15,9 @@
       <div v-for="(m, mi) in c.messages" :key="m.id || `t${mi}`" class="chat-msg" :class="m.role">
         <template v-if="m.role === 'user'">
           <blockquote v-if="m.quote" class="chat-quote">{{ clip(m.quote, 90) }}</blockquote>
-          <div class="chat-bubble">{{ m.content }}</div>
+          <div class="chat-bubble"><span v-if="m.skill" class="chat-skill-tag"><Icon name="bolt" :size="11" />{{ m.skill.name }}</span>{{ m.content }}</div>
+          <button v-if="m.id && !m.skill && m.content.length >= 4 && !m.content.startsWith('换个改法') && !m.content.startsWith('检查提示')" type="button"
+            class="link-btn chat-save-skill" data-act="save-skill" title="做成技能，以后在划词菜单和对话里一点就能用" @click="sk.openPage(null, { instruction: m.content })">存成技能</button>
         </template>
         <template v-else>
           <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>正在想…</div>
@@ -32,8 +34,11 @@
                 <Icon name="refresh" :size="13" /><span>整篇重写</span>
                 <span class="grow"></span>
                 <span v-if="m.started" class="chat-done"><Icon name="check" :size="13" />已重写</span>
-                <BusyBtn v-else type="button" class="mini primary" data-act="rewrite" :busy="m.running" busy-text="重写中"
-                  :disabled="s.streaming || c.busy" @click="c.startRewrite(m)">开始重写</BusyBtn>
+                <template v-else>
+                  <button type="button" class="mini ghost" data-act="redo" :disabled="c.busy || !canSend || m.running" title="换一种整理思路" @click="c.redo(m)">换个说法</button>
+                  <BusyBtn type="button" class="mini primary" data-act="rewrite" :busy="m.running" busy-text="重写中"
+                    :disabled="s.streaming || c.busy" @click="c.startRewrite(m)">开始重写</BusyBtn>
+                </template>
               </div>
               <ol class="chat-notes"><li v-for="(n, i) in notes(m.rewrite)" :key="i">{{ n }}</li></ol>
               <p class="chat-tip">{{ m.started ? '左边正文上方有逐段对照，哪段不满意可以单独退回；原稿留在「版本对照」里，Ctrl+Z 也能退回。' : '会按这几条把整篇重写一遍（按整篇计点）。不想整篇动，直接说「只改开头」这类话。' }}</p>
@@ -45,6 +50,7 @@
                 <Icon name="pen" :size="13" />
                 <span>{{ m.edits.length }} 处改动</span>
                 <span class="grow"></span>
+                <button v-if="!m.steps.length" type="button" class="mini ghost" data-act="redo" :disabled="c.busy || !canSend" title="按同样的要求再出一版，和这版不一样" @click="c.redo(m)">换个改法</button>
                 <button v-if="m.steps.length" type="button" class="mini" data-act="undo" @click="c.undo(m)">撤销</button>
                 <button v-if="!c.allDone(m)" type="button" class="mini primary" data-act="apply" :disabled="s.streaming" @click="c.apply(m)">{{ m.edits.length > 1 ? '全部应用' : '应用' }}</button>
                 <span v-else class="chat-done"><Icon name="check" :size="13" />已应用</span>
@@ -56,6 +62,7 @@
                 <div class="chat-edit-acts">
                   <button type="button" class="link-btn" @click="c.locate(m, i)">在正文里看</button>
                   <button v-if="!m.done[i] && m.edits.length > 1" type="button" class="link-btn" data-act="apply-one" @click="c.apply(m, i)">只应用这处</button>
+                  <button v-if="!m.done[i] && c.canInsert(e)" type="button" class="link-btn" data-act="insert" title="原文留着，新写的这段插在它后面" @click="c.apply(m, i, { after: true })">插在原文后面</button>
                 </div>
               </div>
             </div>
@@ -84,6 +91,7 @@
         <!-- 左下角选模型（像 Notion）：自动 = 按功能分档自动选路；指定了就只用那一个，调不通会直接说，不偷偷换 -->
         <ModelPicker v-if="settings.canPick" :disabled="c.busy" />
         <span v-else class="chat-model static" title="当前接入方式只支持自动选模型"><Icon name="sparkles" :size="12" />自动</span>
+        <SkillPicker :disabled="c.busy || !canSend" />
         <span v-if="c.mic.recording || c.mic.recognizing" class="hint">{{ c.mic.recording ? '在听…说完点话筒' : '转文字中…' }}</span>
         <span class="grow"></span>
         <BusyBtn type="submit" class="btn primary small" id="chatSendBtn" :busy="c.busy" :disabled="!c.input.trim() || !canSend">发送</BusyBtn>
@@ -102,6 +110,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import ModelPicker from './ModelPicker.vue';
+import SkillPicker from './SkillPicker.vue';
+import { useSkillsStore } from '../stores/skills.js';
 import { CHAT_SUGGESTS, useChatStore } from '../stores/chat.js';
 import { useStudioStore } from '../stores/studio.js';
 import { useEditorStore } from '../stores/editor.js';
@@ -115,6 +125,7 @@ const s = useStudioStore();
 const ed = useEditorStore();
 const v = useVersionsStore();
 const settings = useSettingsStore();
+const sk = useSkillsStore();
 const log = ref(null);
 const input = ref(null);
 

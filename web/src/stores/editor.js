@@ -29,6 +29,8 @@ export const ASSIST_ACTIONS = [
   { key: 'example', label: '举个例子' },
   { key: 'simplify', label: '更好懂' },
   { key: 'humanize', label: '去 AI 味' },
+  { key: 'summarize', label: '总结要点' },
+  { key: 'translate', label: '译成英文' },
 ];
 
 export const COMPOSE_ACTIONS = [
@@ -463,6 +465,7 @@ export const useEditorStore = defineStore('editor', () => {
       kind: req.kind === 'compose' ? 'compose' : 'rewrite',
       action: req.action,
       instruction: req.instruction,
+      ...(req.skillId ? { skillId: req.skillId } : {}),
       selection: text,
       before: raw.slice(Math.max(0, start - 600), start),
       after: raw.slice(end, end + 600),
@@ -483,7 +486,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   function retryAssist() {
     const a = assist.value;
-    if (a) runAssist({ action: a.action, kind: a.kind, instruction: a.instruction, target: a.target }, a.label);
+    if (a) runAssist({ action: a.action, kind: a.kind, instruction: a.instruction, skillId: a.skillId, target: a.target }, a.label);
   }
 
   function closeAssist() {

@@ -130,6 +130,122 @@ await step('左下角选模型（像 Notion）：按钮弹出菜单，自动在�
   await page.waitForFunction(() => /改回自动/.test(document.querySelector('#toast')?.textContent || ''));
   return `分组：${groups.join('、')}｜按钮：${label}｜回话标：${by}`;
 });
+await step('换个改法：按同样的要求再出一版；整段改动能「插在原文后面」', async () => {
+  await page.fill('#chatInput', '第一段改得更抓人一点');
+  await page.press('#chatInput', 'Enter');
+  await waitReply();
+  const n = await page.$$eval('#chatLog .chat-msg', (els) => els.length);
+  await page.click(`${lastReply} [data-act="redo"]`);
+  await page.waitForFunction((k) => document.querySelectorAll('#chatLog .chat-msg').length === k + 2, n);
+  await waitReply();
+  const said = (await page.textContent('#chatLog .chat-msg.user:nth-last-child(2) .chat-bubble')).trim();
+  if (!/换个改法/.test(said)) throw new Error(`发出去的不是换个改法：${said}`);
+  const before = await body();
+  const ins = await page.$(`${lastReply} [data-act="insert"]`);
+  if (!ins) return `${said.slice(0, 12)}｜这处不是整段，没有「插在原文后面」`;
+  await ins.click();
+  await page.waitForFunction(() => /已插在原文后面/.test(document.querySelector('#toast')?.textContent || ''));
+  const after = await body();
+  if (after.length <= before.length) throw new Error('插入后正文没变长');
+  await page.click(`${lastReply} [data-act="undo"]`);
+  await page.waitForFunction((b) => document.querySelector('#content').textContent === b, before);
+  return `${said.slice(0, 12)}｜插在原文后面、撤销都行`;
+});
+await step('技能菜单（Notion 样式）：标题行有技能库和新建、搜索框；新建打开整页 → 从模板开始、加标签和范文 → 建好', async () => {
+  await page.click('#chatSkillBtn');
+  await page.waitForSelector('#chatSkillMenu #chatSkillSearch');
+  const focused = await page.evaluate(() => document.activeElement?.id);
+  for (const id of ['#chatSkillLib', '#chatSkillAdd', '#chatSkillNew']) if (!(await page.$(id))) throw new Error(`菜单缺 ${id}`);
+  await page.fill('#chatSkillSearch', '小红书口吻');
+  await page.waitForFunction(() => /新建技能「小红书口吻」/.test(document.querySelector('#chatSkillNew')?.textContent || ''));
+  await page.press('#chatSkillSearch', 'Enter');               // 没有匹配：回车 = 用这个名字新建
+  await page.waitForSelector('#skillPage:not(.hidden)');
+  const name = await page.inputValue('#skillName');
+  await page.click('#skillTemplates [data-tpl="platform"]');
+  await page.fill('#skillTagInput', '常用');
+  await page.press('#skillTagInput', 'Enter');
+  await page.click('#skillRefText');
+  await page.fill('.ask [data-k="title"]', '上周那篇');
+  await page.fill('.ask [data-k="text"]', '姐妹们！今天分享一个周末备菜的小办法……');
+  await page.click('.ask [data-yes]');
+  await page.waitForSelector('#skillPage .skill-refs .skill-chip');
+  if (shot) await page.screenshot({ path: `${shot}/skill-page.png` });
+  await page.click('#skillSaveBtn');
+  await page.waitForFunction(() => /已建好技能「小红书口吻」/.test(document.querySelector('#toast')?.textContent || ''));
+  const tags = await page.$$eval('#skillPage .skill-tags .skill-chip', (els) => els.map((e) => e.textContent.trim()));
+  await page.click('#skillBackBtn');
+  await page.waitForSelector('#skillPage.hidden', { state: 'attached' });
+  return `搜索框拿到焦点=${focused === 'chatSkillSearch'}｜名字=${name}｜标签：${tags.join('、')}`;
+});
+await step('用技能：对话里搜到点一下就发（记录里标出技能）；划词菜单里对选中那段用（结果在改写浮层）；没保存就离开会提醒', async () => {
+  await page.click('#chatSkillBtn');
+  await page.fill('#chatSkillSearch', '小红');
+  await page.waitForSelector('#chatSkillMenu [data-skill] .mpick-opt');
+  await page.press('#chatSkillSearch', 'Enter');               // 有匹配：回车 = 用第一个
+  await waitReply();
+  const tag = (await page.textContent('#chatLog .chat-msg.user:nth-last-child(2) .chat-skill-tag')).trim();
+  // 划词
+  await page.evaluate(() => {
+    const p = [...document.querySelectorAll('#content p')].find((x) => x.textContent.trim().length > 12);
+    const r = document.createRange();
+    r.setStart(p.firstChild, 0);
+    r.setEnd(p.firstChild, Math.min(10, p.firstChild.textContent.length));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  });
+  await page.click('#rewriteBtn');
+  await page.waitForSelector('#selMenu:not(.hidden) #selSkills [data-skill]');
+  for (const k of ['summarize', 'translate']) if (!(await page.$(`#selMenu [data-action="${k}"]`))) throw new Error(`划词菜单缺 ${k}`);
+  await page.click('#selSkills [data-skill]');
+  await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
+  const title = (await page.textContent('#assistTitle')).trim();
+  await page.click('#assistRetry');                             // 重来一次也带着技能
+  await page.waitForSelector('#assistPop:not(.hidden) #assistReplace:not([disabled])', { timeout: 15000 });
+  await page.click('#assistClose');
+  // 编辑技能：改了不保存就返回 → 提醒
+  await page.click('#chatSkillBtn');
+  await page.hover('#chatSkillMenu [data-skill]');
+  await page.click('#chatSkillMenu [data-skill] [data-act="edit"]');
+  await page.waitForSelector('#skillPage:not(.hidden)');
+  await page.waitForFunction(() => document.querySelector('#skillBody')?.value.length > 10);
+  await page.fill('#skillDesc', '改了一下');
+  await page.click('#skillBackBtn');
+  await page.waitForSelector('.ask [data-yes]');
+  await page.click('.ask [data-yes]');
+  await page.waitForSelector('#skillPage.hidden', { state: 'attached' });
+  return `对话标签：${tag}｜划词浮层：${title}｜未保存提醒 ok`;
+});
+await step('技能库：从菜单进；搜索、按标签筛；复制、删除；对话里说过的话能存成技能', async () => {
+  await page.click('#chatSkillBtn');
+  await page.click('#chatSkillLib');
+  await page.waitForSelector('#skillLib:not(.hidden) #skillGrid [data-skill]');
+  await page.click('#skillGrid [data-skill] [data-act="copy"]');
+  await page.waitForFunction(() => document.querySelectorAll('#skillGrid [data-skill]').length === 2);
+  await page.click('#skillLib [data-tag="常用"]');
+  const byTag = await page.$$eval('#skillGrid [data-skill]', (els) => els.length);
+  await page.fill('#skillLibSearch', '副本');
+  await page.waitForFunction(() => document.querySelectorAll('#skillGrid [data-skill]').length === 1);
+  if (shot) await page.screenshot({ path: `${shot}/skill-lib.png` });
+  await page.click('#skillGrid [data-skill] [data-act="del"]');
+  await page.click('.ask [data-yes]');
+  await page.fill('#skillLibSearch', '');
+  await page.waitForFunction(() => document.querySelectorAll('#skillGrid [data-skill]').length === 1);
+  await page.click('#skillLibBack');
+  await page.waitForSelector('#skillLib.hidden', { state: 'attached' });
+  // 存成技能：打开整页，正文预填成那句话
+  const msg = '#chatLog .chat-msg.user:not(:has(.chat-skill-tag))';
+  await page.hover(msg);
+  await page.click(`${msg} [data-act="save-skill"]`);
+  await page.waitForSelector('#skillPage:not(.hidden)');
+  const pre = await page.inputValue('#skillBody');
+  await page.fill('#skillName', '同款再来');
+  await page.click('#skillSaveBtn');
+  await page.waitForFunction(() => /已建好技能「同款再来」/.test(document.querySelector('#toast')?.textContent || ''));
+  await page.click('#skillBackBtn');
+  await page.waitForSelector('#skillPage.hidden', { state: 'attached' });
+  return `按标签「常用」${byTag} 个｜存成技能预填：${pre.slice(0, 12)}`;
+});
 await step('划词 →「改写」→「问 AI」：带着这段做引用', async () => {
   await page.evaluate(() => {
     const p = [...document.querySelectorAll('#content p')].find((x) => x.textContent.trim().length > 12);

@@ -236,6 +236,27 @@ export const MIGRATIONS = [
   { version: 15, name: '右栏 AI 对话可指定模型：空 = 自动选路', up: async (db) => {
     await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_model text NOT NULL DEFAULT ''");
   } },
+  { version: 16, name: '我的技能：常用改稿要求存成一键指令，划词菜单和 AI 对话里调用', up: async (db) => {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS skills (
+        id           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id      integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name         text NOT NULL,
+        instruction  text NOT NULL,
+        sort         integer NOT NULL DEFAULT 0,
+        created_at   text NOT NULL,
+        updated_at   text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_skills_user ON skills(user_id, sort, id);
+    `);
+  } },
+  { version: 17, name: '技能做成一整页：描述、标签、参考资料（素材库条目或贴的范文）', up: async (db) => {
+    await db.exec(`
+      ALTER TABLE skills ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+      ALTER TABLE skills ADD COLUMN IF NOT EXISTS tags_json text NOT NULL DEFAULT '[]';
+      ALTER TABLE skills ADD COLUMN IF NOT EXISTS refs_json text NOT NULL DEFAULT '[]';
+    `);
+  } },
 ];
 
 /* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */

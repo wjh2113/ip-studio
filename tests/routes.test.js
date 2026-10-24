@@ -35,6 +35,8 @@ function startServer() {
     IMAGE_PROVIDER: 'mock',
     PAY_PROVIDER: 'mock',
     ALLOW_SELF_UPGRADE: '1',
+    // 用例越加越多，一分钟里本机发的 POST 会超过限流（90 次）。限流本身不在这里测，和浏览器回归一样关掉
+    RATE_LIMIT: 'off',
   };
   child = spawn(process.execPath, [fromRoot('server/index.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (d) => { log += d; });
@@ -357,6 +359,85 @@ test('对话选模型：列表来自服务端；只能存列表里可用的；�
   assert.equal(r.status, 200, r.text);
   assert.equal(r.data.reply.model.auto, true);
   await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+});
+
+test('我的技能：整页字段（描述、标签、参考资料）、详情补素材标题、复制、只能动自己的；用的时候把整个技能交给模型；总结和翻译能用', async () => {
+  let r = await api.call('GET', '/api/skills');
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.skills, []);
+  r = await api.call('POST', '/api/skills', { name: '', instruction: '改成小红书口吻' });
+  assert.equal(r.status, 400);
+  r = await api.call('POST', '/api/skills', { name: '小红书', instruction: '改' });
+  assert.equal(r.status, 400);
+
+  // 参考资料：一条素材 + 一段范文；别人的或不存在的素材不收
+  r = await api.call('POST', '/api/materials', { kind: '文章', title: '爆款范文', body: '周末备菜三件套：洗、切、分装。' });
+  assert.equal(r.status, 200, r.text);
+  const mid = r.data.material?.id || r.data.id;
+  r = await api.call('POST', '/api/skills', { name: '坏的', instruction: '改成小红书口吻', refs: [{ type: 'material', id: 999999 }] });
+  assert.equal(r.status, 400);
+  r = await api.call('POST', '/api/skills', {
+    name: '小红书口吻', description: '发小红书前用', tags: ['平台', '平台', '小红书'],
+    instruction: '## 要改成什么样\n短句多分段，结尾加话题标签',
+    refs: [{ type: 'material', id: mid }, { type: 'text', title: '上周那篇', text: '姐妹们！今天分享……' }],
+  });
+  assert.equal(r.status, 200, r.text);
+  const sk = r.data.skill;
+  assert.deepEqual(sk.tags, ['平台', '小红书']);
+  assert.equal(sk.refs[0].title, '爆款范文');
+  assert.equal(sk.refs[1].type, 'text');
+
+  // 列表不带正文，只给摘要
+  r = await api.call('GET', '/api/skills');
+  assert.equal(r.data.skills[0].refCount, 2);
+  assert.equal(r.data.skills[0].instruction, undefined);
+  assert.ok(r.data.me);
+  // 详情
+  r = await api.call('GET', `/api/skills/${sk.id}`);
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.data.skill.instruction, /短句多分段/);
+  // 改一部分
+  r = await api.call('PUT', `/api/skills/${sk.id}`, { description: '发小红书前用（新）' });
+  assert.equal(r.data.skill.description, '发小红书前用（新）');
+  assert.equal(r.data.skill.name, '小红书口吻');
+  // 复制
+  r = await api.call('POST', `/api/skills/${sk.id}/copy`);
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.skill.name, '小红书口吻（副本）');
+  assert.equal(r.data.skill.refs.length, 2);
+  const copyId = r.data.skill.id;
+
+  // 别人的技能动不了，也看不到（不再注册新号：注册有频控）
+  const { Users, Skills } = await import('../server/db.js');
+  const stranger = await Users.create(`sk${process.pid}`, 'x:y');
+  const theirs = await Skills.create(stranger.id, { name: '别人的', instruction: '别人的改稿要求' });
+  for (const [m, path] of [['GET', `/api/skills/${theirs.id}`], ['PUT', `/api/skills/${theirs.id}`], ['DELETE', `/api/skills/${theirs.id}`], ['POST', `/api/skills/${theirs.id}/copy`]]) {
+    r = await api.call(m, path, m === 'PUT' ? { name: '偷改' } : undefined);
+    assert.equal(r.status, 404, `${m} ${path}`);
+  }
+
+  // 划词菜单里用：action=skill
+  r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'skill', skillId: sk.id, selection: '周末备菜很省事', before: '', after: '' });
+  assert.equal(r.status, 200, r.text);
+  assert.match(r.text, /event: done/);
+  r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action: 'skill', skillId: theirs.id, selection: '周末备菜很省事' });
+  assert.equal(r.status, 404);
+  // 对话里用：话可以空着，记录里标出用的哪个技能
+  r = await chatCall({ message: '', skillId: sk.id });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.user.content, '用技能「小红书口吻」改这篇');
+  assert.deepEqual(r.data.user.skill, { id: sk.id, name: '小红书口吻' });
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+
+  r = await api.call('DELETE', `/api/skills/${copyId}`);
+  assert.equal(r.status, 200, r.text);
+  assert.equal((await api.call('GET', '/api/skills')).data.skills.length, 1);
+  // 新加的划词动作
+  for (const action of ['summarize', 'translate']) {
+    r = await api.call('POST', `/api/drafts/${draftId}/assist`, { action, selection: '周末备菜很省事，一次做好一周的菜', before: '', after: '' });
+    assert.equal(r.status, 200, r.text);
+    assert.match(r.text, /event: done/);
+  }
 });
 
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {

@@ -32,6 +32,8 @@
   <PersonaPage />
   <ProfilePage />
   <SettingsPage />
+  <SkillLibrary />
+  <SkillPage />
   <PlanModal />
   <MetricsModal />
   <InsightsModal />
@@ -66,6 +68,8 @@ import TitleModal from './components/TitleModal.vue';
 import PersonaPage from './components/PersonaPage.vue';
 import ProfilePage from './components/ProfilePage.vue';
 import SettingsPage from './components/SettingsPage.vue';
+import SkillLibrary from './components/SkillLibrary.vue';
+import SkillPage from './components/SkillPage.vue';
 import PlanModal from './components/PlanModal.vue';
 import MetricsModal from './components/MetricsModal.vue';
 import InsightsModal from './components/InsightsModal.vue';

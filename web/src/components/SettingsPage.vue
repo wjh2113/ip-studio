@@ -49,6 +49,15 @@
             <p v-if="st.modelsError" class="form-error">模型列表取不到：{{ st.modelsError }}</p>
           </fieldset>
 
+          <fieldset class="subsection" id="settingsSkills">
+            <legend>我的技能<span>常用的改稿要求做成技能：划词菜单里对选中那段用，AI 对话框里「技能」一点就用</span></legend>
+            <p class="hint">现在有 {{ sk.list.length }} 个技能（最多 {{ sk.max }} 个）。每个技能是一整页：名字、描述、标签、正文和参考资料。</p>
+            <div class="wp-acts">
+              <button type="button" class="btn ghost small" id="settingsSkillLib" @click="sk.lib.open = true"><Icon name="book" :size="13" />打开技能库</button>
+              <button type="button" class="btn ghost small" id="skillAddBtn" @click="sk.openPage(null)"><Icon name="plus" :size="13" />新建技能</button>
+            </div>
+          </fieldset>
+
           <fieldset class="subsection" id="settingsChatKeep">
             <legend>对话记录保存<span>右栏 AI 对话超过这个天数会自动删；对你所有稿子都生效</span></legend>
             <label class="settings-keep">
@@ -73,15 +82,18 @@
 import Icon from './common/Icon.vue';
 import { KEEP_OPTIONS, LLM_PREF_OPTIONS, useSettingsStore } from '../stores/settings.js';
 import { useStudioStore } from '../stores/studio.js';
+import { useSkillsStore } from '../stores/skills.js';
 import { escStack } from '../lib/escape.js';
 import { watch } from 'vue';
 
 const st = useSettingsStore();
 const s = useStudioStore();
+const sk = useSkillsStore();
 
 const esc = escStack(() => st.open, () => st.close());
 watch(() => st.open, (open) => {
   esc.toggle(open);
+  if (open) void sk.load(true);
   document.body.classList.toggle('no-scroll', open);
 }, { immediate: true });
 </script>
