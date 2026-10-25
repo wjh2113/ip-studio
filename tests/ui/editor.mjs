@@ -204,6 +204,8 @@ await step('修改：版本栏切到平台版本，编辑框跟着换成那一�
   return ver;
 });
 await step('检查结果点一条：左边原文定位到那句', async () => {
+  await page.click('#sideTabChat');                       // 检查结果卡片在右栏 AI 对话里
+  await page.waitForSelector('#chatPane');
   const item = await page.$('#reviewList .issue, #reviewFlags .flag.locatable, #toneBox .tone-item.locatable');
   if (!item) return '这篇没有可定位的条目';
   await item.click();

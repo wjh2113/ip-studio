@@ -67,11 +67,11 @@ flowchart LR
 | `personas.js` | 账号设定、内容栏目、语气样本与档案 |
 | `hotspots.js` | 榜单、热点比对、题材推荐 |
 | `drafts.js` | 三个方向、流式成稿、保存与历史、列表、归档、删除 |
-| `review.js` | 成稿检查（`cleanReview` 是纯函数，有单测） |
+| `review.js` | 成稿检查（`cleanReview` 是纯函数，有单测）、AI 味扫描。网页传 `chat: true` 时跟着对话的设置走（`chatModelOf` 选的模型、`reviewSkills`；两者进缓存指纹，换了就重查），结果存成右栏对话里的一张卡片（`chat_messages`，`data.card = review / tone`，同一份正文复用同一张），手机端不传照旧 |
 | `speak.js` | 口播提示、口播录音与评测 |
 | `editor.js` | 划词改写、`/` 续写、语音改稿（手机端）、右栏 AI 对话（记录在 `chat_messages`，按每人的保存天数定时删） |
 | `settings.js` | 个人设置（模型能力、对话记录保存天数、AI 对话用的模型）；`GET /api/llm/models` 由服务端带租户 Key 去网关取可指定的模型（`llm.js` 的 `listModels`，缓存 1 分钟） |
-| `skills.js` | 我的技能：一整页（名字、描述、标签、正文、参考资料=素材库条目或贴的范文，`skills` 表，每人最多 30 个），增删改查和复制。用的时候 `loadSkill` 取正文和参考资料全文，`prompts/assist.js` 的 `skillBlock` 拼成一块交给模型：划词改写走 `/assist` 的 `action=skill`，对话传 `skillId` |
+| `skills.js` | 我的技能：一整页（名字、描述、标签、正文、参考资料=素材库条目或贴的范文，`skills` 表，每人最多 30 个），增删改查和复制。用的时候 `loadSkill` 取正文和参考资料全文，`prompts/assist.js` 的 `skillBlock` 拼成一块交给模型：划词改写走 `/assist` 的 `action=skill`，对话传 `skillId`。`in_review`（迁移 18）=「检查时也参考」，最多开 3 个，`reviewSkills` 取出交给成稿检查（`prompts/review.js` 的 `reviewSkillsBlock`，报成 dimension「作者要求」） |
 | `publish.js` | 多平台版本、配图、Word 导出 |
 | `materials.js` | 素材库（`recallMaterials` 召回）与选题池 |
 | `insights.js` | 发布数据回填与复盘 |

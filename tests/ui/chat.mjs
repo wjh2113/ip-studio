@@ -269,20 +269,60 @@ await step('划词 →「改写」→「问 AI」：带着这段做引用', asyn
   if (shot) await page.screenshot({ path: `${shot}/chat-quote.png` });
   return `${q.slice(0, 20)}｜消息里带引用=${quoted}`;
 });
-await step('检查结果「交给 AI 改」：切到工具 → 检查 → 点一条 → 回到对话并发出', async () => {
+await step('检查结果进对话：在工具页签点「检查」→ 自动切到 AI 对话、出一张检查卡片；正文没改再点不重复出卡；卡片里「让 AI 改」接着发；扫 AI 味也是卡片', async () => {
   await page.click('#sideTabTools');
+  if (await page.$('#sideTools #reviewBox')) throw new Error('工具页签里不该再有检查结果');
+  const before = await page.$$eval('#chatLog .chat-msg', (els) => els.length).catch(() => 0);
   await page.click('#reviewBtn');
-  await page.waitForFunction(() => /没发现问题|小毛病|不通顺|检查失败|风险/.test(document.querySelector('#reviewVerdict')?.textContent || ''), null, { timeout: 15000 });
-  const btn = await page.$('#reviewBox [data-askai]');
-  if (!btn) { await page.click('#sideTabChat'); return '这次检查没有条目（演示数据），跳过'; }
-  const n = await page.$$eval('#chatLog .chat-msg', (els) => els.length).catch(() => 0);
-  await btn.click();
   await page.waitForSelector('#chatPane', { state: 'visible' });
-  await page.waitForFunction((k) => document.querySelectorAll('#chatLog .chat-msg').length > k, n);
-  await waitReply();
-  const said = (await page.textContent('#chatLog .chat-msg.user:nth-last-child(2) .chat-bubble')).trim();
-  if (!/检查提示/.test(said)) throw new Error(`发出去的话不对：${said}`);
-  return said.slice(0, 24);
+  await page.waitForFunction(() => /没发现问题|小毛病|不通顺|风险/.test(document.querySelector('#reviewVerdict')?.textContent || ''), null, { timeout: 15000 });
+  const cards = await page.$$eval('#chatLog .chat-card.review', (els) => els.length);
+  if (shot) await page.locator('#reviewBox').screenshot({ path: `${shot}/review-card-only.png` });
+  // 正文没改：再点不出新卡，滚到上次那张
+  await page.click('#reviewBtn');
+  await page.waitForFunction(() => /还是上次的检查结果/.test(document.querySelector('#toast')?.textContent || ''));
+  if ((await page.$$eval('#chatLog .chat-card.review', (els) => els.length)) !== cards) throw new Error('正文没改却多了一张卡');
+  const btn = await page.$('#reviewBox [data-askai]');
+  let said = '（演示数据没有条目，跳过让 AI 改）';
+  if (btn) {
+    const n = await page.$$eval('#chatLog .chat-msg', (els) => els.length);
+    await btn.click();
+    await page.waitForFunction((k) => document.querySelectorAll('#chatLog .chat-msg').length > k, n);
+    await waitReply();
+    said = (await page.textContent('#chatLog .chat-msg.user:nth-last-child(2) .chat-bubble')).trim();
+    if (!/检查提示/.test(said)) throw new Error(`发出去的话不对：${said}`);
+  }
+  // 扫 AI 味：工具条「检查」旁的箭头
+  await page.click('#reviewMore');
+  await page.click('#toneScanMenu');
+  await page.waitForSelector('#toneBox');
+  if (shot) await page.screenshot({ path: `${shot}/review-card.png` });
+  return `对话里多了 ${cards} 张检查卡片（之前 ${before} 条消息）｜${said.slice(0, 20)}`;
+});
+await step('检查跟着设置走：技能页打开「检查时也参考」→ 再点检查出新卡片，卡片底下标出模型和对照的技能；技能库卡片上有标记', async () => {
+  const cards = await page.$$eval('#chatLog .chat-card.review', (els) => els.length);
+  await page.click('#chatSkillBtn');
+  await page.click('#chatSkillLib');
+  await page.waitForSelector('#skillLib:not(.hidden) #skillGrid [data-skill]');
+  await page.click('#skillGrid [data-skill]');
+  await page.waitForSelector('#skillPage:not(.hidden) #skillInReview');
+  await page.check('#skillInReview');
+  const name = await page.inputValue('#skillName');
+  await page.click('#skillSaveBtn');
+  await page.waitForFunction(() => /已保存/.test(document.querySelector('#toast')?.textContent || ''));
+  if (shot) await page.locator('#skillPage .skill-props').screenshot({ path: `${shot}/skill-in-review.png` });
+  await page.click('#skillBackBtn');
+  await page.waitForSelector('#skillLib:not(.hidden) .skill-review-on');
+  await page.click('#skillLibBack');
+  await page.waitForSelector('#skillLib.hidden', { state: 'attached' });
+  // 正文没改，但参考的技能变了：重新查，出新卡
+  await page.click('#reviewBtn');
+  await page.waitForFunction((k) => document.querySelectorAll('#chatLog .chat-card.review').length > k, cards, { timeout: 15000 });
+  await page.waitForFunction((n) => (document.querySelector('#reviewBox .card-by')?.textContent || '').includes(`对照技能：${n}`), name);
+  const by = (await page.textContent('#reviewBox .card-by')).trim();
+  if (!/自动/.test(by)) throw new Error(`没标出模型：${by}`);
+  if (shot) await page.locator('#reviewBox').screenshot({ path: `${shot}/review-card-skill.png` });
+  return by;
 });
 await step('话筒在输入框旁（不真开麦）；个人设置可改保存天数', async () => {
   await page.waitForSelector('#chatMicBtn', { state: 'visible' });

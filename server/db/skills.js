@@ -9,7 +9,7 @@ export const SKILL_MAX = 30;
 
 const view = (r) => r && ({
   id: r.id, name: r.name, description: r.description || '', instruction: r.instruction,
-  tags: parseJson(r.tags_json, []), refs: parseJson(r.refs_json, []),
+  tags: parseJson(r.tags_json, []), refs: parseJson(r.refs_json, []), inReview: Boolean(r.in_review),
   sort: r.sort, created_at: r.created_at, updated_at: r.updated_at,
 });
 
@@ -18,6 +18,7 @@ const toRow = (d) => {
   for (const k of ['name', 'description', 'instruction']) if (d[k] != null) row[k] = d[k];
   if (d.tags != null) row.tags_json = JSON.stringify(d.tags);
   if (d.refs != null) row.refs_json = JSON.stringify(d.refs);
+  if (d.inReview != null) row.in_review = Boolean(d.inReview);
   return row;
 };
 

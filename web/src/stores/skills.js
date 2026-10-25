@@ -22,7 +22,7 @@ export const SKILL_TEMPLATES = [
     instruction: '在这段后面补一组「反例 → 正例」的对比：\n- 反例：常见的错误做法，一两句\n- 正例：按这段的道理怎么做，一两句\n- 例子要具体，有场景；不编造数据、机构和他人引语' },
 ];
 
-const blank = () => ({ name: '', description: '', tags: [], instruction: '', refs: [] });
+const blank = () => ({ name: '', description: '', tags: [], instruction: '', refs: [], inReview: false });
 
 export const useSkillsStore = defineStore('skills', () => {
   const list = ref([]);          // 列表：不带正文
@@ -48,6 +48,9 @@ export const useSkillsStore = defineStore('skills', () => {
     return list.value.filter((x) => [x.name, x.description, ...(x.tags || [])].some((t) => String(t || '').toLowerCase().includes(k)));
   }
   const allTags = computed(() => [...new Set(list.value.flatMap((x) => x.tags || []))]);
+  /* 打开了「检查时也参考」的技能：成稿检查会带上（服务端最多带 3 个）。stamp 给检查判断「设置变没变」 */
+  const inReview = computed(() => list.value.filter((x) => x.inReview));
+  const reviewStamp = computed(() => inReview.value.map((x) => `${x.id}:${x.updated_at}`).join(','));
 
   /* ---------- 技能页：整页编辑 ---------- */
   const page = reactive({ open: false, id: null, draft: blank(), saved: '', saving: false, loading: false, created_at: '', updated_at: '' });
@@ -55,7 +58,7 @@ export const useSkillsStore = defineStore('skills', () => {
 
   function fill(s) {
     page.id = s?.id ?? null;
-    page.draft = { name: s?.name || '', description: s?.description || '', tags: [...(s?.tags || [])], instruction: s?.instruction || '', refs: (s?.refs || []).map((r) => ({ ...r })) };
+    page.draft = { name: s?.name || '', description: s?.description || '', tags: [...(s?.tags || [])], instruction: s?.instruction || '', refs: (s?.refs || []).map((r) => ({ ...r })), inReview: Boolean(s?.inReview) };
     page.saved = JSON.stringify(page.draft);
     page.created_at = s?.created_at || '';
     page.updated_at = s?.updated_at || '';
@@ -147,6 +150,7 @@ export const useSkillsStore = defineStore('skills', () => {
   }
 
   return {
+    inReview, reviewStamp,
     list, max, me, loaded, load, search, allTags,
     page, dirty, openPage, closePage, savePage, copy, remove,
     materials, loadMaterials, addMaterialRef, addTextRef,

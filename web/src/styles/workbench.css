@@ -726,6 +726,7 @@ body.edit-fs-on .work-side.chat-on {
 body.edit-fs-on .mpick-menu { z-index: 130; }
 .chat-model-gone { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 12px; color: var(--danger); }
 .chat-by { margin: -6px 0 0; font-size: 11px; color: var(--faint); }
+.chat-card .card-by { margin: 0; padding: 6px 12px 0; }
 
 /* 我的技能：划词菜单里一排、对话框里的「技能」菜单、个人设置里的列表 */
 .sel-skills { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -796,6 +797,9 @@ body.edit-fs-on .mpick-menu { z-index: 130; }
   background: var(--accent-soft); color: var(--accent-ink); font-size: 12.5px;
 }
 .skill-chip.missing { background: var(--danger-soft); color: var(--danger); }
+.skill-switch { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; min-height: 28px; font-size: 14px; color: var(--text); cursor: pointer; }
+.skill-switch input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.skill-review-on { color: var(--accent-ink); }
 .skill-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 2px; display: inline-flex; opacity: .7; }
 .skill-chip button:hover { opacity: 1; }
 .skill-refs .link-btn { font-size: 13px; }
@@ -895,3 +899,28 @@ body.edit-fs-on .mpick-menu { z-index: 130; }
 .chat-stopped { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 11.5px; color: var(--faint); }
 .stream-stop { display: inline-flex; align-items: center; gap: 4px; }
 .assist-stopped { margin-left: 6px; font-style: normal; font-size: 11.5px; color: var(--faint); }
+
+/* 工具条「检查」带一个小箭头：更多检查（扫 AI 味） */
+.split-btn { display: inline-flex; }
+.split-btn > #reviewBtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-btn > .split-caret { padding: 0 6px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* 对话里的检查 / AI 味卡片：沿用原来检查结果的条目样式，外框按对话里的卡片来 */
+.chat-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
+.chat-card.minor { border-left: 3px solid var(--warn); }
+.chat-card.bad { border-left: 3px solid var(--danger); }
+.chat-card .review-head { gap: 6px; }
+.chat-card .review-head > .ic { color: var(--muted); }
+.chat-card .review-summary { order: 0; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+.chat-card .review-list { max-height: none; overflow: visible; }
+.chat-card .issue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.chat-card .mini.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chat-card .mini.primary:disabled { background: var(--panel-2); border-color: var(--border); color: var(--faint); opacity: 1; }
+.chat-card .mini.ghost { border-color: var(--border); color: var(--muted); }
+.chat-card .ask-ai { justify-self: start; align-self: flex-start; margin-top: 2px; font-size: 12.5px; }
+.chat-card-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 12px; background: var(--panel-2); font-size: 12px; }
+.chat-card-foot .grow { flex: 1; }
+.chat-card-foot .link-btn { font-size: 12px; }
+.chat-card.tone-box .tone-item:last-child { border-bottom: 0; }
+.chat-msg.flash .chat-card { animation: chatFlash 1.4s ease-out; }
+@keyframes chatFlash { 0% { box-shadow: 0 0 0 3px var(--accent-line); } 100% { box-shadow: 0 0 0 0 transparent; } }

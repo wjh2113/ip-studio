@@ -44,6 +44,7 @@ async function clean(body, userId, partial = false) {
     out.tags = [...new Set(body.tags.map((t) => String(t || '').trim().slice(0, 12)).filter(Boolean))].slice(0, 8);
   }
   if (body?.refs != null) out.refs = await cleanRefs(body.refs, userId);
+  if (body?.inReview != null) out.inReview = body.inReview === true;
   return out;
 }
 
@@ -65,7 +66,7 @@ export async function handleSkillsList(req, res) {
   // 列表不带正文和参考资料全文，菜单和技能库够用
   const skills = (await Skills.list(user.id)).map((s) => ({
     id: s.id, name: s.name, description: s.description, tags: s.tags,
-    refCount: s.refs.length, size: s.instruction.length, updated_at: s.updated_at,
+    refCount: s.refs.length, size: s.instruction.length, inReview: s.inReview, updated_at: s.updated_at,
   }));
   json(res, 200, { skills, max: SKILL_MAX, me: user.username });
 }
@@ -77,16 +78,26 @@ export async function handleSkillGet(req, res, body, params) {
   json(res, 200, { skill, me: user.username });
 }
 
+/* 「检查时也参考」最多开 REVIEW_SKILL_MAX 个：多了审稿要求比正文还长，检查会跑偏 */
+async function checkReviewCap(data, userId, selfId = null) {
+  if (data.inReview !== true) return;
+  const on = (await Skills.list(userId)).filter((s) => s.inReview && s.id !== selfId).length;
+  if (on >= REVIEW_SKILL_MAX) throw new HttpError(400, `「检查时也参考」最多开 ${REVIEW_SKILL_MAX} 个技能，先关掉一个`);
+}
+
 export async function handleSkillCreate(req, res, body) {
   const user = await requireUser(req);
   const data = await clean(body, user.id);
+  await checkReviewCap(data, user.id);
   if (await Skills.count(user.id) >= SKILL_MAX) throw new HttpError(400, `技能最多存 ${SKILL_MAX} 个，删掉不用的再加`);
   json(res, 200, { skill: await withRefTitles(await Skills.create(user.id, data), user.id) });
 }
 
 export async function handleSkillUpdate(req, res, body, params) {
   const user = await requireUser(req);
-  const skill = await Skills.update(Number(params.sid), user.id, await clean(body, user.id, true));
+  const data = await clean(body, user.id, true);
+  await checkReviewCap(data, user.id, Number(params.sid));
+  const skill = await Skills.update(Number(params.sid), user.id, data);
   if (!skill) throw new HttpError(404, '没有这个技能');
   json(res, 200, { skill: await withRefTitles(skill, user.id) });
 }
@@ -120,4 +131,14 @@ export async function loadSkill(skillId, userId) {
     } else refs.push({ title: r.title, text: r.text });
   }
   return { id: s.id, name: s.name, description: s.description, instruction: s.instruction, refs };
+}
+
+/* 成稿检查要参考的技能：作者在技能页打开了「检查时也参考」的那些。
+   最多 REVIEW_SKILL_MAX 个（按技能库里的顺序），免得审稿要求比正文还长 */
+export const REVIEW_SKILL_MAX = 3;
+export async function reviewSkills(userId) {
+  const on = (await Skills.list(userId)).filter((s) => s.inReview).slice(0, REVIEW_SKILL_MAX);
+  const out = [];
+  for (const s of on) out.push({ ...await loadSkill(s.id, userId), updated_at: s.updated_at });
+  return out;
 }

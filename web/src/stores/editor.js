@@ -20,6 +20,7 @@ import { useBriefStore } from './brief.js';
 import { useHistoryStore } from './history.js';
 import { imageUrl, useVersionsStore, weave } from './versions.js';
 import { useSpeakStore } from './speak.js';
+import { IMAGE_MARK } from '../../../shared/place.js';
 
 export const ASSIST_ACTIONS = [
   { key: 'expand', label: '扩写' },
@@ -642,6 +643,12 @@ export const useEditorStore = defineStore('editor', () => {
       .replace(/<td( style="text-align:(\w+)")?>/g, (_, __, a) => `<td style="${cell}${a ? `text-align:${a};` : ''}">`);
   }
 
+  /* 纯文本出口（复制时的纯文本、下载 Markdown）：「此处放图片」只是编辑时的插图位置记号，不该带出去。
+     带图的富文本里，有图的位置换成图、没图的直接去掉（weave 已经处理）；纯文本里一律去掉，多出的空行收掉 */
+  function plainOut(text) {
+    return String(text || '').split(IMAGE_MARK).join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   /* 剪贴板 HTML 带上片段标记，公众号 / Word 才会认加粗、颜色，而不是只取纯文本 */
   function clipboardHtml(body) {
     return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><!--StartFragment-->${body}<!--EndFragment--></body></html>`;
@@ -659,12 +666,12 @@ export const useEditorStore = defineStore('editor', () => {
         // 富文本编辑器取 HTML（加粗、颜色、图），纯文本处取 markdown
         await navigator.clipboard.write([new ClipboardItem({
           'text/html': new Blob([clipboardHtml(html)], { type: 'text/html' }),
-          'text/plain': new Blob([text], { type: 'text/plain' }),
+          'text/plain': new Blob([plainOut(text)], { type: 'text/plain' }),
         })]);
         toast(imgs ? `已复制${label}，带 ${imgs} 张图` : `已复制${label || '到剪贴板'}`);
         return;
       }
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(plainOut(text));
       toast(imgs ? `已复制${label}（这个浏览器带不了图，用「下载图文」）` : `已复制${label || '到剪贴板'}`);
     } catch {
       toast('复制失败，请手动选中文本');
@@ -682,7 +689,7 @@ export const useEditorStore = defineStore('editor', () => {
     try {
       const base = fileBase();
       if (fmt === 'md') {
-        saveBlob(new Blob([text], { type: 'text/markdown;charset=utf-8' }), `${base}.md`);
+        saveBlob(new Blob([plainOut(text)], { type: 'text/markdown;charset=utf-8' }), `${base}.md`);
         return;
       }
       const { html, imgs } = await richHtml(text);

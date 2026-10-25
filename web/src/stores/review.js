@@ -1,15 +1,20 @@
-/* 成稿检查：让模型回头看一遍错字、通顺性、调性与风险，逐条采纳。
+/* 成稿检查和 AI 味扫描：结果作为一张卡片放进右栏「AI 对话」（和改稿在同一串对话里，能接着问、接着改）。
+ *   点「检查」：右栏自动展开、切到 AI 对话，先出一张「正在检查…」，结果回来换成检查结果卡片   run
+ *   卡片里逐条采纳 / 忽略 / 在正文里看 / 让 AI 改，逻辑在 chat.js（applyIssue 等）
+ *   「改完了，再检查一遍」：强制再查，新卡片接在后面   recheck
+ *   「扫 AI 味」：同样出一张卡片   scanTone
  * 查的是版本栏正开着的那一版（原文或小红书等平台版本），采纳也改那一版。
- * 采纳只替换第一处：同一片段可能在文中出现多次，全替换风险太大。
- * 采纳是本地改正文，马上生效、马上定位到改过的地方；不再自动整篇重查（要等模型，整张清单还会被置灰），
- * 剩下的条目照样能点。改得多了想再看一遍，点「再检查一遍」。
- * 成稿后不自动检查——工具栏手动点；正文和上次相同时直接复用结果。 */
+ * 检查和扫 AI 味都跟着右栏对话左下角选的模型；检查还会带上技能页打开了「检查时也参考」的技能。
+ * 成稿后不自动检查——工具栏手动点；正文、模型、参考技能都和上次相同时不调接口，直接滚到上次那张卡片。 */
 import { defineStore } from 'pinia';
 import { reactive, ref } from 'vue';
 import { api } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { useStudioStore } from './studio.js';
 import { useEditorStore } from './editor.js';
+import { useChatStore } from './chat.js';
+import { useSettingsStore } from './settings.js';
+import { useSkillsStore } from './skills.js';
 
 export const VERDICT_LABEL = { ok: '没发现问题', minor: '有几处小毛病', bad: '大面积不通顺' };
 
@@ -25,138 +30,75 @@ function hashText(s) {
 }
 
 export const useReviewStore = defineStore('review', () => {
-  const open = ref(false);
   const running = ref(false);
-  const stale = ref(false);          // 重新检查的请求还在路上（手动点「再检查一遍」）
-  const applied = ref(0);            // 这次检查之后采纳了几条：提示可以再查一遍
-  const result = ref(null);
-  const error = ref('');
-  const handled = reactive(new Set());   // 采纳或忽略过的条目
-  const checkedAt = ref('');         // 上次检查时的正文指纹（version + text）
+  const last = reactive({ fp: '', id: 0 });     // 上次检查的正文指纹和那张卡片
 
-  async function run({ silent = false, force = false } = {}) {
+  async function run({ force = false } = {}) {
     const s = useStudioStore();
-    const draft = s.draft;
     const ed = useEditorStore();
-    // 重查沿用上次那一版；新查用版本栏正开着的那一版
-    const version = silent && result.value ? (result.value.version || '') : ed.editVer;
-    const text = textOf(version);
-    if (!text.trim() || running.value) return;
-    const fp = `${version}\n${hashText(text)}`;
-    // 正文没改过：直接亮上次结果，不调接口
-    if (!force && !silent && result.value && checkedAt.value === fp) {
-      open.value = true;
-      toast('正文没改过，还是上次的检查结果');
+    const chat = useChatStore();
+    const draft = s.draft;
+    const version = ed.editVer;
+    const text = ed.text;
+    if (!draft || !text.trim() || running.value) return;
+    chat.open();
+    await chat.load();
+    // 换了模型、改了参考的技能，也算「变了」，要重新查
+    const fp = `${draft.id}\n${version}\n${hashText(text)}\n${useSettingsStore().chatModel}\n${useSkillsStore().reviewStamp}`;
+    if (!force && last.fp === fp && last.id && chat.messages.some((m) => m.id === last.id)) {
+      chat.focusMessage(last.id);
+      toast('正文和设置都没变，还是上次的检查结果');
       return;
     }
     await ed.flushSave();
-    if (!silent) {
-      open.value = true;
-      result.value = null;
-      error.value = '';
-      handled.clear();
-    }
+    const card = chat.pushCard('review');
     running.value = true;
     try {
-      const { review } = await api(`/drafts/${draft.id}/review`, { method: 'POST', body: { content: textOf(version), version } });
-      if (s.draft?.id !== draft.id) return;
-      result.value = review;
-      checkedAt.value = fp;
-      error.value = '';
-      handled.clear();
-      applied.value = 0;
-      open.value = true;
-      if (review?.cached) toast('正文没改过，用了上次的检查结果');
+      const { message } = await api(`/drafts/${draft.id}/review`, {
+        method: 'POST', body: { content: text, version, chat: true, ...(force ? { force: true } : {}) },
+      });
+      if (s.draft?.id !== draft.id || !card) return;
+      const m = chat.settleCard(card, message);
+      Object.assign(last, { fp, id: m.id });
+      if (message.review?.cached) toast('正文没改过，用了上次的检查结果');
     } catch (err) {
-      open.value = true;
-      error.value = err.message;
+      if (card) Object.assign(card, { pending: false, error: err.message, retryCard: 'review' });
     } finally {
       running.value = false;
     }
   }
 
-  /* 手动再查一遍：旧清单留着（置灰），新的回来再换；强制走模型 */
-  async function recheck() {
-    if (running.value) return;
-    stale.value = true;
-    try { await run({ silent: true, force: true }); } finally { stale.value = false; }
-  }
+  const recheck = () => run({ force: true });
 
-  /* 某一版的正文：'' = 原文 */
-  const textOf = (ver) => {
-    const d = useStudioStore().draft;
-    return String((ver ? d?.variants?.[ver]?.content : d?.content) || '');
-  };
-  /* 这次检查查的是哪一版 */
-  const ver = () => result.value?.version || '';
-
-  /* 这一条在那一版里还找得到吗（采纳了别的条目、自己改过之后可能对不上了） */
-  const fits = (i) => {
-    const issue = result.value?.issues?.[i];
-    return Boolean(issue?.quote) && textOf(ver()).includes(issue.quote);
-  };
-
-  function applyOne(i) {
-    const s = useStudioStore();
-    const issue = result.value?.issues?.[i];
-    if (!issue || !s.draft || handled.has(i)) return false;
-    handled.add(i);
-    const raw = textOf(ver());
-    if (!raw.includes(issue.quote)) return null;      // 那一版已经改过，这条对不上了
-    // 改查的那一版（编辑框里可能已经切到别的版本了）；走编辑器，Ctrl+Z 能撤回这次采纳
-    useEditorStore().replaceContent(raw.replace(issue.quote, issue.fix), ver());
-    applied.value += 1;
-    return true;
-  }
-
-  /* 采纳：马上改、马上在左边原文定位到改过的那句 */
-  function apply(i) {
-    const r = applyOne(i);
-    if (r === null) { toast('原文已经改过，这条对不上了'); return; }
-    if (!r) return;
-    void useEditorStore().locate(result.value.issues[i].fix, { ver: ver(), quiet: true }).catch(() => {});
-  }
-
-  function applyAll() {
-    let n = 0;
-    (result.value?.issues || []).forEach((_, i) => { if (applyOne(i)) n += 1; });
-    toast(n ? `已采纳 ${n} 处` : '没有可采纳的修改');
-  }
-
-  function skip(i) {
-    handled.add(i);
-  }
-
-  /* AI 味扫描：快档模型 + 本地规则；改哪句交给作者：选中它，划词菜单里点「去 AI 味」 */
-  const tone = reactive({ open: false, running: false, flags: null, error: '', version: '' });
+  /* AI 味扫描：快档模型 + 本地规则，结果也是一张卡片 */
+  const tone = reactive({ running: false });
   async function scanTone() {
     const s = useStudioStore();
+    const ed = useEditorStore();
+    const chat = useChatStore();
     const draft = s.draft;
-    const version = useEditorStore().editVer;
-    const text = textOf(version);
-    if (!text.trim() || tone.running) return;
-    tone.open = true;
-    tone.version = version;
+    const version = ed.editVer;
+    const text = ed.text;
+    if (!draft || !text.trim() || tone.running) return;
+    chat.open();
+    await chat.load();
+    const card = chat.pushCard('tone');
     tone.running = true;
-    tone.error = '';
     try {
-      const { flags } = await api(`/drafts/${draft.id}/ai-tone`, {
-        method: 'POST', body: { content: text, version: version || undefined },
+      const { message } = await api(`/drafts/${draft.id}/ai-tone`, {
+        method: 'POST', body: { content: text, version: version || undefined, chat: true },
       });
-      if (s.draft?.id === draft.id) tone.flags = flags;
-    } catch (err) { tone.error = err.message; } finally { tone.running = false; }
+      if (s.draft?.id === draft.id && card) chat.settleCard(card, message);
+    } catch (err) {
+      if (card) Object.assign(card, { pending: false, error: err.message, retryCard: 'tone' });
+    } finally { tone.running = false; }
   }
 
   function reset() {
-    Object.assign(tone, { open: false, running: false, flags: null, error: '', version: '' });
-    open.value = false;
-    stale.value = false;
-    applied.value = 0;
-    result.value = null;
-    error.value = '';
-    checkedAt.value = '';
-    handled.clear();
+    running.value = false;
+    tone.running = false;
+    Object.assign(last, { fp: '', id: 0 });
   }
 
-  return { open, running, stale, applied, result, error, handled, fits, run, recheck, apply, applyAll, skip, reset, tone, scanTone };
+  return { running, run, recheck, tone, scanTone, reset };
 });

@@ -252,7 +252,7 @@ await step('语音改稿并进对话：编辑底栏没有麦克风，对话输�
   await page.click('#editBtn');
   await page.waitForSelector('#editorBar', { state: 'visible' });
   if (await page.$('#voiceBtn')) throw new Error('编辑底栏还有语音改稿');
-  await page.click('#chatBtn');
+  await page.click('#sideTabChat');                       // 「检查」已经把右栏切到对话了，「问 AI」再点会切回工具
   await page.waitForSelector('#chatMicBtn', { state: 'visible' });
   await page.click('#sideTabTools');
   return '话筒在对话框';

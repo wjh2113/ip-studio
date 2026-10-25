@@ -56,7 +56,14 @@
             <button class="btn ghost small" id="illusBtn" :disabled="!s.draft?.content" @click="confirmAct('illus')"><Icon name="image" :size="14" />配图</button>
             <button class="btn ghost small" id="cuesBtn" :disabled="actDisabled('cues')" :title="actDisabled('cues') ? '这个版本是给人看的，口播请切回原文或视频号、抖音、B 站版本' : ''" @click="confirmAct('cues')"><Icon name="mic" :size="14" />口播</button>
             <button class="btn ghost small" id="rewriteBtn" title="先选中一段文字，再点这里打开改写" @mousedown.prevent @click="openRewrite"><Icon name="sparkles" :size="14" />改写</button>
-            <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" :disabled="!ed.text || s.streaming" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
+            <!-- 检查和扫 AI 味的结果都出在右栏「AI 对话」里，一张卡片 -->
+            <div class="menu-wrap split-btn">
+              <BusyBtn class="btn ghost small" id="reviewBtn" :busy="review.running" busy-text="检查中" :disabled="!ed.text || s.streaming" title="错字、通顺、调性与风险；结果出在右栏 AI 对话里" @click="review.run()"><Icon name="shield" :size="14" />检查</BusyBtn>
+              <button class="btn ghost small split-caret" id="reviewMore" aria-haspopup="true" title="更多检查" :disabled="!ed.text || s.streaming" @click.stop="toggleMenu('review')"><Icon name="chev-down" :size="13" /></button>
+              <div v-if="menu === 'review'" class="menu narrow" id="reviewMenu">
+                <button type="button" id="toneScanMenu" :disabled="review.tone.running" @click="closeMenu(); review.scanTone()"><Icon name="sparkles" :size="15" /><span>扫 AI 味<em>说法和节奏像不像 AI（按文案点数计）</em></span></button>
+              </div>
+            </div>
             <button class="btn ghost small" id="chatBtn" :class="{ on: chatOn }" title="在右栏和 AI 聊这篇稿子，或说要怎么改（局部改、整篇重写、用嘴说都在这里）" @click="chatOn ? layout.pane = 'tools' : chat.open()"><Icon name="sparkles" :size="14" />问 AI</button>
           </div>
           <span class="grow"></span>
@@ -124,15 +131,6 @@
       <ChatPane v-if="chatOn" />
       <div v-show="!chatOn" class="side-tools" id="sideTools">
       <!-- 右栏顺序与工具条一致：改稿 → 加工 → 收尾细节 -->
-      <WorkPanel title="检查结果" icon="shield" :active="review.open" :badge="reviewBadge">
-        <ReviewBox />
-        <ToneBox />
-        <template v-if="!review.open">
-          <p class="wp-text">错字、通顺、调性与风险；也可扫 AI 味（走模型，按文案点数计）。主入口在工具条「检查」。</p>
-          <BusyBtn class="btn ghost small" id="toneScanBtn" data-side="tone" :busy="review.tone.running" :disabled="!ed.text"
-            title="用模型看说法和节奏像不像 AI，并并上本地硬词规则" @click="review.scanTone()">扫 AI 味</BusyBtn>
-        </template>
-      </WorkPanel>
       <WorkPanel title="版本对照" icon="clock" :active="s.revOpen || Boolean(ed.reviseCompare)" :badge="s.revOpen || ed.reviseCompare ? '展开中' : ''">
         <p class="wp-text">保存前留下的每一版，或按意见重写后的段落对照。</p>
         <button class="btn ghost small" type="button" id="revBtn" data-side="revs" @click="toggleRevs">{{ s.revOpen ? '收起历史对照' : '打开版本对照' }}</button>
@@ -178,8 +176,6 @@ import RichEditor from './RichEditor.vue';
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import WorkPanel from './WorkPanel.vue';
-import ReviewBox from './ReviewBox.vue';
-import ToneBox from './ToneBox.vue';
 import VersionBars from './VersionBars.vue';
 import CuesPane from './CuesPane.vue';
 import ChatPane from './ChatPane.vue';
@@ -221,7 +217,7 @@ const cueText = computed(() => {
   return s.draft?.cues ? '口播提示已生成：切段、语气、重读都标好了，可以逐段改。' : '把成稿切成段、标好语气，配合提词器照着念。';
 });
 const RAIL = [
-  { icon: 'shield', title: '检查结果' }, { icon: 'clock', title: '版本对照' }, { icon: 'layers', title: '多平台' },
+  { icon: 'clock', title: '版本对照' }, { icon: 'layers', title: '多平台' },
   { icon: 'image', title: '配图' }, { icon: 'mic', title: '口播' },
 ];
 const editingLabel = computed(() => (v.current ? `正在编辑：${v.label}版` : '正在编辑：原文'));
@@ -234,14 +230,7 @@ const sp = useSpeakStore();
 /* 口播模式下在版本栏切到视频平台的版本：口播区跟着切到那一版 */
 watch(() => v.current, (key) => { if (s.mode === 'cue' && cueOk.value) sp.version = key || ''; });
 
-/* 右栏面板标题旁的小结：检查出几条、配图出了几张 */
-const reviewBadge = computed(() => {
-  if (review.running) return '检查中';
-  const x = review.result;
-  if (!review.open || !x) return '';
-  if (x.issues.length) return `${x.issues.length} 条建议`;
-  return x.flags?.length ? `${x.flags.length} 处风险提示` : '没发现问题';
-});
+/* 右栏面板标题旁的小结：配图出了几张 */
 const illusBadge = computed(() => {
   const st = v.illus;
   if (!st?.items?.length) return '';
@@ -342,6 +331,8 @@ async function confirmAct(act) {
   if (actDisabled(act)) return;
   closeMenu();
   if (act === 'cues') { sp.version = v.current || ''; ed.setMode('cue'); if (!sp.cues) sp.runCues(); return; }
+  // 多平台、配图的面板在右栏「工具」里：右栏开着 AI 对话时切回工具
+  if (act === 'multi' || act === 'illus') { layout.work = false; layout.pane = 'tools'; }
   if (act === 'multi') { v.openMulti(); return; }
   if (act === 'illus') { v.toggleIllus(); return; }
   if (act === 'learn') { useAccountStore().learn(s.draft, { beforeSave: () => ed.flushSave() }); return; }

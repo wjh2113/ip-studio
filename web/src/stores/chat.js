@@ -10,7 +10,7 @@
  *   检查结果「交给 AI 改」：带着那句话和检查意见直接发一句   askAbout
  * 打开对话栏：右栏页签、工具条「问 AI」、划词菜单「问 AI」（带着选中的那段过来）   open */
 import { defineStore } from 'pinia';
-import { computed, reactive, ref } from 'vue';
+import { computed, nextTick, reactive, ref } from 'vue';
 import { api, friendlyNetError, stream, upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { applyEdits } from '../../../shared/edits.js';
@@ -33,7 +33,7 @@ export const KEEP_CHOICES = [
 ];
 
 /* 服务端回来的一条，补上只在页面里用的状态：steps 是这次打开后应用过的（撤销用，刷新就没了） */
-const local = (m) => ({ edits: [], rewrite: '', skipped: [], done: {}, started: false, ...m, steps: [] });
+const local = (m) => ({ edits: [], rewrite: '', skipped: [], done: {}, started: false, handled: [], ...m, steps: [] });
 
 export const useChatStore = defineStore('chat', () => {
   const threads = reactive({});       // `${稿子 id}:${版本}` → 消息列表（null = 还没取）
@@ -150,6 +150,68 @@ export const useChatStore = defineStore('chat', () => {
     list.splice(i - 1, 2);
     send(m.retry.content, { quote: m.retry.quote || '', skill: m.retry.skill || null });
   }
+
+  /* ---------- 检查结果 / AI 味卡片（工具条「检查」「扫 AI 味」的结果放进对话里） ---------- */
+  const flash = ref(0);           // 要高亮、滚到的那条消息 id
+
+  /* 先放一张「正在检查…」的占位卡片，结果回来再换成真的 */
+  function pushCard(card) {
+    open();
+    const k = key.value;
+    if (!k) return null;
+    if (!threads[k]) threads[k] = [];
+    threads[k].push(local({ role: 'assistant', card, pending: true, content: '' }));
+    return threads[k][threads[k].length - 1];
+  }
+
+  /* 服务端回来的卡片：同一份正文已经有卡片（复用）就去掉占位、滚到那张；否则占位换成真的 */
+  function settleCard(placeholder, message) {
+    const list = threads[key.value] || [];
+    const existing = list.find((x) => x.id && x.id === message.id);
+    if (existing) {
+      const i = list.indexOf(placeholder);
+      if (i >= 0) list.splice(i, 1);
+      focusMessage(existing.id);
+      return existing;
+    }
+    Object.assign(placeholder, local(message), { pending: false, error: '' });
+    return placeholder;
+  }
+
+  function focusMessage(id) { flash.value = 0; nextTick(() => { flash.value = id; }); }
+
+  /* 检查结果里的一条还对不对得上正文（采纳了别的条目、自己改过之后可能对不上了） */
+  const fitsIssue = (m, i) => {
+    const it = m.review?.issues?.[i];
+    return Boolean(it?.quote) && useEditorStore().text.includes(it.quote);
+  };
+  const isHandled = (m, i) => (m.handled || []).includes(i);
+
+  function markHandled(m, i) {
+    if (!isHandled(m, i)) m.handled = [...(m.handled || []), i];
+    mark(m, { done: m.done || {}, handled: m.handled });
+  }
+
+  /* 采纳：只替换第一处（同一片段可能出现多次，全换风险大）；走编辑器，Ctrl+Z 能撤回 */
+  function applyIssue(m, i, { quiet = false } = {}) {
+    const ed = useEditorStore();
+    const it = m.review?.issues?.[i];
+    if (!it || isHandled(m, i)) return false;
+    const raw = ed.text;
+    if (!raw.includes(it.quote)) { if (!quiet) toast('原文已经改过，这条对不上了'); return false; }
+    ed.replaceContent(raw.replace(it.quote, it.fix));
+    markHandled(m, i);
+    if (!quiet) void ed.locate(it.fix, { ver: ed.editVer, quiet: true });
+    return true;
+  }
+
+  function applyAllIssues(m) {
+    let n = 0;
+    (m.review?.issues || []).forEach((_, i) => { if (applyIssue(m, i, { quiet: true })) n += 1; });
+    toast(n ? `已采纳 ${n} 处，可撤销` : '没有可采纳的修改');
+  }
+
+  function skipIssue(m, i) { markHandled(m, i); }
 
   /* 检查结果里的一条「交给 AI 改」：引用那句，把检查意见说给 AI */
   function askAbout({ quote: q, what, suggestion, ver = '' }) {
@@ -314,6 +376,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     threads, messages, loading, busy, input, quote, focusTick, keepDays, mic,
+    flash, pushCard, settleCard, focusMessage, fitsIssue, isHandled, applyIssue, applyAllIssues, skipIssue,
     open, load, send, stop, retry, redo, canInsert, askAbout, apply, undo, startRewrite, locate, allDone, clear, setKeep, toggleMic, stopMic,
   };
 });

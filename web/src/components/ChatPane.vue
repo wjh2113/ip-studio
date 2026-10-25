@@ -12,12 +12,19 @@
         </div>
       </div>
 
-      <div v-for="(m, mi) in c.messages" :key="m.id || `t${mi}`" class="chat-msg" :class="m.role">
+      <div v-for="(m, mi) in c.messages" :key="m.id || `t${mi}`" class="chat-msg" :class="[m.role, { flash: m.id && c.flash === m.id }]" :data-mid="m.id || null">
         <template v-if="m.role === 'user'">
           <blockquote v-if="m.quote" class="chat-quote">{{ clip(m.quote, 90) }}</blockquote>
           <div class="chat-bubble"><span v-if="m.skill" class="chat-skill-tag"><Icon name="bolt" :size="11" />{{ m.skill.name }}</span>{{ m.content }}</div>
           <button v-if="m.id && !m.skill && m.content.length >= 4 && !m.content.startsWith('换个改法') && !m.content.startsWith('检查提示')" type="button"
             class="link-btn chat-save-skill" data-act="save-skill" title="做成技能，以后在划词菜单和对话里一点就能用" @click="sk.openPage(null, { instruction: m.content })">存成技能</button>
+        </template>
+        <!-- 工具条「检查」「扫 AI 味」的结果：一张卡片 -->
+        <template v-else-if="m.card">
+          <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>{{ m.card === 'review' ? '正在检查全文…' : '正在扫 AI 味…' }}</div>
+          <div v-else-if="m.error" class="chat-err">{{ m.card === 'review' ? '检查' : 'AI 味扫描' }}没做成：{{ m.error }} <button type="button" class="mini" @click="retryCard(m)">重试</button></div>
+          <ReviewBox v-else-if="m.card === 'review'" :m="m" :latest="m.id === latestId('review')" />
+          <ToneBox v-else :m="m" :latest="m.id === latestId('tone')" />
         </template>
         <template v-else>
           <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>正在想…</div>
@@ -114,6 +121,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './common/Icon.vue';
 import BusyBtn from './common/BusyBtn.vue';
 import ModelPicker from './ModelPicker.vue';
+import ReviewBox from './ReviewBox.vue';
+import ToneBox from './ToneBox.vue';
+import { useReviewStore } from '../stores/review.js';
 import SkillPicker from './SkillPicker.vue';
 import { useSkillsStore } from '../stores/skills.js';
 import { CHAT_SUGGESTS, useChatStore } from '../stores/chat.js';
@@ -130,6 +140,18 @@ const ed = useEditorStore();
 const v = useVersionsStore();
 const settings = useSettingsStore();
 const sk = useSkillsStore();
+const review = useReviewStore();
+
+/* 最新那张检查 / AI 味卡片：带 id，测试和「再检查一遍」认它 */
+const latestId = (card) => [...c.messages].reverse().find((x) => x.card === card && x.id)?.id || 0;
+
+/* 卡片没做成：拿掉这张，再查一次 */
+function retryCard(m) {
+  const i = c.messages.indexOf(m);
+  if (i >= 0) c.messages.splice(i, 1);
+  if (m.card === 'review') review.run({ force: true });
+  else review.scanTone();
+}
 const log = ref(null);
 const input = ref(null);
 
@@ -163,6 +185,11 @@ async function clearAll() {
 const scrollEnd = () => nextTick(() => { if (log.value) log.value.scrollTop = log.value.scrollHeight; });
 watch(() => [c.messages.length, c.messages[c.messages.length - 1]?.pending, c.messages[c.messages.length - 1]?.content?.length], scrollEnd);
 watch(() => c.focusTick, () => nextTick(() => input.value?.focus()));
+/* 「检查」时正文没改过：滚到上次那张卡片，闪一下 */
+watch(() => c.flash, (id) => {
+  if (!id) return;
+  nextTick(() => log.value?.querySelector(`[data-mid="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+});
 /* 换了稿子或版本：取那一串的记录；引用的那段属于上一篇，不带过去 */
 watch(() => s.draft?.id, () => { c.quote = ''; });
 watch(() => [s.draft?.id, ed.editVer], () => { void c.load().then(scrollEnd); });

@@ -482,6 +482,114 @@ test('对话里点「停止」：连接一断，已经写出来的回话照样�
   await api.call('DELETE', `/api/drafts/${draftId}/chat`);
 });
 
+test('检查和扫 AI 味进对话：带 chat 时存成卡片，同一份正文不重复；卡片能记采纳过的条目；不带 chat 照旧（手机端）', async () => {
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+  const content = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  let r = await api.call('POST', `/api/drafts/${draftId}/review`, { content });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.message, undefined);
+  assert.deepEqual((await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages, []);
+
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(r.status, 200, r.text);
+  const card = r.data.message;
+  assert.equal(card.card, 'review');
+  assert.equal(card.role, 'assistant');
+  assert.ok(card.review && Array.isArray(card.review.issues));
+  assert.match(card.content, /^检查结果：/);
+  // 同一份正文再查（命中缓存）：还是那张卡
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(r.data.message.id, card.id);
+  // 强制再查：新卡（缓存跳过、hash 一样也复用旧卡，避免重复堆）
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true, force: true });
+  assert.equal(r.data.message.id, card.id);
+  // 记采纳过的条目：越界的不认
+  const n = card.review.issues.length;
+  r = await api.call('PUT', `/api/chat/${card.id}`, { done: {}, handled: n ? [0, 999] : [999] });
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.data.message.handled, n ? [0] : []);
+
+  r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content: `${content}\n\n在当今快节奏的时代，备菜至关重要。`, chat: true });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.message.card, 'tone');
+  assert.ok(Array.isArray(r.data.message.flags));
+  const msgs = (await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages;
+  assert.deepEqual(msgs.map((m) => m.card), ['review', 'tone']);
+  // 卡片之后接着聊：能正常回答（卡片作为历史带给模型）
+  r = await chatCall({ message: '第 1 条为什么要改？' });
+  assert.equal(r.status, 200, r.text);
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+});
+
+test('检查跟着对话的设置走：左下角选的模型、「检查时也参考」的技能；换了设置就是新卡片，手机端不受影响', async () => {
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+  const content = (await api.call('GET', `/api/drafts/${draftId}`)).data.draft.content;
+  // 默认：自动选路，不带技能
+  let r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(r.status, 200, r.text);
+  const auto = r.data.message;
+  assert.equal(auto.model.auto, true);
+  assert.deepEqual(auto.skills, []);
+
+  // 选了模型：卡片标的是这个模型；指纹变了，不复用上一张
+  assert.equal((await api.call('PUT', '/api/settings', { chatModel: 'demo-quality' })).status, 200);
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(r.status, 200, r.text);
+  const picked = r.data.message;
+  assert.notEqual(picked.id, auto.id);
+  assert.equal(picked.model.auto, false);
+  assert.equal(picked.model.id, 'demo-quality');
+  r = await api.call('POST', `/api/drafts/${draftId}/ai-tone`, { content, chat: true });
+  assert.equal(r.data.message.model.id, 'demo-quality');
+
+  // 技能：打开「检查时也参考」后带进检查；最多开 3 个
+  const ids = [];
+  for (let i = 0; i < 4; i += 1) {
+    r = await api.call('POST', '/api/skills', { name: `审稿规则${i}`, instruction: '不许出现"家人们"这种称呼', inReview: i < 3 });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.skill.inReview, i < 3);
+    ids.push(r.data.skill.id);
+  }
+  r = await api.call('PUT', `/api/skills/${ids[3]}`, { inReview: true });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /最多开 3 个/);
+  assert.equal((await api.call('GET', '/api/skills')).data.skills.filter((k) => k.inReview).length, 3);
+  // 复制出来的默认关着，不会悄悄超额
+  r = await api.call('POST', `/api/skills/${ids[0]}/copy`);
+  assert.equal(r.data.skill.inReview, false);
+  ids.push(r.data.skill.id);
+
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(r.status, 200, r.text);
+  const withSkills = r.data.message;
+  assert.notEqual(withSkills.id, picked.id);
+  assert.deepEqual(withSkills.skills.map((k) => k.name), ['审稿规则0', '审稿规则1', '审稿规则2']);
+  // 改了技能内容也算设置变了
+  await api.call('PUT', `/api/skills/${ids[0]}`, { instruction: '不许出现"宝子们"这种称呼' });
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.notEqual(r.data.message.id, withSkills.id);
+  // 设置不变再点：还是那张
+  const again = await api.call('POST', `/api/drafts/${draftId}/review`, { content, chat: true });
+  assert.equal(again.data.message.id, r.data.message.id);
+
+  // 手机端（不带 chat）：不跟设置走，也不出卡片
+  r = await api.call('POST', `/api/drafts/${draftId}/review`, { content });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.data.message, undefined);
+
+  // 提示词里确实带上了技能，并说明按「作者要求」报
+  const { reviewUser, reviewSkillsBlock } = await import('../server/prompts/review.js');
+  assert.equal(reviewSkillsBlock([]), '');
+  const prompt = reviewUser({ platform: 'wechat', length: 800 }, '正文', null, [], [{ name: '审稿规则0', description: '', instruction: '不许出现"宝子们"' }]);
+  assert.match(prompt, /作者自己的审稿要求/);
+  assert.match(prompt, /审稿规则0/);
+  assert.match(prompt, /作者要求/);
+
+  for (const id of ids) await api.call('DELETE', `/api/skills/${id}`);
+  await api.call('PUT', '/api/settings', { chatModel: '' });
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+});
+
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {
   let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
   assert.equal(r.status, 400);

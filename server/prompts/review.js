@@ -1,13 +1,13 @@
 import { frameworkBlock } from '../frameworks.js';
 import { creatorBlock, personaBlock, hotspotRefBlock, sectionBlock } from './topics.js';
-import { platformSpec } from './_shared.js';
+import { fence, platformSpec } from './_shared.js';
 import { styleBlock } from './learning.js';
 
 /* ==================================================================
  * 成稿检查：模型自己回头看一遍错字和通顺性
  * ================================================================== */
 
-export const REVIEW_DIMENSIONS = ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑', '框架符合'];
+export const REVIEW_DIMENSIONS = ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑', '框架符合', '作者要求'];
 
 export const REVIEW_SCHEMA = {
   type: 'object',
@@ -40,7 +40,7 @@ export const REVIEW_SCHEMA = {
         properties: {
           dimension: {
             type: 'string',
-            enum: ['账号调性', '平台调性', '公序良俗', '法律风险', '热点使用', '事实存疑', '框架符合'],
+            enum: REVIEW_DIMENSIONS,
           },
           level: { type: 'string', enum: ['高', '中', '低'], description: '高=不改可能出事；中=建议改；低=提一句' },
           quote: { type: 'string', description: '触发这条的原文片段，逐字照抄；整篇性的问题留空字符串' },
@@ -105,6 +105,10 @@ fix 只修错，不做任何风格改动。整篇大面积语无伦次时 verdic
   框架里的某一段整个没写、段落顺序明显颠倒、或某段篇幅严重失衡（比规定多一倍以上或不到一半）才报，
   并在 what 里点名是哪一段。照框架写了但写法灵活、没用小标题，都不算问题。
 
+**作者要求**——只有给了「作者自己的审稿要求」时才查：
+  正文明显违反了作者写下的某条要求才报，what 里点名是哪个技能的哪条要求。
+  要求里没写到的，不要借题发挥成风格意见。
+
 ════ 绝对不要报的 ════
 - 口语、短句、省略句、网络用语、语气词、emoji、话题标签——自媒体的正常写法。
 - 观点尖锐、有立场、吐槽、自嘲——这是风格不是问题。
@@ -114,7 +118,18 @@ fix 只修错，不做任何风格改动。整篇大面积语无伦次时 verdic
 quote 在 flags 里同样要逐字照抄；整篇性的问题（比如篇幅明显不合平台）quote 留空字符串。
 全部使用简体中文。`;
 
-export const reviewUser = (draft, text, persona, samples = []) => {
+/* 作者在技能页打开了「检查时也参考」的技能：当作额外的审稿要求。
+   系统提示词可能被后台改过版本，所以怎么用写在这一块里，不只靠系统提示词 */
+export const reviewSkillsBlock = (skills = []) => {
+  if (!skills.length) return '';
+  const body = skills.map((k) => fence(`技能「${k.name}」`, `${k.description ? `什么时候用：${k.description}\n\n` : ''}${String(k.instruction).slice(0, 4000)}`)).join('\n');
+  return `—— 作者自己的审稿要求（来自作者的技能）——
+下面是作者本人写的要求。正文明显违反其中某条时，写进 flags，dimension 填「作者要求」，what 里点名技能名和哪条要求。
+只查违反，不要据此提风格偏好；要求里讲的是"怎么改写"的，换成"成稿该是什么样"来对照。语言错误照常写进 issues。
+${body}`;
+};
+
+export const reviewUser = (draft, text, persona, samples = [], skills = []) => {
   const context = [
     personaBlock(persona),
     creatorBlock(persona),
@@ -123,6 +138,7 @@ export const reviewUser = (draft, text, persona, samples = []) => {
     frameworkBlock(draft.framework, draft.length),
     hotspotRefBlock(draft.hotspot),
     `—— 平台写作规范（${platformSpec(draft.platform).label}）——\n${platformSpec(draft.platform).spec}\n目标篇幅：约 ${draft.length} 字`,
+    reviewSkillsBlock(skills),
   ].filter(Boolean).join('\n\n');
 
   return `${context}

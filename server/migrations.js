@@ -257,6 +257,9 @@ export const MIGRATIONS = [
       ALTER TABLE skills ADD COLUMN IF NOT EXISTS refs_json text NOT NULL DEFAULT '[]';
     `);
   } },
+  { version: 18, name: '技能可以设成「检查时也参考」：成稿检查把它当作者自己的审稿要求', up: async (db) => {
+    await db.exec(`ALTER TABLE skills ADD COLUMN IF NOT EXISTS in_review boolean NOT NULL DEFAULT false;`);
+  } },
 ];
 
 /* 把 drafts.variants_json 搬进 draft_variants。之后读写走新表；旧列保留作备份，不再写。 */

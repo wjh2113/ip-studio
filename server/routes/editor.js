@@ -1,11 +1,11 @@
 /* 路由 · editor：编辑器：划词改写、/ 续写、语音改稿、右栏 AI 对话。 */
 import { CHAT_KEEP_CHOICES, Chats, Drafts, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
-import { generateJSON, listModels, parseJSON, streamText } from '../llm.js';
+import { generateJSON, parseJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
 import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_EDIT_MAX, CHAT_EDITS_SCHEMA, CHAT_EDITS_SYSTEM, CHAT_MARK, CHAT_SYSTEM, chatEditsUser, chatUser, COMPOSE_ACTIONS, skillBlock, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
-import { chatModelOf, describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
+import { chatModelOf, describe, modelTag, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { openProgressStream, runTextStream } from './stream.js';
 import { loadSkill } from './skills.js';
 
@@ -92,6 +92,7 @@ const chatView = (m) => ({
   id: m.id, role: m.role, content: m.content, quote: m.quote, created_at: m.created_at,
   edits: m.edits || [], rewrite: m.rewrite || '', skipped: m.skipped || [],
   done: m.done || {}, started: Boolean(m.started), model: m.model || null, skill: m.skill || null, stopped: Boolean(m.stopped),
+  card: m.card || '', review: m.review || null, flags: m.flags || null, handled: m.handled || [], skills: m.skills || [],
 });
 
 export async function handleChatList(req, res, body, params) {
@@ -123,6 +124,11 @@ export async function handleChatMark(req, res, body, params) {
   }
   const data = { ...m.data, done };
   if (typeof body?.started === 'boolean' && m.data.rewrite) data.started = body.started;
+  // 检查结果卡片：哪几条采纳或忽略过
+  if (m.data.card === 'review' && Array.isArray(body?.handled)) {
+    const total = (m.data.review?.issues || []).length;
+    data.handled = [...new Set(body.handled.map(Number).filter((i) => Number.isInteger(i) && i >= 0 && i < total))];
+  }
   await Chats.setData(m.id, user.id, data);
   json(res, 200, { message: chatView({ ...m, ...data }) });
 }
@@ -137,8 +143,23 @@ export async function handleChatKeep(req, res, body) {
 }
 
 /* 带回给模型的历史：助手那句后面标上作者有没有应用 */
+/* 检查结果 / AI 味卡片带回给模型：编号列出每一条，作者说「第 3 条」时 AI 对得上 */
+function cardLine(m) {
+  if (m.card === 'review') {
+    const r = m.review || {};
+    const handled = new Set(m.handled || []);
+    const items = (r.issues || []).map((x, i) => `${i + 1}. [${x.type}] 「${x.quote}」→「${x.fix}」${handled.has(i) ? '（已处理）' : ''}`);
+    const flags = (r.flags || []).map((f, i) => `提示${i + 1}. ${f.dimension}（${f.level}）：${f.what}${f.quote ? `「${f.quote}」` : ''}`);
+    const by = m.skills?.length ? `（检查时参考了作者的技能：${m.skills.map((k) => k.name).join('、')}）` : '';
+    return `（下面是一张检查结果卡片）${by}${m.content}\n${[...items, ...flags].join('\n')}`;
+  }
+  const flags = (m.flags || []).map((f, i) => `${i + 1}. ${f.what}${f.quote ? `「${f.quote}」` : ''}`);
+  return `（下面是一张 AI 味扫描卡片）${m.content}\n${flags.join('\n')}`;
+}
+
 const historyLine = (m) => {
   if (m.role === 'user') return { role: 'user', content: m.quote ? `（引用：${m.quote.slice(0, 200)}）${m.content}` : m.content };
+  if (m.card) return { role: 'assistant', content: cardLine(m) };
   const applied = Object.keys(m.done || {}).length;
   const mark = m.rewrite ? (m.started ? '（已整篇重写）' : '（作者还没开始整篇重写）')
     : (m.edits?.length ? (applied ? '（作者已应用）' : '（作者还没应用）') : '');
@@ -283,17 +304,6 @@ export async function handleChat(req, res, body, params) {
   } finally {
     end();
   }
-}
-
-/* 这条回话是哪个模型写的：网关给了实际模型就用实际的，查不到展示名就显示 id */
-async function modelTag(pick, served) {
-  const id = served || pick?.id || '';
-  if (!id) return { auto: !pick, id: '', name: '' };
-  let name = pick && pick.id.toLowerCase() === id.toLowerCase() ? pick.name : '';
-  if (!name) {
-    try { name = (await listModels()).find((m) => m.id.toLowerCase() === id.toLowerCase())?.name || id; } catch { name = id; }
-  }
-  return { auto: !pick, id, name };
 }
 
 /* 流式时只把标记之前的回话推出去。标记可能被拆在两段 delta 里：末尾留够标记长度的字先不推。

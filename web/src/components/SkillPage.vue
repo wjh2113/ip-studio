@@ -58,6 +58,13 @@
             </div>
           </div>
           <div class="skill-prop">
+            <span class="skill-prop-k"><Icon name="shield" :size="15" />检查时也参考</span>
+            <label class="skill-switch" title="打开后，成稿「检查」会把这个技能当作你的审稿要求：正文明显违反时报出来">
+              <input id="skillInReview" v-model="d.inReview" type="checkbox" />
+              <span>{{ d.inReview ? '开：「检查」会对照这个技能挑违反的地方' : '关：只在改稿时用' }}</span>
+            </label>
+          </div>
+          <div class="skill-prop">
             <span class="skill-prop-k"><Icon name="user" :size="15" />创建者</span>
             <span class="skill-me"><span class="skill-avatar">{{ (sk.me || '我').slice(0, 1).toUpperCase() }}</span>{{ sk.me || '我' }}</span>
           </div>
@@ -80,7 +87,7 @@
           @input="grow"></textarea>
         <p class="skill-foot">
           <span>{{ d.instruction.length }} / 8000 字</span>
-          <span>用的时候：划词菜单「我的技能」对选中那段用；AI 对话框「技能」一点就用。正文和参考资料会一起交给 AI。⌘/Ctrl + S 保存。</span>
+          <span>用的时候：划词菜单「我的技能」对选中那段用；AI 对话框「技能」一点就用。正文和参考资料会一起交给 AI。打开「检查时也参考」后，成稿检查也会对照它（最多 3 个技能）。⌘/Ctrl + S 保存。</span>
         </p>
       </div>
     </div>

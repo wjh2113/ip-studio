@@ -1,13 +1,14 @@
 /* 路由 · review：成稿检查：语言错误 + 调性与风险两层。从原 routes.js 原样拆出。 */
 import { createHash } from 'node:crypto';
-import { Drafts, Frameworks, Personas } from '../db.js';
+import { Chats, Drafts, Frameworks, Personas } from '../db.js';
 import { HttpError } from '../auth.js';
 import { generateJSON } from '../llm.js';
 import {
   AI_TONE_SCHEMA, AI_TONE_SYSTEM, aiToneUser,
   platformSpec, REVIEW_DIMENSIONS, REVIEW_SCHEMA, REVIEW_SYSTEM, reviewUser,
 } from '../prompts.js';
-import { json, requireUser, styleSamples, sys, withRetry } from './common.js';
+import { chatModelOf, json, modelTag, requireUser, styleSamples, sys, withRetry } from './common.js';
+import { reviewSkills } from './skills.js';
 import { mergeLexicon } from '../lexicon.js';
 import { combineAiTone, mergeAiTone } from '../aitone.js';
 import { copyOverlap } from '../frameworks.js';
@@ -29,12 +30,21 @@ export async function handleReview(req, res, body, params) {
   if (!text) throw new HttpError(400, '还没有正文可检查');
   if (text.length > 20000) throw new HttpError(400, '正文过长，请分段检查');
 
-  const hash = textHash(`${version}\n${text}`);
-  // 正文和上次检查时一样：直接用缓存，不调模型
-  if (!version) {
+  // 网页传 chat: true：结果作为一张「检查结果」卡片存进右栏 AI 对话（手机端不传，照旧只回结果）
+  const toChat = body?.chat === true;
+  // 网页上还跟着右栏对话的设置走：左下角选的模型、技能页打开了「检查时也参考」的技能。手机端照旧自动、不带技能
+  const pick = toChat ? await chatModelOf(user.id) : null;
+  const skills = toChat ? await reviewSkills(user.id) : [];
+  // 指纹里带上模型和技能（技能改过也算变了）：换了设置再点检查就重新查；默认设置时指纹和以前一样
+  const setup = pick || skills.length ? `\n@${pick?.id || ''}|${skills.map((k) => `${k.id}:${k.updated_at}`).join(',')}` : '';
+  const hash = textHash(`${version}\n${text}${setup}`);
+  const used = { pick, skills };
+  // 正文和上次检查时一样：直接用缓存，不调模型（「再检查一遍」传 force 跳过）
+  if (!version && body?.force !== true) {
     const cached = await Drafts.reviewCache(draft.id, user.id);
     if (cached?.hash === hash && cached?.full && typeof cached.full === 'object') {
-      json(res, 200, { review: { ...cached.full, version, cached: true } });
+      const review = { ...cached.full, version, cached: true };
+      json(res, 200, { review, ...(toChat ? { message: await reviewCard(draft.id, user.id, version, review, hash, used) } : {}) });
       return;
     }
   }
@@ -42,12 +52,53 @@ export async function handleReview(req, res, body, params) {
   // 检查要看到账号设定、平台规范、语气档案和借势的热点，才谈得上"符合度"
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const target = version ? { ...draft, platform: version } : draft;
-  const review = await reviewText(target, text, persona, await styleSamples(persona, user.id, `${draft.subject} ${draft.title || ''}`),
-    { feature: '成稿检查', userId: user.id });
+  let served = '';
+  let review;
+  try {
+    review = await reviewText(target, text, persona, await styleSamples(persona, user.id, `${draft.subject} ${draft.title || ''}`),
+      { feature: '成稿检查', userId: user.id, ...(pick ? { model: pick.id } : {}) },
+      { skills, onServed: (m) => { served = m; } });
+  } catch (err) {
+    // 指定的模型没调通：明说是哪个模型，别让人以为是检查本身坏了
+    if (pick && (err?.upstream || err?.status === 502)) throw new HttpError(502, `「${pick.name}」这次没调通，换一个模型或选「自动」再试`);
+    throw err;
+  }
+  used.served = served;
   // 记下这次的替换建议 + 全文缓存（指标按原文算，平台版本不记）
   if (!version) await Drafts.setReview(draft.id, user.id, review.issues, { hash, full: review });
-  json(res, 200, { review: { ...review, version } });
+  json(res, 200, {
+    review: { ...review, version },
+    ...(toChat ? { message: await reviewCard(draft.id, user.id, version, review, hash, used) } : {}),
+  });
 }
+
+const VERDICT = { ok: '没发现问题', minor: '有几处小毛病', bad: '大面积不通顺' };
+
+/* 检查结果卡片：同一份正文（hash 相同）已经有卡片就复用那张，不重复堆 */
+async function reviewCard(draftId, userId, version, review, hash, { pick = null, skills = [], served = '' } = {}) {
+  const recent = await Chats.list(draftId, userId, version, 30);
+  const same = [...recent].reverse().find((m) => m.card === 'review' && m.hash === hash);
+  if (same) return cardView(same);
+  const { cached, ...clean } = review;
+  const risk = clean.risk && clean.risk !== '无' ? `，风险${clean.risk}` : '';
+  const content = `检查结果：${VERDICT[clean.verdict] || clean.verdict || '已检查'}${risk}。${clean.summary || ''}`.trim();
+  return cardView(await Chats.add(draftId, userId, version, {
+    role: 'assistant', content,
+    data: {
+      card: 'review', review: clean, hash, handled: [],
+      // 卡片底下标一句：哪个模型查的、参考了哪些技能（命中缓存时 served 为空，按所选模型标）
+      model: await modelTag(pick, served),
+      skills: skills.map((k) => ({ id: k.id, name: k.name })),
+    },
+  }));
+}
+
+/* 和对话接口回给网页的字段一致（server/routes/editor.js 的 chatView） */
+const cardView = (m) => ({
+  id: m.id, role: m.role, content: m.content, quote: m.quote || '', created_at: m.created_at,
+  edits: [], rewrite: '', skipped: [], done: {}, started: false, model: m.model || null, skill: null, stopped: false,
+  card: m.card || '', review: m.review || null, flags: m.flags || null, handled: m.handled || [], skills: m.skills || [],
+});
 
 /* AI 味扫描：快档模型看说法和节奏，再并本地规则（硬词、三件套）。POST /api/drafts/:id/ai-tone */
 export async function handleAiTone(req, res, body, params) {
@@ -64,9 +115,13 @@ export async function handleAiTone(req, res, body, params) {
 
   const persona = (draft.persona_id && await Personas.byId(draft.persona_id, user.id)) || draft.persona;
   const samples = await styleSamples(persona, user.id, `${draft.subject} ${draft.title || ''}`);
+  // 网页（chat: true）跟着右栏对话左下角选的模型；手机端照旧自动
+  const pick = body?.chat === true ? await chatModelOf(user.id) : null;
+  let served = '';
   const data = await withRetry(async () => {
     const out = await generateJSON({
-      meta: { feature: 'AI味扫描', userId: user.id },
+      meta: { feature: 'AI味扫描', userId: user.id, ...(pick ? { model: pick.id } : {}) },
+      onServed: (m) => { served = m; },
       system: sys('ai-tone', AI_TONE_SYSTEM),
       user: aiToneUser(text, persona, samples),
       schema: AI_TONE_SCHEMA,
@@ -76,7 +131,16 @@ export async function handleAiTone(req, res, body, params) {
     return out;
   }, 'AI 味扫描失败，请再试一次');
 
-  json(res, 200, { flags: combineAiTone(text, data.flags), version });
+  const flags = combineAiTone(text, data.flags);
+  let message;
+  if (body?.chat === true) {
+    // AI 味扫描结果也作为一张卡片进右栏对话
+    const content = flags.length ? `AI 味扫描：找到 ${flags.length} 处像 AI 写的地方。` : 'AI 味扫描：没找到明显的 AI 腔。';
+    message = cardView(await Chats.add(draft.id, user.id, version, {
+      role: 'assistant', content, data: { card: 'tone', flags, model: await modelTag(pick, served) },
+    }));
+  }
+  json(res, 200, { flags, version, ...(message ? { message } : {}) });
 }
 
 const mockAiTone = (text) => {
@@ -95,12 +159,13 @@ const mockAiTone = (text) => {
   return { flags: [] };
 };
 
-async function reviewText(draft, text, persona, samples, meta = {}) {
+async function reviewText(draft, text, persona, samples, meta = {}, { skills = [], onServed } = {}) {
   const data = await withRetry(async () => {
     const out = await generateJSON({
       meta,
+      onServed,
       system: sys('review', REVIEW_SYSTEM),
-      user: reviewUser(draft, text, persona, samples),
+      user: reviewUser(draft, text, persona, samples, skills),
       schema: REVIEW_SCHEMA,
       mock: () => mockReview(text, draft),
     });

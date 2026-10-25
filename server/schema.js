@@ -1,7 +1,7 @@
 /* 表结构（Drizzle）。列名沿用原来的蛇形，读出来的字段和以前的 SQLite 行一致。
  * 改表请在 migrations.js 末尾追加编号迁移，并在这里同步字段。 */
 import { sql } from 'drizzle-orm';
-import { doublePrecision, index, integer, pgTable, primaryKey, real, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, index, integer, pgTable, primaryKey, real, text, uniqueIndex, bigint } from 'drizzle-orm/pg-core';
 
 const id = () => integer('id').primaryKey().generatedAlwaysAsIdentity();
 
@@ -497,6 +497,7 @@ export const skills = pgTable('skills', {
   description: text('description').notNull().default(''),  // 一句话：什么时候用
   tags_json: text('tags_json').notNull().default('[]'),
   refs_json: text('refs_json').notNull().default('[]'),    // 参考资料：[{ type:'material', id } | { type:'text', title, text }]
+  in_review: boolean('in_review').notNull().default(false), // 检查时也参考：成稿检查把它当作者的审稿要求
   sort: integer('sort').notNull().default(0),
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull(),

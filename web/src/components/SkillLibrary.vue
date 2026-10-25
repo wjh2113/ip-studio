@@ -32,7 +32,7 @@
             <h3><Icon name="file" :size="15" />{{ x.name }}</h3>
             <p class="skill-card-desc">{{ x.description || '没写描述' }}</p>
             <div class="skill-card-tags"><span v-for="t in x.tags" :key="t" class="mpick-tag">{{ t }}</span></div>
-            <p class="skill-card-meta">正文 {{ x.size }} 字<template v-if="x.refCount"> · 参考资料 {{ x.refCount }} 条</template> · {{ fmt(x.updated_at) }}</p>
+            <p class="skill-card-meta">正文 {{ x.size }} 字<template v-if="x.refCount"> · 参考资料 {{ x.refCount }} 条</template><template v-if="x.inReview"> · <span class="skill-review-on" title="成稿检查会对照这个技能">检查时参考</span></template> · {{ fmt(x.updated_at) }}</p>
             <div class="skill-card-acts">
               <button type="button" class="link-btn" data-act="copy" @click.stop="sk.copy(x.id)">复制</button>
               <button type="button" class="link-btn danger" data-act="del" @click.stop="sk.remove(x)">删除</button>

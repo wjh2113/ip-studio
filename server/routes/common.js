@@ -147,6 +147,17 @@ export async function awaitJob(job) {
 
 /* 右栏 AI 对话用哪个模型（对话和从对话里点的整篇重写都用它）。
    空 = 自动。已停用或现在不可用的直接拦下，让他自己换，不替他换 */
+/* 这条回话是哪个模型写的：网关给了实际模型就用实际的，查不到展示名就显示 id */
+export async function modelTag(pick, served) {
+  const id = served || pick?.id || '';
+  if (!id) return { auto: !pick, id: '', name: '' };
+  let name = pick && pick.id.toLowerCase() === id.toLowerCase() ? pick.name : '';
+  if (!name) {
+    try { name = (await listModels()).find((m) => m.id.toLowerCase() === id.toLowerCase())?.name || id; } catch { name = id; }
+  }
+  return { auto: !pick, id, name };
+}
+
 export async function chatModelOf(userId) {
   const { chatModel } = await Users.settings(userId);
   if (!chatModel) return null;

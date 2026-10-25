@@ -199,11 +199,12 @@ async function tracked(meta, run) {
 /* ------------------------------------------------------------------ *
  * 结构化生成：返回符合 schema 的对象
  * ------------------------------------------------------------------ */
-export async function generateJSON({ system, user, schema, mock, meta = {} }) {
+/* meta.model：指定模型（网关模型列表里的 id），不给 = 按档位自动选路。onServed(实际模型)：调完回调一次 */
+export async function generateJSON({ system, user, schema, mock, meta = {}, onServed }) {
   const llmPref = meta.llmPref || await llmPrefOf(meta.userId);
   const tier = tierOf({ ...meta, llmPref }, 'fast');
   return tracked({ feature: 'unknown', ...meta, llmPref, tier }, async () => {
-    if (PROVIDER === 'mock') return { value: mock(), usage: null };
+    if (PROVIDER === 'mock') { onServed?.(meta.model || ''); return { value: mock(), usage: null, served: meta.model || '' }; }
 
     if (PROVIDER === 'anthropic') {
       const res = await anthropic().messages.create({
@@ -229,8 +230,10 @@ export async function generateJSON({ system, user, schema, mock, meta = {} }) {
       json: true,
       capability: tier,     // 档位见 FEATURE_TIER
       userId: meta.userId,
+      model: meta.model || '',   // 以前这里漏传，界面上选的模型在结构化调用里不生效
     });
-    return { value: parseJSON(res.text), usage: res.usage };
+    onServed?.(res.served || meta.model || '');
+    return { value: parseJSON(res.text), usage: res.usage, served: res.served };
   });
 }
 
