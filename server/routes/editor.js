@@ -4,7 +4,7 @@ import { HttpError } from '../auth.js';
 import { generateJSON, listModels, parseJSON, streamText } from '../llm.js';
 import { transcribeAudio } from '../speak.js';
 import { userLimit } from '../limit.js';
-import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_MARK, CHAT_SYSTEM, chatUser, COMPOSE_ACTIONS, skillBlock, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
+import { applyVoiceEdits, ASSIST_ACTIONS, ASSIST_SYSTEM, assistUser, CHAT_EDIT_MAX, CHAT_EDITS_SCHEMA, CHAT_EDITS_SYSTEM, CHAT_MARK, CHAT_SYSTEM, chatEditsUser, chatUser, COMPOSE_ACTIONS, skillBlock, composeUser, VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, voiceEditUser } from '../prompts.js';
 import { chatModelOf, describe, json, requireUser, styleSamples, sys, withRetry, writerMe } from './common.js';
 import { openProgressStream, runTextStream } from './stream.js';
 import { loadSkill } from './skills.js';
@@ -178,34 +178,70 @@ export async function handleChat(req, res, body, params) {
   const target = { ...draft, platform: version || draft.platform };
   const pick = await chatModelOf(user.id);
 
-  // 校验都在开流之前：坏请求照常回 4xx JSON。之后走 SSE：delta 只推回话，done 带存好的两条
+  // 校验都在开流之前：坏请求照常回 4xx JSON。
+  // 两段式：① 流式只推回话，见到 @@改动@@ 就停上游，避免浏览器空等超长 JSON；② 另开结构化调用出 edits。
   const ps = openProgressStream(res);       // ps.aborted 是 getter：别解构
   const { send, end } = ps;
   try {
     send('start', { version });
-    const cut = replyCutter((t) => send('delta', { text: t }));
-    let served = '';
-    const raw = await streamText({
-      meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
-      onServed: (m) => { served = m; },
-      system: sys('chat', CHAT_SYSTEM),
-      user: chatUser(target, persona, samples, me, { text, messages, quote, skill }),
-      mock: () => mockChat(text, message, quote),
-      onDelta: cut.push,
-      signal: ps.signal,
+    const stopStream = new AbortController();
+    let needEdits = false;
+    const cut = replyCutter((t) => send('delta', { text: t }), {
+      onMark: () => {
+        needEdits = true;
+        send('status', { phase: 'edits' });
+        stopStream.abort();
+      },
     });
+    let served = '';
+    try {
+      await streamText({
+        meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
+        onServed: (m) => { served = m; },
+        system: sys('chat', CHAT_SYSTEM),
+        user: chatUser(target, persona, samples, me, { text, messages, quote, skill }),
+        mock: () => mockChat(text, message, quote),
+        onDelta: cut.push,
+        signal: AbortSignal.any([ps.signal, stopStream.signal]),
+      });
+    } catch (err) {
+      if (ps.aborted) return;
+      // 见到标记后主动停流：算正常，用已推的回话继续第二段
+      if (!(needEdits && (err?.name === 'AbortError' || /中断|aborted/i.test(String(err?.message || ''))))) throw err;
+    }
     if (ps.aborted) return;
     cut.flush();
-    const { reply: said, changes, broken } = splitChatReply(raw);
+    const said = cut.spoken();
+    // 兼容旧模型仍在标记后塞 JSON：有完整清单就直接用，否则走第二段
+    const inline = splitChatReply(cut.raw());
+    let changes = { edits: [], rewrite: '' };
+    const skipped = [];
+    if (needEdits || cut.marked) {
+      if (!inline.broken && (inline.changes.edits.length || inline.changes.rewrite)) {
+        changes = inline.changes;
+      } else {
+        const out = await generateJSON({
+          meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
+          system: sys('chat-edits', CHAT_EDITS_SYSTEM),
+          user: chatEditsUser(target, persona, samples, me, { text, messages, quote, skill, said }),
+          schema: CHAT_EDITS_SCHEMA,
+          mock: () => mockChatEdits(text, message, quote),
+          signal: ps.signal,
+        });
+        if (ps.aborted) return;
+        changes = { edits: Array.isArray(out?.edits) ? out.edits : [], rewrite: String(out?.rewrite || '') };
+      }
+    }
 
-    // 只留能在正文里原样找到的改动
-    const { applied, skipped } = applyVoiceEdits(text, changes.edits);
+    // 只留能在正文里原样找到的改动；一次最多 CHAT_EDIT_MAX 处
+    const capped = takeEdits(changes.edits, skipped);
+    const { applied, skipped: miss } = applyVoiceEdits(text, capped);
+    skipped.push(...miss);
     const kept = new Set(applied.map((x) => x.find));
     const rewrite = String(changes.rewrite || '').trim().slice(0, 1000);
-    const edits = rewrite ? [] : (Array.isArray(changes.edits) ? changes.edits : [])
+    const edits = rewrite ? [] : capped
       .map((e) => ({ find: String(e?.find || ''), replace: String(e?.replace ?? ''), all: Boolean(e?.all) }))
       .filter((e) => kept.has(e.find.slice(0, 80)) && e.find !== e.replace);
-    if (broken) skipped.push('改动清单没解析出来');
     const reply = said || (rewrite ? '这要整篇重写，开始吗？' : edits.length ? '改好了，看看下面的改动。' : '');
     if (!reply) throw new HttpError(502, '没有拿到回复，请再试一次');
 
@@ -240,11 +276,13 @@ async function modelTag(pick, served) {
   return { auto: !pick, id, name };
 }
 
-/* 流式时只把标记之前的回话推出去。标记可能被拆在两段 delta 里：末尾留够标记长度的字先不推 */
-export function replyCutter(emit) {
+/* 流式时只把标记之前的回话推出去。标记可能被拆在两段 delta 里：末尾留够标记长度的字先不推。
+ * onMark：见到标记时回调（业务侧停上游、开第二段出改动）。 */
+export function replyCutter(emit, { onMark } = {}) {
   let buf = '';
   let sent = 0;
   let stopped = false;
+  let marked = false;
   const hold = CHAT_MARK.length - 1;
   return {
     push(t) {
@@ -253,38 +291,63 @@ export function replyCutter(emit) {
       const at = buf.indexOf(CHAT_MARK);
       const upto = at >= 0 ? at : Math.max(sent, buf.length - hold);
       if (upto > sent) { emit(buf.slice(sent, upto)); sent = upto; }
-      if (at >= 0) stopped = true;
+      if (at >= 0) {
+        stopped = true;
+        marked = true;
+        onMark?.();
+      }
     },
     flush() {
       if (stopped) return;
       if (buf.length > sent) emit(buf.slice(sent));
       sent = buf.length;
     },
+    get marked() { return marked; },
+    spoken() {
+      const at = buf.indexOf(CHAT_MARK);
+      return (at >= 0 ? buf.slice(0, at) : buf).trim();
+    },
+    raw() { return buf; },
   };
 }
 
-/* 拆成回话和改动：标记前是回话，后面是 JSON。没有标记 = 只是回答；JSON 坏了就当没改，标一下 */
+/* 拆成回话和改动：标记前是回话，后面若有 JSON 则解析（兼容旧模型一次吐完）。
+ * 没有标记 = 只是回答；标记后空/坏 JSON = broken，交给第二段结构化调用。 */
 export function splitChatReply(raw) {
   const textAll = String(raw || '');
   const at = textAll.indexOf(CHAT_MARK);
   if (at < 0) return { reply: textAll.trim(), changes: { edits: [], rewrite: '' }, broken: false };
   const reply = textAll.slice(0, at).trim();
+  const tail = textAll.slice(at + CHAT_MARK.length).trim();
+  if (!tail) return { reply, changes: { edits: [], rewrite: '' }, broken: false };
   try {
-    const obj = parseJSON(textAll.slice(at + CHAT_MARK.length));
+    const obj = parseJSON(tail);
     return { reply, changes: { edits: Array.isArray(obj?.edits) ? obj.edits : [], rewrite: String(obj?.rewrite || '') }, broken: false };
   } catch {
     return { reply, changes: { edits: [], rewrite: '' }, broken: true };
   }
 }
 
-/* 演示模式：问号结尾当提问；说到「整篇 / 全文」当整篇重写；否则在引用的片段（没有就第一段）后面加一句。
-   返回的是和真模型一样格式的文本：回话 + 标记 + 改动 JSON */
+export function takeEdits(edits, skipped = []) {
+  const list = Array.isArray(edits) ? edits : [];
+  if (list.length > CHAT_EDIT_MAX) {
+    skipped.push(`一次最多改 ${CHAT_EDIT_MAX} 处，其余 ${list.length - CHAT_EDIT_MAX} 处下次再说`);
+    return list.slice(0, CHAT_EDIT_MAX);
+  }
+  return list;
+}
+
+/* 演示模式第一段：问号结尾只回话；要改则回话 + 标记（不带 JSON，改动走 mockChatEdits） */
 function mockChat(text, last, quote) {
   if (/[？?]\s*$/.test(last)) return `（演示模式）这里会回答你的问题：「${last.slice(0, 30)}」。配置模型密钥后生效。`;
-  const tail = (changes) => `\n${CHAT_MARK}\n${JSON.stringify(changes)}`;
-  if (/整篇|全文|通篇/.test(last)) return `（演示模式）这要整篇重写：按你的要求从头改一遍。开始吗？${tail({ edits: [], rewrite: last })}`;
+  if (/整篇|全文|通篇/.test(last)) return `（演示模式）这要整篇重写：按你的要求从头改一遍。开始吗？\n${CHAT_MARK}`;
+  return `（演示模式）按「${last.slice(0, 20)}」改了一处，配置模型密钥后会真的按你的意思改。\n${CHAT_MARK}`;
+}
+
+function mockChatEdits(text, last, quote) {
+  if (/整篇|全文|通篇/.test(last)) return { edits: [], rewrite: last };
   const para = (quote && text.includes(quote) ? quote : text.split(/\n{2,}/).find((p) => p.trim() && text.split(p).length === 2)) || text;
-  return `（演示模式）按「${last.slice(0, 20)}」改了一处，配置模型密钥后会真的按你的意思改。${tail({ edits: [{ find: para, replace: `${para}（演示：按你的意思改过）`, all: false }], rewrite: '' })}`;
+  return { edits: [{ find: para, replace: `${para}（演示：按你的意思改过）`, all: false }], rewrite: '' };
 }
 
 /* 语音改稿：转写是修改要求。只套用能在正文里对上的 find，对不上的丢掉。 */

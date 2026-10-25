@@ -97,21 +97,33 @@ export const useChatStore = defineStore('chat', () => {
     quote.value = '';
     busy.value = true;
     try {
-      // 回话一个字一个字地出；写完回话后服务端才给改动清单，done 里是存好的两条
+      // 回话边写边出；要改稿时服务端发 status（整理改动），再 done 带清单。断线时已出的回话留下
       await stream(`/drafts/${id}/chat`, { message: msg, version: ver, text: ed.text, quote: q, ...(skill ? { skillId: skill.id } : {}) }, (event, data) => {
-        if (event === 'delta') { reply.pending = false; reply.streaming = true; reply.content += data.text; }
-        else if (event === 'done') { Object.assign(mine, local(data.user)); Object.assign(reply, local(data.reply)); }
-        else if (event === 'error') throw new Error(data.message);
+        if (event === 'delta') {
+          reply.pending = false;
+          reply.packing = false;
+          reply.streaming = true;
+          reply.content += data.text;
+        } else if (event === 'status' && data.phase === 'edits') {
+          reply.pending = false;
+          reply.streaming = false;
+          reply.packing = true;
+        } else if (event === 'done') {
+          Object.assign(mine, local(data.user));
+          Object.assign(reply, local(data.reply), { packing: false, streaming: false, pending: false, error: '' });
+        } else if (event === 'error') throw new Error(data.message);
       });
       if (!reply.id) throw new Error('回话中断了，再试一次');
     } catch (err) {
       // 服务端 SSE error 已是中文；浏览器断流常是英文 network error，收成可读提示
       reply.error = friendlyNetError(err);
-      reply.content = '';
+      // 已流出的回话留下，方便接着看；没写出字才清空
+      if (!String(reply.content || '').trim()) reply.content = '';
       reply.retry = { content: msg, quote: q, skill };
     } finally {
       reply.pending = false;
       reply.streaming = false;
+      reply.packing = false;
       busy.value = false;
     }
     return true;

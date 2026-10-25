@@ -21,15 +21,16 @@
         </template>
         <template v-else>
           <div v-if="m.pending" class="chat-thinking"><span class="chat-dots"><i></i><i></i><i></i></span>正在想…</div>
-          <div v-else-if="m.error" class="chat-err">{{ m.error }} <button type="button" class="mini" @click="c.retry(m)">重试</button></div>
           <template v-else>
-            <!-- 回话是 Markdown，走 lib/text.js 的 markdown()（先转义再加标签） -->
-            <div class="chat-reply" :class="{ typing: m.streaming }" v-html="markdown(m.content)"></div>
-            <p v-if="m.model?.name" class="chat-by">{{ m.model.auto ? '自动 · ' : '' }}{{ m.model.name }}</p>
-            <div v-if="m.streaming" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span></div>
+            <!-- 回话是 Markdown；断线时已出的字也留着，下面再跟错误条 -->
+            <div v-if="m.content" class="chat-reply" :class="{ typing: m.streaming }" v-html="markdown(m.content)"></div>
+            <p v-if="m.model?.name && !m.error" class="chat-by">{{ m.model.auto ? '自动 · ' : '' }}{{ m.model.name }}</p>
+            <div v-if="m.packing" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span>正在整理改动…</div>
+            <div v-else-if="m.streaming" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span></div>
+            <div v-if="m.error" class="chat-err">{{ m.error }} <button type="button" class="mini" @click="c.retry(m)">重试</button></div>
 
             <!-- 整篇重写：先确认再动手 -->
-            <div v-if="m.rewrite" class="chat-changes chat-rewrite" data-kind="rewrite">
+            <div v-if="!m.error && m.rewrite" class="chat-changes chat-rewrite" data-kind="rewrite">
               <div class="chat-changes-head">
                 <Icon name="refresh" :size="13" /><span>整篇重写</span>
                 <span class="grow"></span>
@@ -45,7 +46,7 @@
             </div>
 
             <!-- 局部改动 -->
-            <div v-else-if="m.edits.length" class="chat-changes">
+            <div v-else-if="!m.error && m.edits.length" class="chat-changes">
               <div class="chat-changes-head">
                 <Icon name="pen" :size="13" />
                 <span>{{ m.edits.length }} 处改动</span>
@@ -66,7 +67,7 @@
                 </div>
               </div>
             </div>
-            <p v-if="m.skipped.length" class="chat-skip">另有 {{ m.skipped.length }} 处没对上正文，已略过。</p>
+            <p v-if="!m.error && m.skipped.length" class="chat-skip">另有 {{ m.skipped.length }} 处没对上正文，已略过。</p>
           </template>
         </template>
       </div>

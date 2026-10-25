@@ -191,7 +191,8 @@ async function chatCall(body) {
   const said = events.filter(([e]) => e === 'delta').map(([, d]) => d.text).join('');
   const done = events.find(([e]) => e === 'done')?.[1];
   const error = events.find(([e]) => e === 'error')?.[1];
-  return { status: r.status, data: done, said, error, text: r.text };
+  const phases = events.filter(([e]) => e === 'status').map(([, d]) => d);
+  return { status: r.status, data: done, said, error, phases, text: r.text };
 }
 
 test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不落盘；整篇改只回意见；记录存下来、可标记、可清空、按天数过期', async () => {
@@ -201,7 +202,7 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.deepEqual(r.data.messages, []);
   assert.equal(r.data.keepDays, 100);
 
-  // 问：只回话，不给改动
+  // 问：只回话，不给改动；不问改稿就不要发整理改动的 status
   r = await chatCall({ message: '这篇主线清楚吗？' });
   assert.equal(r.status, 200, r.text);
   assert.ok(r.data.reply.content);
@@ -209,11 +210,14 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.equal(r.said.trim(), r.data.reply.content);
   assert.deepEqual(r.data.reply.edits, []);
   assert.equal(r.data.reply.rewrite, '');
+  assert.deepEqual(r.phases, []);
 
   // 局部改：带引用的片段，回 find / replace，find 能在正文里原样找到；服务端不改正文
+  // 两段式：流式回话后会发 status phase=edits，再 done 带清单；标记不进回话
   const quote = before.split(/\n{2,}/).find((p) => p.trim() && before.split(p).length === 2);
   r = await chatCall({ message: '这段压短一点', quote });
   assert.equal(r.status, 200, r.text);
+  assert.ok(r.phases.some((s) => s.phase === 'edits'), `局部改应发 status：${r.text}`);
   const edit = r.data.reply;
   assert.equal(edit.edits.length, 1);
   assert.equal(edit.edits[0].find, quote);
@@ -224,6 +228,7 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   // 整篇改：只回整理好的意见，不出新全文；之后走 /revise mode=full（哪怕意见里没有结构关键词）
   r = await chatCall({ message: '整篇换个说法' });
   assert.equal(r.status, 200, r.text);
+  assert.ok(r.phases.some((s) => s.phase === 'edits'), `整篇改应发 status：${r.text}`);
   const rw = r.data.reply;
   assert.ok(rw.rewrite);
   assert.deepEqual(rw.edits, []);
@@ -297,19 +302,30 @@ test('右栏 AI 对话：问只回话；局部改回能对上正文的改动不�
   assert.deepEqual((await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages, []);
 });
 
-test('对话回复拆分：标记被拆在两段里也不漏给网页；没标记就是只回答；JSON 坏了当没改', async () => {
-  const { replyCutter, splitChatReply } = await import('../server/routes/editor.js');
+test('对话回复拆分：标记被拆在两段里也不漏给网页；没标记就是只回答；JSON 坏了当没改；见到标记回调 onMark；takeEdits 最多 4 处', async () => {
+  const { replyCutter, splitChatReply, takeEdits } = await import('../server/routes/editor.js');
   const raw = '先说结论。\n@@改动@@\n{"edits":[{"find":"a","replace":"b","all":false}],"rewrite":""}';
   for (const size of [1, 2, 3, 5, 7, 100]) {
     let out = '';
-    const cut = replyCutter((t) => { out += t; });
+    let marks = 0;
+    const cut = replyCutter((t) => { out += t; }, { onMark: () => { marks += 1; } });
     for (let i = 0; i < raw.length; i += size) cut.push(raw.slice(i, i + size));
     cut.flush();
     assert.equal(out, '先说结论。\n', `每段 ${size} 字时推出去的不对：${out}`);
+    assert.equal(marks, 1, `每段 ${size} 字时 onMark 应只触发一次`);
+    assert.equal(cut.marked, true);
+    assert.equal(cut.spoken(), '先说结论。');
   }
   assert.deepEqual(splitChatReply(raw).changes.edits, [{ find: 'a', replace: 'b', all: false }]);
   assert.deepEqual(splitChatReply('只是回答，没有改动。'), { reply: '只是回答，没有改动。', changes: { edits: [], rewrite: '' }, broken: false });
   assert.equal(splitChatReply('改了。\n@@改动@@\n{坏的').broken, true);
+  assert.deepEqual(splitChatReply('改了。\n@@改动@@'), { reply: '改了。', changes: { edits: [], rewrite: '' }, broken: false });
+
+  const skipped = [];
+  const five = [1, 2, 3, 4, 5].map((i) => ({ find: `f${i}`, replace: `r${i}`, all: false }));
+  assert.equal(takeEdits(five, skipped).length, 4);
+  assert.match(skipped[0], /最多改 4 处/);
+  assert.equal(takeEdits(five.slice(0, 2), []).length, 2);
 });
 
 test('对话选模型：列表来自服务端；只能存列表里可用的；指定后回话标出模型；停用了就拦下让人重选，不替他换', async () => {

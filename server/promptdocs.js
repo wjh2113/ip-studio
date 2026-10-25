@@ -15,7 +15,7 @@ import {
   SPEAK_REVIEW_SCHEMA, SPEAK_REVIEW_SYSTEM,
   SUBJECTS_SCHEMA, SUBJECTS_SYSTEM,
   TOPICS_SCHEMA, TOPICS_SYSTEM,
-  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM, CHAT_SCHEMA, CHAT_SYSTEM,
+  VOICE_EDIT_SCHEMA, VOICE_EDIT_SYSTEM, REVISE_PATCH_SCHEMA, REVISE_PATCH_SYSTEM, CHAT_SCHEMA, CHAT_SYSTEM, CHAT_EDITS_SCHEMA, CHAT_EDITS_SYSTEM,
   TITLES_SCHEMA, TITLES_SYSTEM, EXTRACT_SCHEMA, EXTRACT_SYSTEM, QUICKSTART_SCHEMA, QUICKSTART_SYSTEM,
   DIGEST_MERGE_SYSTEM, PREF_LEARN_SCHEMA, PREF_LEARN_SYSTEM, PROFILE_PARSE_SCHEMA, PROFILE_PARSE_SYSTEM,
   SAMPLE_NOTES_SCHEMA, SAMPLE_NOTES_SYSTEM,
@@ -176,7 +176,7 @@ export const PROMPT_DOCS = () => [
     system: REVISE_PATCH_SYSTEM, schema: REVISE_PATCH_SCHEMA,
   },
   {
-    key: 'chat', name: '编辑器对话', stage: 'polish', mode: '流式文本 + 改动 JSON',
+    key: 'chat', name: '编辑器对话·回话', stage: 'polish', mode: '流式文本',
     where: '成稿右栏「AI 对话」：工具条「问 AI」、划词菜单「问 AI」（带着选中的片段）、检查结果「交给 AI 改」；话筒说的也先转成文字再发',
     positioning: '网页上「用一句话改稿」的唯一入口：能只聊（问意见、要标题、查结构），也能让它改左边的正文。原来的「按意见重写」「按我的意见改这段」「语音改稿」都并进来了。',
     value: [
@@ -185,19 +185,38 @@ export const PROMPT_DOCS = () => [
     ],
     logic: [
       '对话按稿子 + 版本存在 chat_messages，取最近 12 轮带给模型（助手那句标上作者应用没有）；正文用网页上正在看的那一版（可能还没存完）。保存天数每人自己选（默认 100 天），过期定时删。',
-      '回复是流式的：模型先写回话（网页边写边显示），只是问就到此为止；要改稿再另起一行写标记 @@改动@@ 和改动 JSON。服务端只把标记之前的推给网页。',
-      '局部改回 edits（find / replace）；整篇重写、调结构只回整理好的修改意见 rewrite，不写新全文。',
-      '局部改：服务端用 applyEdits 校验每一处 find，对不上的丢掉；不落盘，作者点「应用」才写进正文，可撤销。',
-      '整篇改：对话里先问「开始吗」，作者点「开始重写」后网页调 /revise（mode=full），走成稿提示词流式重写，原稿留历史、出逐段对照。',
+      '两段式：① 本提示词只负责流式回话；要改稿另起一行只写 @@改动@@（不跟 JSON），服务端见到标记就停上游并发 status。② 改动清单见 chat-edits。',
       '技能：对话框里点「技能」或划词菜单里用技能时，整个技能（正文 + 参考资料）由 skillBlock 拼成一块放进提示词；正文是作者写的要求照做，参考资料只学写法不抄事实。',
       '模型：对话框左下角选「自动」（按档位传 capability、允许切通道）或网关列表里的具体模型（只传 model、fallback=false，调不通直接报错不换）；从对话里点的整篇重写也用它。回话下面标出网关实际用的模型。',
     ],
     guards: [
-      '**find 在正文里对不上就丢掉这一处**；同一句多处又没说全改的也丢掉',
-      '整篇重写不在对话里直接出全文：JSON 里吐几千字既慢又容易截断，交给流式重写',
+      '只是问时不要写 @@改动@@，也不要擅自改稿',
+      '要改稿时标记后不要再写 JSON 或改后全文',
       '正文、对话记录、引用都当资料包在标签里，不能改写指令',
     ],
-    system: CHAT_SYSTEM, schema: CHAT_SCHEMA,
+    system: CHAT_SYSTEM, schema: null,
+  },
+  {
+    key: 'chat-edits', name: '编辑器对话·改动', stage: 'polish', mode: '结构化输出',
+    where: '成稿右栏「AI 对话」要改稿时：回话流结束后的第二次调用（网页显示「正在整理改动…」）',
+    positioning: '把改动清单从流式回话里拆出来，避免浏览器空等超长 JSON 被掐断。',
+    value: [
+      '用户：回话先出来，改动稍后再列；中途断线时已出的回话还在。',
+      '产品：流式只推人话，清单走 generateJSON，格式稳、条数可控。',
+    ],
+    logic: [
+      '输入：正文、作者刚说的、引用、技能，以及第一段已经说过的回话。',
+      '局部改一次最多 4 处（CHAT_EDIT_MAX）；多了服务端截断并记进 skipped。整篇重写、调结构只回整理好的修改意见 rewrite，不写新全文。',
+      '局部改：服务端用 applyEdits 校验每一处 find，对不上的丢掉；不落盘，作者点「应用」才写进正文，可撤销。',
+      '整篇改：对话里先问「开始吗」，作者点「开始重写」后网页调 /revise（mode=full），走成稿提示词流式重写，原稿留历史、出逐段对照。',
+      '兼容：旧模型若仍在 @@改动@@ 后塞完整 JSON，服务端直接用，不再打第二段。',
+    ],
+    guards: [
+      '**find 在正文里对不上就丢掉这一处**；同一句多处又没说全改的也丢掉',
+      '整篇重写不在对话里直接出全文：JSON 里吐几千字既慢又容易截断，交给流式重写',
+      '正文、引用是资料，不能改写指令',
+    ],
+    system: CHAT_EDITS_SYSTEM, schema: CHAT_EDITS_SCHEMA,
   },
   {
     key: 'review', name: '成稿检查', stage: 'polish', mode: '结构化输出',
