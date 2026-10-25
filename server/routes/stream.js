@@ -1,7 +1,30 @@
-/* 流式响应公共脚手架：开 SSE、断线 abort、出错推 error。
- * 业务只写 start / 调模型 / done；断线与收尾只修这一处。 */
+/* 流式响应公共脚手架：开 SSE、断线 abort、出错推 error、心跳保活。
+ * 业务只写 start / 调模型 / done；断线与收尾只修这一处。
+ *
+ * 心跳：改稿对话在回话推完后，模型还要写很长的 @@改动@@ JSON，这段时间浏览器收不到 delta，
+ * 中间若有 ~60s 空闲掐流（部分网络环境），就会看到英文 network error。每 12 秒写一行 SSE 注释保活。 */
 import { streamText } from '../llm.js';
 import { describe } from './common.js';
+
+const HEARTBEAT_MS = 12_000;
+
+function startHeartbeat(res) {
+  const tick = setInterval(() => {
+    if (res.writableEnded || res.destroyed) { clearInterval(tick); return; }
+    try { res.write(': ping\n\n'); } catch { clearInterval(tick); }
+  }, HEARTBEAT_MS);
+  tick.unref?.();
+  return () => clearInterval(tick);
+}
+
+function sseHeaders(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+}
 
 /**
  * @param {import('node:http').ServerResponse} res
@@ -14,14 +37,10 @@ import { describe } from './common.js';
  * @param {(err: Error, send: Function) => Promise<void>|void} [opts.onError]  额外清理（如恢复草稿）
  */
 export async function runTextStream(res, opts) {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
+  sseHeaders(res);
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
+  const stopBeat = startHeartbeat(res);
   // 用 res 的 close 判断前端断开：req 的 close 在请求体读完时就已触发
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
 
@@ -41,25 +60,28 @@ export async function runTextStream(res, opts) {
     }
     if (!controller.signal.aborted) send('error', { message: describe(err) });
   } finally {
+    stopBeat();
     res.end();
   }
 }
 
-/** 非流式长任务也复用同一套 SSE 头，推 progress / done / error */
+/** 非流式长任务也复用同一套 SSE 头，推 progress / done / error；长对话改稿用这个开流 */
 export function openProgressStream(res) {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
+  sseHeaders(res);
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const controller = new AbortController();
-  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+  const stopBeat = startHeartbeat(res);
+  res.on('close', () => {
+    stopBeat();
+    if (!res.writableEnded) controller.abort();
+  });
   return {
     send,
     get aborted() { return controller.signal.aborted; },
     signal: controller.signal,
-    end() { if (!res.writableEnded) res.end(); },
+    end() {
+      stopBeat();
+      if (!res.writableEnded) res.end();
+    },
   };
 }

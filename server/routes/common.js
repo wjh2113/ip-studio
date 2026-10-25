@@ -112,6 +112,10 @@ export function describe(err) {
   if (/401|authentication|api key/i.test(raw)) return '模型密钥无效或未配置，请检查 .env';
   if (/429|rate/i.test(raw)) return '触发上游限流，请稍后再试';
   if (err?.name === 'TimeoutError' || /timed? ?out|timeout/i.test(raw)) return '模型响应超时，请稍后再试';
+  // 浏览器 / undici 断流常报英文 network error；长改稿时回话推完后写改动清单的空档也容易被掐
+  if (/network error|failed to fetch|load failed|networkerror|econnreset|other side closed|socket hang up/i.test(raw)) {
+    return '连接中断了，请重试；长改稿可拆成几次发';
+  }
   if (/ENOTFOUND|ECONNREFUSED|fetch failed/i.test(raw)) return `无法连接模型服务（${PROVIDER}），请检查网络或 BASE_URL`;
   return raw.slice(0, 300);
 }

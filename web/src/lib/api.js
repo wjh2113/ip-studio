@@ -27,6 +27,23 @@ function httpError(message, status) {
   return err;
 }
 
+/* 流式读失败时浏览器常抛英文（network error / Failed to fetch），收成可读中文；已是中文的原样留下 */
+export function friendlyNetError(err) {
+  const raw = String(err?.message || err || '');
+  const name = err?.name || '';
+  // TimeoutError 的 message 里也常带 aborted，先认超时再认取消
+  if (name === 'TimeoutError' || /timed? ?out|timeout/i.test(raw)) {
+    return '等太久没有回音，请重试';
+  }
+  if (name === 'AbortError' || /^(已取消|请求已取消)/.test(raw) || (/aborted/i.test(raw) && !/network/i.test(raw))) {
+    return '已取消';
+  }
+  if (/network error|failed to fetch|load failed|networkerror|err_network|econnreset|other side closed/i.test(raw)) {
+    return '连接中断了。长改稿时偶发，点「重试」即可；一直这样可以把改动拆成几次发';
+  }
+  return raw.slice(0, 300) || '请求失败';
+}
+
 /* 流式接口。onEvent(event, data) 里抛错会中断读取并从这里抛出 */
 export async function stream(path, body, onEvent) {
   const res = await fetch(`/api${path}`, {
@@ -39,7 +56,11 @@ export async function stream(path, body, onEvent) {
     if (res.status === 402) emit('quota', { message: data.error, quota: data.quota });
     throw httpError(data.error || '请求失败', res.status);
   }
-  await readSSE(res, onEvent);
+  try {
+    await readSSE(res, onEvent);
+  } catch (err) {
+    throw httpError(friendlyNetError(err), err.status);
+  }
   emit('spent');
 }
 

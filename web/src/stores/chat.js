@@ -11,7 +11,7 @@
  * 打开对话栏：右栏页签、工具条「问 AI」、划词菜单「问 AI」（带着选中的那段过来）   open */
 import { defineStore } from 'pinia';
 import { computed, reactive, ref } from 'vue';
-import { api, stream, upload } from '../lib/api.js';
+import { api, friendlyNetError, stream, upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
 import { applyEdits } from '../../../shared/edits.js';
 import { useStudioStore } from './studio.js';
@@ -105,7 +105,8 @@ export const useChatStore = defineStore('chat', () => {
       });
       if (!reply.id) throw new Error('回话中断了，再试一次');
     } catch (err) {
-      reply.error = err.message;
+      // 服务端 SSE error 已是中文；浏览器断流常是英文 network error，收成可读提示
+      reply.error = friendlyNetError(err);
       reply.content = '';
       reply.retry = { content: msg, quote: q, skill };
     } finally {

@@ -4,8 +4,28 @@ import http from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readSSE } from '../web/src/lib/api.js';
+import { friendlyNetError, readSSE } from '../web/src/lib/api.js';
+import { describe } from '../server/routes/common.js';
 import { sendMedia } from '../server/media.js';
+
+test('断流英文收成中文；超时和取消分开说', () => {
+  assert.match(friendlyNetError(new Error('network error')), /连接中断/);
+  assert.match(friendlyNetError(new TypeError('Failed to fetch')), /连接中断/);
+  assert.match(describe(new Error('network error')), /连接中断/);
+  assert.equal(friendlyNetError(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' })), '已取消');
+  assert.equal(friendlyNetError(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })), '等太久没有回音，请重试');
+  assert.equal(friendlyNetError(new Error('额度不够了')), '额度不够了');
+});
+
+test('SSE 注释心跳不进业务回调', async () => {
+  const events = [];
+  const body = new ReadableStream({ start(c) {
+    c.enqueue(new TextEncoder().encode(': ping\n\nevent: delta\ndata: {"text":"hi"}\n\n: ping\n\n'));
+    c.close();
+  } });
+  await readSSE({ body }, (event, data) => events.push({ event, data }));
+  assert.deepEqual(events, [{ event: 'delta', data: { text: 'hi' } }]);
+});
 
 test('SSE 回调异常取消上游并释放读取锁', async () => {
   let cancelled = false;
