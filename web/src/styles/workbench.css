@@ -867,3 +867,31 @@ body.edit-fs-on .mpick-menu { z-index: 130; }
   .skill-prop { flex-direction: column; gap: 2px; }
   .skill-prop-k { width: auto; }
 }
+
+/* ---------- 表格：阅读区、编辑器、AI 对话回复、打印 ---------- */
+.md-table { overflow-x: auto; margin: 16px 0; }
+.content table, .rich-pm table, .chat-reply table {
+  border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.65; table-layout: auto;
+}
+.content th, .content td, .rich-pm th, .rich-pm td, .chat-reply th, .chat-reply td {
+  border: 1px solid var(--line-strong); padding: 7px 10px; vertical-align: top; text-align: left; min-width: 64px;
+}
+.content th, .rich-pm th, .chat-reply th { background: var(--panel-2); font-weight: 600; }
+.rich-pm table { margin: 16px 0; }
+.rich-pm td p, .rich-pm th p { margin: 0; }
+.rich-pm .selectedCell { background: var(--accent-soft); }
+.rich-pm .tableWrapper { overflow-x: auto; }
+.chat-reply .md-table { margin: 8px 0; }
+.chat-reply th, .chat-reply td { padding: 5px 8px; font-size: 12.5px; min-width: 48px; }
+@media print {
+  .content th, .content td { border-color: #bbb; }
+  .content th { background: #f3f3f3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .md-table { overflow: visible; }
+}
+
+/* 停止按钮 */
+.chat-stop { display: inline-flex; align-items: center; gap: 4px; background: var(--text); color: var(--panel); border-color: var(--text); }
+.chat-stop:hover { opacity: .85; }
+.chat-stopped { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 11.5px; color: var(--faint); }
+.stream-stop { display: inline-flex; align-items: center; gap: 4px; }
+.assist-stopped { margin-left: 6px; font-style: normal; font-size: 11.5px; color: var(--faint); }

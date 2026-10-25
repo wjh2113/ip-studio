@@ -1,7 +1,9 @@
-/* 文本小工具：计字、转义、极简 Markdown、日期格式。
+/* 文本小工具：计字、转义、极简 Markdown（含表格）、日期格式。
  *
  * 模板里的 {{ }} 会自动转义，平时用不着 esc。只有要拼成 HTML 再交给 v-html 的地方
  * （Markdown 正文、带高亮的口播句子）才先 esc 再加标签——v-html 只能接这里产出的字符串。 */
+
+import { normalizeTables, readTable } from '../../../shared/tables.js';
 
 export const countChars = (s) => String(s || '').replace(/\s/g, '').length;
 
@@ -40,7 +42,8 @@ export function markdown(src) {
     },
   );
 
-  const lines = esc(prepared).split('\n');
+  // 以前粘坏的表格（行和行之间有空行）先合回去
+  const lines = esc(normalizeTables(prepared)).split('\n');
   const out = [];
   let list = null;
 
@@ -54,9 +57,20 @@ export function markdown(src) {
       `<span style="color:${c}">${inline(inner)}</span>`
     ));
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  const cell = (c) => restore(inline(c));
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trimEnd();
     if (!line.trim()) { closeList(); continue; }
+
+    const t = readTable(lines, i);
+    if (t) {
+      closeList();
+      const th = t.header.map((c, k) => `<th${t.align[k] ? ` style="text-align:${t.align[k]}"` : ''}>${cell(c)}</th>`).join('');
+      const trs = t.rows.map((r) => `<tr>${r.map((c, k) => `<td${t.align[k] ? ` style="text-align:${t.align[k]}"` : ''}>${cell(c)}</td>`).join('')}</tr>`).join('');
+      out.push(`<div class="md-table"><table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`);
+      i = t.end - 1;
+      continue;
+    }
 
     const h = line.match(/^(#{1,4})\s+(.*)$/);
     if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${restore(inline(h[2]))}</h${n}>`); continue; }

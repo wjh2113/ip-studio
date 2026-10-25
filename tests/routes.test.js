@@ -456,6 +456,32 @@ test('我的技能：整页字段（描述、标签、参考资料）、详情�
   }
 });
 
+test('对话里点「停止」：连接一断，已经写出来的回话照样存下，标 stopped，不出改动清单', async () => {
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+  const ctrl = new AbortController();
+  const res = await fetch(`${BASE}/api/drafts/${draftId}/chat`, {
+    method: 'POST', signal: ctrl.signal,
+    headers: { 'content-type': 'application/json', cookie: api.cookieHeader() },
+    body: JSON.stringify({ message: '这一段写得怎么样，从头到尾仔细说说你的看法吧？' }),
+  });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let got = '';
+  while (!/event: delta/.test(got)) got += dec.decode((await reader.read()).value || new Uint8Array(), { stream: true });
+  ctrl.abort();                                          // 收到第一段回话就停
+  let msgs = [];
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((r) => setTimeout(r, 100));
+    msgs = (await api.call('GET', `/api/drafts/${draftId}/chat`)).data.messages;
+    if (msgs.length) break;
+  }
+  assert.equal(msgs.length, 2, '停下后这一问一答应该存下');
+  assert.equal(msgs[1].stopped, true);
+  assert.ok(msgs[1].content.length > 0);
+  assert.deepEqual(msgs[1].edits, []);
+  await api.call('DELETE', `/api/drafts/${draftId}/chat`);
+});
+
 test('贴已有稿：不调模型直接建成一篇已成稿；标题取 # 行；之后能按意见重写', async () => {
   let r = await api.call('POST', '/api/drafts/import', { content: '  ' });
   assert.equal(r.status, 400);

@@ -30,6 +30,19 @@
         </div>
       </span>
       <button type="button" class="fmt-btn" id="rtQuote" title="引用" :class="{ on: active.quote }" @mousedown.prevent @click="run('quote')"><Icon name="quill" :size="16" /></button>
+      <span class="fmt-drop">
+        <button type="button" class="fmt-btn fmt-caret" id="rtTable" title="表格" :class="{ on: active.table }" @mousedown.prevent @click="toggle('table')"><Icon name="table" :size="16" /><Icon name="chev-down" :size="10" /></button>
+        <div v-if="open === 'table'" class="fmt-pop" id="rtTableMenu" @mousedown.prevent>
+          <button type="button" data-op="table" @click="run('table')">插入表格（3×3）</button>
+          <template v-if="active.table">
+            <button type="button" data-op="rowAfter" @click="run('rowAfter')">下面加一行</button>
+            <button type="button" data-op="colAfter" @click="run('colAfter')">右边加一列</button>
+            <button type="button" data-op="delRow" @click="run('delRow')">删掉这一行</button>
+            <button type="button" data-op="delCol" @click="run('delCol')">删掉这一列</button>
+            <button type="button" data-op="delTable" @click="run('delTable')">删掉整张表</button>
+          </template>
+        </div>
+      </span>
       <span class="fmt-drop" id="rtColor" @mousedown.prevent="onColorDown">
         <input class="fmt-native-color" type="color" :value="color" @input="onColor($event.target.value)" />
         <button type="button" class="fmt-btn fmt-color" title="文字颜色" @click="toggle('color')">
@@ -105,7 +118,7 @@ const open = ref('');
 const active = reactive({
   bold: false, italic: false, strike: false,
   h1: false, h2: false, h3: false, h4: false,
-  list: false, ol: false, quote: false, brush: false,
+  list: false, ol: false, quote: false, brush: false, table: false,
 });
 const widthShort = computed(() => (layout.contentWidth > 0 ? String(layout.contentWidth) : '满'));
 
@@ -131,6 +144,7 @@ function sync() {
   active.list = r.isActive('list');
   active.ol = r.isActive('ol');
   active.quote = r.isActive('quote');
+  active.table = r.isActive('table');
   active.brush = r.isActive('brush');
   color.value = r.getColor?.() || '#333333';
 }

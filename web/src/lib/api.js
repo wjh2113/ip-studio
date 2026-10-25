@@ -1,6 +1,6 @@
 /* 网络：所有 /api 请求都从这里走。
  *   api(path, { method, body })   JSON 进、JSON 出；失败抛 Error（message 是服务端给的中文文案）
- *   stream(path, body, onEvent)   流式接口（成稿、划词改写）：按 SSE 事件回调
+ *   stream(path, body, onEvent, { signal })   流式接口（成稿、划词改写、对话）：按 SSE 事件回调；signal 用来「停止」
  *   upload(path, blob, filename)  原样上传二进制（录音、视频），服务端按 Content-Type / X-Filename 认格式 */
 import { emit } from './bus.js';
 
@@ -44,10 +44,12 @@ export function friendlyNetError(err) {
   return raw.slice(0, 300) || '请求失败';
 }
 
-/* 流式接口。onEvent(event, data) 里抛错会中断读取并从这里抛出 */
-export async function stream(path, body, onEvent) {
+/* 流式接口。onEvent(event, data) 里抛错会中断读取并从这里抛出。
+   signal 一 abort（点了「停止」）：连接立刻断开，服务端发现断线就停掉模型，这里抛 AbortError */
+export async function stream(path, body, onEvent, { signal } = {}) {
   const res = await fetch(`/api${path}`, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   });

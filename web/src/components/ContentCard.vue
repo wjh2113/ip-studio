@@ -61,6 +61,8 @@
           </div>
           <span class="grow"></span>
           <span class="hint" id="toolHint">{{ ed.progressLabel || ed.toolHint }}</span>
+          <!-- 成稿 / 整篇重写进行中：可以停；原稿不动，退回上一步 -->
+          <button v-if="s.streaming" type="button" class="btn ghost small stream-stop" id="streamStopBtn" title="停止生成，原稿不动" @click="ed.stopStream()"><Icon name="stop" :size="12" />停止</button>
           <template v-if="s.mode === 'edit'">
             <span class="save-state" id="saveState" :class="ed.save.kind">{{ ed.save.text }}</span>
             <button class="btn primary small" id="saveBtn" @click="ed.flushSave(true)">保存</button>

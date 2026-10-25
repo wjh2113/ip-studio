@@ -91,7 +91,7 @@ const versionOf = (req, body) => String(body?.version ?? new URL(req.url, 'http:
 const chatView = (m) => ({
   id: m.id, role: m.role, content: m.content, quote: m.quote, created_at: m.created_at,
   edits: m.edits || [], rewrite: m.rewrite || '', skipped: m.skipped || [],
-  done: m.done || {}, started: Boolean(m.started), model: m.model || null, skill: m.skill || null,
+  done: m.done || {}, started: Boolean(m.started), model: m.model || null, skill: m.skill || null, stopped: Boolean(m.stopped),
 });
 
 export async function handleChatList(req, res, body, params) {
@@ -194,6 +194,19 @@ export async function handleChat(req, res, body, params) {
       },
     });
     let served = '';
+    // 作者点了「停止」（连接断开）：已经写出来的回话照样存下，标 stopped，不出改动清单
+    const saveStopped = async () => {
+      const said = cut.spoken().trim();
+      if (!said) return;
+      try {
+        await Chats.add(draft.id, user.id, version, {
+          role: 'user', content: message, quote, data: skill ? { skill: { id: skill.id, name: skill.name } } : {},
+        });
+        await Chats.add(draft.id, user.id, version, {
+          role: 'assistant', content: said, data: { edits: [], rewrite: '', skipped: [], stopped: true, model: await modelTag(pick, served) },
+        });
+      } catch (e) { console.warn('[chat] 停止后存回话失败', e?.message); }
+    };
     try {
       await streamText({
         meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
@@ -205,11 +218,11 @@ export async function handleChat(req, res, body, params) {
         signal: AbortSignal.any([ps.signal, stopStream.signal]),
       });
     } catch (err) {
-      if (ps.aborted) return;
+      if (ps.aborted) { await saveStopped(); return; }
       // 见到标记后主动停流：算正常，用已推的回话继续第二段
       if (!(needEdits && (err?.name === 'AbortError' || /中断|aborted/i.test(String(err?.message || ''))))) throw err;
     }
-    if (ps.aborted) return;
+    if (ps.aborted) { await saveStopped(); return; }
     cut.flush();
     const said = cut.spoken();
     // 兼容旧模型仍在标记后塞 JSON：有完整清单就直接用，否则走第二段
@@ -220,15 +233,22 @@ export async function handleChat(req, res, body, params) {
       if (!inline.broken && (inline.changes.edits.length || inline.changes.rewrite)) {
         changes = inline.changes;
       } else {
-        const out = await generateJSON({
+        let out;
+        try {
+          out = await generateJSON({
           meta: { feature: '编辑器对话', userId: user.id, ...(pick ? { model: pick.id } : {}) },
           system: sys('chat-edits', CHAT_EDITS_SYSTEM),
           user: chatEditsUser(target, persona, samples, me, { text, messages, quote, skill, said }),
           schema: CHAT_EDITS_SCHEMA,
           mock: () => mockChatEdits(text, message, quote),
           signal: ps.signal,
-        });
-        if (ps.aborted) return;
+          });
+        } catch (e) {
+          // 整理改动时点了「停止」：回话照样留下
+          if (ps.aborted) { await saveStopped(); return; }
+          throw e;
+        }
+        if (ps.aborted) { await saveStopped(); return; }
         changes = { edits: Array.isArray(out?.edits) ? out.edits : [], rewrite: String(out?.rewrite || '') };
       }
     }

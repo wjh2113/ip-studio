@@ -77,6 +77,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /* skill：用技能（{ id, name }），话可以空着——服务端会把整个技能交给模型 */
+  /* 停止：断开这次请求。已经写出来的回话留在对话里，标「已停止」，不出改动清单（服务端也按这样存） */
+  let ctrl = null;
+  function stop() { ctrl?.abort(); }
+
   async function send(text, { quote: q = quote.value, skill = null } = {}) {
     const st = useStudioStore();
     const ed = useEditorStore();
@@ -96,6 +100,8 @@ export const useChatStore = defineStore('chat', () => {
     if (text == null) input.value = '';
     quote.value = '';
     busy.value = true;
+    ctrl = new AbortController();
+    const mine$ = ctrl;
     try {
       // 回话边写边出；要改稿时服务端发 status（整理改动），再 done 带清单。断线时已出的回话留下
       await stream(`/drafts/${id}/chat`, { message: msg, version: ver, text: ed.text, quote: q, ...(skill ? { skillId: skill.id } : {}) }, (event, data) => {
@@ -112,9 +118,15 @@ export const useChatStore = defineStore('chat', () => {
           Object.assign(mine, local(data.user));
           Object.assign(reply, local(data.reply), { packing: false, streaming: false, pending: false, error: '' });
         } else if (event === 'error') throw new Error(data.message);
-      });
+      }, { signal: mine$.signal });
       if (!reply.id) throw new Error('回话中断了，再试一次');
     } catch (err) {
+      if (mine$.signal.aborted) {
+        // 自己点的停止：不算出错，写出来的留着
+        reply.stopped = true;
+        reply.error = '';
+        return true;
+      }
       // 服务端 SSE error 已是中文；浏览器断流常是英文 network error，收成可读提示
       reply.error = friendlyNetError(err);
       // 已流出的回话留下，方便接着看；没写出字才清空
@@ -125,6 +137,7 @@ export const useChatStore = defineStore('chat', () => {
       reply.streaming = false;
       reply.packing = false;
       busy.value = false;
+      if (ctrl === mine$) ctrl = null;
     }
     return true;
   }
@@ -301,6 +314,6 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     threads, messages, loading, busy, input, quote, focusTick, keepDays, mic,
-    open, load, send, retry, redo, canInsert, askAbout, apply, undo, startRewrite, locate, allDone, clear, setKeep, toggleMic, stopMic,
+    open, load, send, stop, retry, redo, canInsert, askAbout, apply, undo, startRewrite, locate, allDone, clear, setKeep, toggleMic, stopMic,
   };
 });

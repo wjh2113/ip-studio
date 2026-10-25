@@ -1,6 +1,7 @@
 /* TipTap ↔ 正文存储串：Markdown 子集 + 白名单颜色 span + 同域图片 + IMAGE_MARK。
  * 存储仍是 draft.content 字符串，不是 TipTap JSON。 */
 import { IMAGE_MARK } from '../../../shared/place.js';
+import { normalizeTables, readTable } from '../../../shared/tables.js';
 
 const IMG_SRC_RE = /^\/image\/\d+\/[\w.-]+$/;
 const SPAN_RE = /<span\s+style="color:\s*(#[0-9A-Fa-f]{3,6})\s*"\s*>([\s\S]*?)<\/span>/gi;
@@ -77,18 +78,28 @@ function lineToHtml(line) {
   );
 }
 
-/* 存储串 → TipTap setContent 用的 HTML */
+/* 存储串 → TipTap setContent 用的 HTML。Markdown 表格变成真表格（第一行是表头）；以前粘坏的（行间有空行）先合回去 */
 export function docToHtml(src) {
-  const text = sanitizeDoc(src);
+  const text = normalizeTables(sanitizeDoc(src));
   const lines = text.split('\n');
   const out = [];
   let list = null;
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
   const openList = (tag) => { if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; } };
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  const cell = (tag, c) => `<${tag}><p>${lineToHtml(c)}</p></${tag}>`;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trimEnd();
     if (!line.trim()) { closeList(); continue; }
+    const t = readTable(lines, i);
+    if (t) {
+      closeList();
+      const head = `<tr>${t.header.map((c) => cell('th', c)).join('')}</tr>`;
+      const body = t.rows.map((r) => `<tr>${r.map((c) => cell('td', c)).join('')}</tr>`).join('');
+      out.push(`<table><tbody>${head}${body}</tbody></table>`);
+      i = t.end - 1;
+      continue;
+    }
     if (line.trim() === IMAGE_MARK) {
       closeList();
       out.push(`<div data-image-mark="">${escHtml(IMAGE_MARK)}</div>`);
@@ -110,8 +121,8 @@ export function docToHtml(src) {
   return out.join('') || '<p></p>';
 }
 
-/* 把一段 inline 内容写成存储串，同时往 stream 里推 {ch, pm} */
-function emitTextNode(node, basePos, stream) {
+/* 把一段 inline 内容写成存储串，同时往 stream 里推 {ch, pm}。inCell：表格单元格里的 | 要转义成 \| */
+function emitTextNode(node, basePos, stream, inCell = false) {
   const text = node.text || '';
   const marks = node.marks || [];
   const hasCode = marks.some((m) => m.type.name === 'code');
@@ -132,15 +143,18 @@ function emitTextNode(node, basePos, stream) {
   if (color) { prefix = `<span style="color:${color}">${prefix}`; suffix = `${suffix}</span>`; }
 
   for (const ch of prefix) stream.push({ ch, pm: basePos });
-  for (let i = 0; i < text.length; i++) stream.push({ ch: text[i], pm: basePos + i });
+  for (let i = 0; i < text.length; i++) {
+    if (inCell && text[i] === '|') stream.push({ ch: '\\', pm: basePos + i });
+    stream.push({ ch: text[i], pm: basePos + i });
+  }
   for (const ch of suffix) stream.push({ ch, pm: basePos + text.length });
 }
 
-function emitInlineChildren(parent, parentPos, stream) {
+function emitInlineChildren(parent, parentPos, stream, inCell = false) {
   let p = parentPos + 1;
   parent.forEach((child) => {
-    if (child.isText) emitTextNode(child, p, stream);
-    else if (child.type.name === 'hardBreak') stream.push({ ch: '\n', pm: p });
+    if (child.isText) emitTextNode(child, p, stream, inCell);
+    else if (child.type.name === 'hardBreak') stream.push({ ch: inCell ? ' ' : '\n', pm: p });
     else if (child.type.name === 'image') {
       const src = String(child.attrs?.src || '');
       const alt = String(child.attrs?.alt || '').replace(/[\[\]]/g, '');
@@ -209,6 +223,33 @@ export function serializeEditor(editor) {
         });
         i += 1;
         n += 1;
+      });
+    } else if (name === 'table') {
+      // 存成标准 Markdown 表格：第一行当表头，第二行是分隔行，行和行之间不留空行；单元格里多段并成一行
+      sep(pos);
+      let cols = 0;
+      node.forEach((row) => { cols = Math.max(cols, row.childCount); });
+      let r = 0;
+      node.forEach((row, rowOff) => {
+        const rowPos = pos + 1 + rowOff;
+        if (r) pushStr(stream, '\n', rowPos);
+        pushStr(stream, '|', rowPos);
+        let c = 0;
+        row.forEach((cellNode, cellOff) => {
+          const cellPos = rowPos + 1 + cellOff;
+          pushStr(stream, ' ', cellPos);
+          let k = 0;
+          cellNode.forEach((para, pOff) => {
+            if (k) pushStr(stream, ' ', cellPos + 1 + pOff);
+            emitInlineChildren(para, cellPos + 1 + pOff, stream, true);
+            k += 1;
+          });
+          pushStr(stream, ' |', cellPos + cellNode.nodeSize - 1);
+          c += 1;
+        });
+        for (; c < cols; c += 1) pushStr(stream, '  |', rowPos + row.nodeSize - 1);
+        if (r === 0) pushStr(stream, `\n|${' --- |'.repeat(cols)}`, rowPos + row.nodeSize - 1);
+        r += 1;
       });
     } else if (name === 'horizontalRule') {
       sep(pos);

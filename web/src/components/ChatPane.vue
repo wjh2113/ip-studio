@@ -28,6 +28,7 @@
             <div v-if="m.packing" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span>正在整理改动…</div>
             <div v-else-if="m.streaming" class="chat-thinking chat-after"><span class="chat-dots"><i></i><i></i><i></i></span></div>
             <div v-if="m.error" class="chat-err">{{ m.error }} <button type="button" class="mini" @click="c.retry(m)">重试</button></div>
+            <p v-if="m.stopped" class="chat-stopped" data-stopped><Icon name="stop" :size="11" />已停止{{ m.content ? '' : '，还没写出字' }}</p>
 
             <!-- 整篇重写：先确认再动手 -->
             <div v-if="!m.error && m.rewrite" class="chat-changes chat-rewrite" data-kind="rewrite">
@@ -95,7 +96,9 @@
         <SkillPicker :disabled="c.busy || !canSend" />
         <span v-if="c.mic.recording || c.mic.recognizing" class="hint">{{ c.mic.recording ? '在听…说完点话筒' : '转文字中…' }}</span>
         <span class="grow"></span>
-        <BusyBtn type="submit" class="btn primary small" id="chatSendBtn" :busy="c.busy" :disabled="!c.input.trim() || !canSend">发送</BusyBtn>
+        <!-- AI 回答时「发送」变成方块「停止」：点了立刻断开，写出来的留着 -->
+        <button v-if="c.busy" type="button" class="btn small chat-stop" id="chatStopBtn" title="停止这次回答" @click="c.stop()"><Icon name="stop" :size="12" />停止</button>
+        <button v-else type="submit" class="btn primary small" id="chatSendBtn" :disabled="!c.input.trim() || !canSend">发送</button>
       </div>
       <div class="chat-meta">
         <button type="button" class="link-btn" id="chatKeepLink" title="在个人设置里改对话保存天数和模型能力" @click="settings.show()">个人设置</button>

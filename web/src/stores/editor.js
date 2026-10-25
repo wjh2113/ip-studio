@@ -109,6 +109,10 @@ export const useEditorStore = defineStore('editor', () => {
   /* ---------- 流式成稿 ---------- */
   const live = reactive({ text: '', error: '', title: '' });   // 生成中的正文、出错时的说明
 
+  /* 停止：成稿、整篇重写共用一个；点了就断开连接，服务端停掉模型、把原稿恢复（按已生成字数扣点） */
+  let streamCtrl = null;
+  function stopStream() { streamCtrl?.abort(); }
+
   async function generate(index) {
     const st = s();
     const draft = st.draft;
@@ -122,6 +126,7 @@ export const useEditorStore = defineStore('editor', () => {
     live.title = topic.title;
     live.text = '';
     live.error = '';
+    const ctrl = (streamCtrl = new AbortController());
     try {
       await stream(`/drafts/${draft.id}/content`, { index }, (event, data) => {
         if (event === 'delta') live.text += data.text;
@@ -136,9 +141,9 @@ export const useEditorStore = defineStore('editor', () => {
         } else if (event === 'error') {
           throw new Error(data.message);
         }
-      });
+      }, { signal: ctrl.signal });
     } catch (err) {
-      live.error = err.message;
+      live.error = ctrl.signal.aborted ? '已停止' : err.message;
       // 服务端在失败时会把原来的稿子恢复回去（重新生成失败不会把已有的正文清掉）：取回来显示。
       // 网络断开时服务端可能还没来得及恢复（它要先察觉连接断了）：看到还是 writing 就稍等再取
       try {
@@ -153,13 +158,14 @@ export const useEditorStore = defineStore('editor', () => {
           if (fresh.content) {
             live.error = '';
             live.title = '';
-            toast(`生成中断：${err.message}。原来那版还在`);
+            toast(ctrl.signal.aborted ? '已停止，原来那版还在' : `生成中断：${err.message}。原来那版还在`);
           }
           useHistoryStore().load();
         }
       } catch { /* 取不回来就停在错误提示上 */ }
     } finally {
       st.streaming = false;
+      if (streamCtrl === ctrl) streamCtrl = null;
     }
   }
 
@@ -187,6 +193,7 @@ export const useEditorStore = defineStore('editor', () => {
     progressLabel.value = '正在按意见重写…';
     let ok = false;
     let after = '';
+    const ctrl = (streamCtrl = new AbortController());
     try {
       await stream(`/drafts/${draft.id}/revise`, { notes, version: ver, ...(mode ? { mode } : {}), ...(from ? { from } : {}) }, (event, data) => {
         if (event === 'progress') progressLabel.value = data.label || progressLabel.value;
@@ -200,14 +207,15 @@ export const useEditorStore = defineStore('editor', () => {
           after = textOf(ver);
           ok = true;
         } else if (event === 'error') throw new Error(data.message);
-      });
+      }, { signal: ctrl.signal });
     } catch (err) {
-      toast(`没改成：${err.message}。原稿没动`);
+      toast(ctrl.signal.aborted ? '已停止，原稿没动' : `没改成：${err.message}。原稿没动`);
     } finally {
       live.title = '';
       live.text = '';
       progressLabel.value = '';
       st.streaming = false;   // 先放开：后面 toast / 打开对照时 Ctrl+Z 才能撤
+      if (streamCtrl === ctrl) streamCtrl = null;
     }
     if (ok) {
       reviseCompare.value = { version: ver, before, after: textOf(ver) || after };
@@ -451,13 +459,16 @@ export const useEditorStore = defineStore('editor', () => {
   const menus = reactive({ sel: null, slash: null });   // sel: { left, top, bottom, target } · slash: { left, top, bottom, at }
 
   /* ---------- AI 浮层：划词改写、/ 续写 ---------- */
-  const assist = ref(null);   // { label, kind, action, instruction, target, text, done, error }
+  const assist = ref(null);
+  let assistCtrl = null;   // { label, kind, action, instruction, target, text, done, error }
 
   async function runAssist(req, label) {
     const st = s();
     const draft = st.draft;
     if (!draft) return;
-    const a = reactive({ ...req, label, text: '', done: false, error: '' });
+    assistCtrl?.abort();
+    const ctrl = (assistCtrl = new AbortController());
+    const a = reactive({ ...req, label, text: '', done: false, error: '', stopped: false });
     assist.value = a;
     const { start, end, text } = req.target;
     const raw = textOf(editVer.value);
@@ -476,13 +487,22 @@ export const useEditorStore = defineStore('editor', () => {
         if (event === 'delta') a.text += data.text;
         else if (event === 'done') a.text = (data.text || a.text).trim();
         else if (event === 'error') throw new Error(data.message);
-      });
+      }, { signal: ctrl.signal });
       a.text = a.text.trim();
       a.done = true;
     } catch (err) {
+      if (ctrl.signal.aborted) {
+        // 点了「停止」：写出来的留着，照样能替换、插入
+        if (assist.value === a) { a.text = a.text.trim(); a.done = true; a.stopped = true; }
+        return;
+      }
       a.error = err.message;
+    } finally {
+      if (assistCtrl === ctrl) assistCtrl = null;
     }
   }
+
+  function stopAssist() { assistCtrl?.abort(); }
 
   function retryAssist() {
     const a = assist.value;
@@ -490,6 +510,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function closeAssist() {
+    assistCtrl?.abort();      // 关浮层也顺手停掉还在写的
     assist.value = null;
   }
 
@@ -607,7 +628,18 @@ export const useEditorStore = defineStore('editor', () => {
         + '</figure>';
     });
     html = html.replace(/src="(\/image\/\d+\/[\w.-]+)"/g, (full, url) => (docImgs.get(url) ? `src="${docImgs.get(url)}"` : full));
+    html = inlineTableStyle(html);
     return { html, imgs: uris.size + docImgs.size };
+  }
+
+  /* 表格贴到公众号、Word 里没有我们的样式表：边框、表头底色、内边距写成行内样式 */
+  function inlineTableStyle(html) {
+    const cell = 'border:1px solid #d9d9d9;padding:6px 10px;vertical-align:top;';
+    return html
+      .replace(/<div class="md-table">/g, '<div>')
+      .replace(/<table>/g, '<table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;line-height:1.6">')
+      .replace(/<th( style="text-align:(\w+)")?>/g, (_, __, a) => `<th style="${cell}background:#f5f6f8;font-weight:600;text-align:${a || 'left'}">`)
+      .replace(/<td( style="text-align:(\w+)")?>/g, (_, __, a) => `<td style="${cell}${a ? `text-align:${a};` : ''}">`);
   }
 
   /* 剪贴板 HTML 带上片段标记，公众号 / Word 才会认加粗、颜色，而不是只取纯文本 */
@@ -723,7 +755,7 @@ export const useEditorStore = defineStore('editor', () => {
     live, streamingView, generate, setMode, editFs, setEditFs, toggleEditFs,
     revise, reviseCompare, closeReviseCompare, revertReviseParagraph, progressLabel,
     save, markDirty, flushSave, onInput, replaceContent, text, editVer, locate, undo, redo, canUndo, canRedo, resetHistory,
-    menus, assist, runAssist, retryAssist, closeAssist, applyAssist,
+    menus, assist, runAssist, retryAssist, closeAssist, applyAssist, stopAssist, stopStream,
     toggleRevs, loadRevs, openRev,
     archiveCurrent, toolHint, exporting, printing, copy, download, downloadDocx, exportPdf,
     reset,

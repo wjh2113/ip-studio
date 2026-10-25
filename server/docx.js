@@ -2,6 +2,7 @@
 
 import { crc32 } from 'node:zlib';
 import { placeCuts } from '../shared/place.js';
+import { normalizeTables, readTable } from '../shared/tables.js';
 
 const xml = (s) => String(s ?? '')
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
@@ -142,6 +143,22 @@ function paragraph(text, opt = {}) {
   return `<w:p><w:pPr>${align}</w:pPr>${inner || '<w:r><w:t></w:t></w:r>'}</w:p>`;
 }
 
+/* Markdown 表格 → Word 表格：细灰边框、表头加粗带底色，列宽按页面可用宽度平分 */
+const PAGE_W = 11906 - 1134 * 2;
+function tableXml(t) {
+  const n = Math.max(1, t.header.length);
+  const w = Math.floor(PAGE_W / n);
+  const border = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+    .map((k) => `<w:${k} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>`).join('');
+  const jc = (a) => (a === 'center' ? '<w:jc w:val="center"/>' : a === 'right' ? '<w:jc w:val="right"/>' : '');
+  const tc = (text, k, head) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${head ? '<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>' : ''}</w:tcPr>`
+    + `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/>${jc(t.align[k])}</w:pPr>${runs(text, { bold: head, size: 20 }) || '<w:r><w:t></w:t></w:r>'}</w:p></w:tc>`;
+  const tr = (cells, head) => `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${Array.from({ length: n }, (_, k) => tc(cells[k] || '', k, head)).join('')}</w:tr>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${w * n}" w:type="dxa"/><w:tblBorders>${border}</w:tblBorders>`
+    + '<w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+    + `<w:tblGrid>${'<w:gridCol w:w="' + w + '"/>'.repeat(n)}</w:tblGrid>${tr(t.header, true)}${t.rows.map((r) => tr(r, false)).join('')}</w:tbl>`;
+}
+
 function blocks(text) {
   return String(text || '').replace(/\r\n/g, '\n').split(/\n{2,}/)
     .map((s) => s.trim()).filter(Boolean);
@@ -220,8 +237,19 @@ export async function buildDocx({ title, text, items, readImage }) {
   };
 
   const emitText = async (chunk) => {
-    for (const block of blocks(chunk)) {
-      for (const line of block.split('\n')) await emitLine(line);
+    // 以前粘坏的表格（行间有空行）先合回去，再按块输出；块里认到表格就输出成 Word 表格
+    for (const block of blocks(normalizeTables(chunk))) {
+      const lines = block.split('\n');
+      for (let i = 0; i < lines.length; i += 1) {
+        const t = readTable(lines, i);
+        if (t) {
+          parts.push(tableXml(t));
+          parts.push(paragraph(''));          // 表后留一个空段，Word 才不会把下一段贴在表格上
+          i = t.end - 1;
+          continue;
+        }
+        await emitLine(lines[i]);
+      }
     }
   };
 

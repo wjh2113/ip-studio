@@ -25,6 +25,8 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
+import { normalizeTables, readTable } from '../../../shared/tables.js';
 import FormatBar from './FormatBar.vue';
 import { upload } from '../lib/api.js';
 import { toast } from '../lib/feedback.js';
@@ -83,6 +85,7 @@ function isActive(name) {
   if (name === 'list') return ed.isActive('bulletList');
   if (name === 'ol') return ed.isActive('orderedList');
   if (name === 'quote') return ed.isActive('blockquote');
+  if (name === 'table') return ed.isActive('table');
   return ed.isActive(name);
 }
 
@@ -134,6 +137,16 @@ function format(op) {
     return;
   }
   if (op === 'nocolor') { setColor(''); return; }
+  /* 表格：插入 3×3（第一行是表头）；在表格里可以加删行列、删整张表。Tab 跳到下一格，最后一格按 Tab 加一行 */
+  const TABLE_OPS = {
+    table: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
+    rowAfter: (c) => c.addRowAfter(),
+    colAfter: (c) => c.addColumnAfter(),
+    delRow: (c) => c.deleteRow(),
+    delCol: (c) => c.deleteColumn(),
+    delTable: (c) => c.deleteTable(),
+  };
+  if (TABLE_OPS[op]) { TABLE_OPS[op](ed.chain().focus()).run(); return; }
   if (op === 'clear') {
     const chain = ed.chain();
     if (savedSel) chain.setTextSelection(savedSel);
@@ -174,7 +187,7 @@ function bindBridge() {
     getDoc: () => serializeEditor(editor.value).text,
     setDoc: (t) => {
       applyExternal(t);
-      const next = sanitizeDoc(t);
+      const next = normalizeTables(sanitizeDoc(t));
       emit('update:modelValue', next);
     },
     getSelection: () => selectionToDoc(editor.value),
@@ -223,9 +236,10 @@ function bindBridge() {
   };
 }
 
+/* 外面换了正文（换稿、撤销、AI 改写）：以前粘坏的表格（行间有空行）顺手合回去 */
 function applyExternal(raw) {
   if (!editor.value) return;
-  const next = sanitizeDoc(raw);
+  const next = normalizeTables(sanitizeDoc(raw));
   const cur = serializeEditor(editor.value).text;
   if (next === cur) { docText.value = next; return; }
   applying.value = true;
@@ -381,6 +395,10 @@ onMounted(() => {
       Color,
       Image.configure({ inline: false, allowBase64: false }),
       Placeholder.configure({ placeholder: '在这里改正文…' }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       ImageMark,
       IllusDecor,
       MdImage,
@@ -432,7 +450,19 @@ onMounted(() => {
           }
           return true;
         }
-        return false; // 让 TipTap 处理 HTML，随后 serialize 会 sanitize
+        // 粘的是 Markdown 表格文本（没有 HTML）：转成真表格再插进去
+        const html = event.clipboardData?.getData('text/html') || '';
+        const plain = event.clipboardData?.getData('text/plain') || '';
+        if (!html && plain.includes('|')) {
+          const lines = plain.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim());
+          if (lines.some((_, i) => readTable(lines, i))) {
+            event.preventDefault();
+            editor.value?.chain().focus().insertContent(docToHtml(plain)).run();
+            emitDoc(false);
+            return true;
+          }
+        }
+        return false; // 让 TipTap 处理 HTML（网页、Word、Notion 里复制的表格也认得），随后 serialize 会 sanitize
       },
       handleKeyDown: (_view, event) => {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return false;
@@ -457,7 +487,10 @@ onMounted(() => {
   ed.storage.illusDecor.editor = ed;
   ed.storage.illusDecor.items = versions.illus?.items || [];
   docText.value = sanitizeDoc(props.modelValue);
+  // 以前粘坏的表格：编辑器里已经认回成表格了，正文也改成标准写法（会自动保存一次）
+  const fixed = normalizeTables(docText.value);
   nextTick(() => {
+    if (fixed !== docText.value) { docText.value = fixed; emit('update:modelValue', fixed, { typing: false }); }
     bindBridge();
     emit('ready', ed);
     if (ed.view) ed.view.dispatch(ed.state.tr);
